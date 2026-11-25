@@ -1,0 +1,23 @@
+[package]
+name = "termstage-py"
+description = "PyO3 bindings for termstage (the `termstage._core` extension module)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+# The extension links against libpython only at import time; there is nothing to unit-test here.
+test = false
+doctest = false
+
+[dependencies]
+termstage-core = { workspace = true }
+termstage-cli = { workspace = true }
+serde_json = { workspace = true }
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
+
+[lints]
+workspace = true

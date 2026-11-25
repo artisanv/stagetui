@@ -1,0 +1,51 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "termstage"
+dynamic = ["version"]
+description = "Rust-first TUI engine for agent harnesses and humans: rich terminal apps, headless snapshots, flawless Arabic/RTL."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+keywords = ["tui", "terminal", "agents", "kitty", "sixel", "rtl", "arabic", "headless"]
+# Zero runtime dependencies: everything lives in the Rust extension.
+dependencies = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Terminals",
+    "Typing :: Typed",
+]
+
+[project.scripts]
+termstage = "termstage._core:cli_main"
+
+[dependency-groups]
+dev = ["maturin>=1.9,<2", "pytest>=8"]
+
+[tool.maturin]
+manifest-path = "crates/termstage-py/Cargo.toml"
+python-source = "python"
+module-name = "termstage._core"
+features = ["pyo3/extension-module"]
+include = [{ path = "LICENSE-MIT", format = "sdist" }, { path = "LICENSE-APACHE", format = "sdist" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

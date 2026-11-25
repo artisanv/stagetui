@@ -1,0 +1,38 @@
+# termstage
+
+> Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
+
+Status: Milestone 2 (text & pictures). APIs below exist today; everything else in the spec is planned.
+
+## Python API
+- `import termstage as ts`
+- `ts.show(content, *, title, icon, dir, theme, accent, width, height, fit)` — inline text card or picture (path, bytes, Canvas).
+- `ts.draw(fn=None, *, size=(640,360), background=None, out=None, show=True) -> Canvas` — draw with code.
+- `ts.inspect(*, headless=False, probe=True) -> dict` — terminal capabilities.
+- `ts.fonts() -> dict` — bundled fonts and script coverage.
+- `class StageApp` — set `theme`, `accent`; override `compose() -> list[widget]`.
+  - `.run()` — interactive; q / Esc / Ctrl+C quit.
+  - `.run_headless((cols, rows), *, cell=(10, 20)) -> Snapshot` — `.text` (reading order), `.tree` (JSON), `.png` (bytes), `.query("#id")`, `.save("x.png|.txt|.json")`.
+- Widgets: `StageCard(text)`, `StageText(text)`, `StageImage(path|bytes|Canvas, width=, height=, fit=)`, `StageCanvas(draw_fn, size=(w_px, h_px), width=, height=)`.
+- `Canvas(width, height, background)`: clear, rect, rounded_rect, circle, line, polyline, gradient_rect, gradient_circle, text (shaped Arabic/Hindi), image, png, save.
+- `Style(padding=, rounded=, accent=)`, `@ts.component`, `ts.TermstageError` (`.what`, `.why`, `.fix`).
+
+Universal props: id, theme ("aurora-dark" | "nordic-light" | "velvet-dusk" | "paper-soft" | "hacker-mint"), accent ("blue" | "mint" | "amber" | "rose" | "violet" | "#rrggbb"), rounded, padding ("compact" | "normal" | "spacious" | int), icon, dir ("auto" | "ltr" | "rtl"), animate (accepted; effect in Milestone 3).
+
+Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black", "gray", "red", "transparent".
+
+Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart.
+
+## CLI
+- `termstage show <image|text> [--title --icon --dir --theme --accent --width --height --fit]`
+- `termstage render <app.py|image|text> [--out x.png] [--text x.txt] [--tree x.json] [--size 100x30] [--cell 10x20]`
+- `termstage inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
+- `termstage doctor` — plain-English report with fixes
+- `python -m termstage …` — same CLI
+
+## Docs
+- [Docs index](docs/README.md)
+- [Snapshots for agents](docs/snapshots.md)
+- [Reference](docs/reference.md)
+- [Spec](termstage-SPEC-v8.0.md)
+- [Agent guide](AGENTS.md)

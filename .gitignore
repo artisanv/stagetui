@@ -1,0 +1,16 @@
+/target/
+**/target/
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.dylib
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+.DS_Store
+
+# Render outputs made while trying termstage in the repo root
+/*.png
