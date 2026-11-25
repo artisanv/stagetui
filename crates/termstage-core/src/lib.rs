@@ -20,6 +20,7 @@ pub mod input;
 pub mod layout;
 pub mod motion;
 pub mod os;
+pub mod panes;
 pub mod reaper;
 pub mod render;
 pub mod runtime;
@@ -35,3 +36,11 @@ pub use error::{Error, Result};
 
 /// The termstage version (shared by the core, CLI and Python package).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The version as Python writes it (`0.1.0-alpha.1` → `0.1.0a1`, what pip shows).
+pub fn version() -> String {
+    VERSION
+        .replace("-alpha.", "a")
+        .replace("-beta.", "b")
+        .replace("-rc.", "rc")
+}

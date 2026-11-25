@@ -19,6 +19,9 @@ class Hello(StageApp):
 
 
 def test_version_and_exports():
+    from importlib.metadata import version
+
+    assert ts.__version__ == version("termstage"), "matches what pip shows"
     assert ts.__version__.count(".") == 2
     for name in ts.__all__:
         assert hasattr(ts, name), name

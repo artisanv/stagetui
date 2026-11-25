@@ -92,6 +92,11 @@ impl Image {
         }
     }
 
+    /// Render at natural size.
+    pub fn render_native(&self) -> Pixmap {
+        self.render(self.width, self.height, Fit::Stretch)
+    }
+
     /// Render into an exact `w × h` pixmap using `fit`; transparent where not covered.
     pub fn render(&self, w: u32, h: u32, fit: Fit) -> Pixmap {
         let (w, h) = (w.max(1), h.max(1));
@@ -205,6 +210,31 @@ pub fn png(p: &Pixmap) -> Result<Vec<u8>> {
             "this is a bug; please report it",
         )
     })
+}
+
+/// How different two PNG pictures are: the fraction of pixels (0.0–1.0) whose
+/// color differs by more than `threshold` (0–255) in any channel. Pictures of
+/// different sizes are 1.0 apart. Used for golden-snapshot tests.
+pub fn png_diff(a: &[u8], b: &[u8], threshold: u8) -> Result<f64> {
+    let a = load::from_bytes(a, "a.png")?.render_native();
+    let b = load::from_bytes(b, "b.png")?.render_native();
+    if a.width() != b.width() || a.height() != b.height() {
+        return Ok(1.0);
+    }
+    let total = (a.width() * a.height()).max(1);
+    let differ = a
+        .data()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.data().as_chunks::<4>().0)
+        .filter(|(x, y)| {
+            x.iter()
+                .zip(y.iter())
+                .any(|(p, q)| p.abs_diff(*q) > threshold)
+        })
+        .count();
+    Ok(differ as f64 / f64::from(total))
 }
 
 #[cfg(test)]

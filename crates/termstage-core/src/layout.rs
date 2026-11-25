@@ -116,9 +116,9 @@ impl<'a> Builder<'a> {
             s.flex_grow = g;
             s.flex_shrink = 1.0;
         }
-        let fills = matches!(n.kind, Kind::Split(_))
+        let fills = matches!(n.kind, Kind::Split(_) | Kind::Pane(_))
             || matches!(n.kind, Kind::Tabs(_) if n.layout.grow.is_some());
-        if matches!(n.kind, Kind::Split(_)) && n.layout.grow.is_none() {
+        if matches!(n.kind, Kind::Split(_) | Kind::Pane(_)) && n.layout.grow.is_none() {
             s.flex_grow = 1.0;
             s.flex_shrink = 1.0;
         }
@@ -130,7 +130,7 @@ impl<'a> Builder<'a> {
         }
         match parent {
             Parent::Root => {
-                if fills || matches!(n.kind, Kind::Bar(_)) {
+                if fills || matches!(n.kind, Kind::Bar(_) | Kind::Prompt(_)) {
                     s.align_self = Some(AlignItems::STRETCH);
                 } else if let Some(w) = max_w {
                     s.max_size.width = LengthPercentageAuto::length(f32::from(w));
@@ -279,6 +279,33 @@ impl<'a> Builder<'a> {
                     .collect();
                 self.taffy.new_with_children(style, &kids).ok()?
             }
+            Kind::Pane(pb) => {
+                // A header row, then the content of the current type.
+                style.flex_direction = FlexDirection::Column;
+                style.align_items = AlignItems::STRETCH;
+                style.padding = taffy::Rect {
+                    left: len(1),
+                    right: len(1),
+                    top: len(1),
+                    bottom: len(0),
+                };
+                if style.min_size.height == LengthPercentageAuto::auto() {
+                    style.min_size.height = LengthPercentageAuto::length(3.0);
+                }
+                let current = pane_child(self.tree, i, pb);
+                let kids: Vec<NodeId> = current
+                    .and_then(|c| {
+                        let id = self.build(c, Parent::Pane, None)?;
+                        if let Ok(mut st) = self.taffy.style(id).cloned() {
+                            st.flex_grow = 1.0;
+                            let _ = self.taffy.set_style(id, st);
+                        }
+                        Some(id)
+                    })
+                    .into_iter()
+                    .collect();
+                self.taffy.new_with_children(style, &kids).ok()?
+            }
             Kind::Modal(_) => {
                 style.flex_direction = FlexDirection::Column;
                 style.gap = Size {
@@ -365,6 +392,17 @@ fn measure(
         width: known.width.unwrap_or(f32::from(mw)),
         height: known.height.unwrap_or(f32::from(mh)),
     }
+}
+
+/// The child a pane shows: the one whose type is current (else the first).
+pub fn pane_child(tree: &Tree, pane: usize, pb: &crate::tree::PaneBox) -> Option<usize> {
+    let kids = &tree.nodes[pane].children;
+    let live = |c: &usize| tree.nodes[*c].alive && tree.nodes[*c].visible;
+    kids.iter()
+        .zip(&pb.types)
+        .find(|(c, t)| **t == pb.ptype && live(c))
+        .map(|(c, _)| *c)
+        .or_else(|| kids.iter().copied().find(live))
 }
 
 /// Lay out `tree` on a `cols × rows` screen. Writes every node's `rect`, `rtl`

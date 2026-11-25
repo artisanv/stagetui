@@ -8,7 +8,7 @@ Rust, so you never have to think about it.
 It is also made for **AI coding agents**: every screen can be captured as text,
 as a list of widgets, or as a PNG picture — no human needed.
 
-> termstage is young (Milestone 3 of 6). Everything on these pages works today.
+> termstage is young (Milestone 4 of 6, first half). Everything on these pages works today.
 > Features that are planned but not built yet are clearly marked *coming soon*.
 
 ## Start here
@@ -22,6 +22,9 @@ as a list of widgets, or as a PNG picture — no human needed.
 | Put things side by side, split the screen, add tabs or pop-ups | [Layouts](layout.md) |
 | Add buttons, text boxes, lists and keyboard shortcuts | [Making apps interactive](events.md) |
 | Animate things, or draw live graphics | [Motion](motion.md) |
+| Build a chat app for an AI coding agent | [Build an AI agent harness](harness.md) |
+| Let people switch what each pane shows, run a shell in a pane | [Panes](panes.md) |
+| Let an AI agent (Claude Code…) see and operate my app | [AI agents](agents.md) |
 | Use Arabic, Persian, Hindi, Chinese… | [World languages](world-languages.md) |
 | Test my app (press keys, click) or let an AI agent see it | [Snapshots](snapshots.md) |
 | Use termstage from the command line | [Command line](command-line.md) |

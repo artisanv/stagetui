@@ -10,9 +10,10 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="termst
 ts.show("logo.png")
 ```
 
-> **Status: pre-alpha (Milestone 3 of 6).** Layouts, split panes, tabs, pop-ups,
-> buttons, text boxes, tables, the mouse, animations, live drawings, Arabic/RTL
-> and headless snapshots work today. Agent tools are next — see the [roadmap](#roadmap).
+> **Status: first alpha (Milestone 4 of 6).** The agent harness kit (chat, streaming
+> Markdown, prompt, diff, tool calls, permission prompts, a real shell in a pane),
+> Blender-style panes, agent access (`termstage mcp` / `drive`), layouts, the mouse,
+> animations, Arabic/RTL and headless snapshots work today — see the [roadmap](#roadmap).
 
 ## Why termstage?
 
@@ -66,7 +67,8 @@ Chat().run()  # in your terminal
 Chat().run_headless((80, 24)).save("app.png")  # no terminal: text, tree or PNG
 ```
 
-Try the tours: `python examples/05_ui_gallery.py` and `python examples/06_splits.py`.
+Try the tours: `python examples/05_ui_gallery.py`, `06_splits.py`, `07_harness.py` (a coding-agent
+harness with a pretend agent) and `08_workspace.py` (Blender-style panes).
 
 ## Command line
 
@@ -75,6 +77,7 @@ termstage show chart.svg --width 40
 termstage render "مرحبا بكم" --dir rtl --out card.png
 termstage render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
 termstage doctor
+termstage mcp my_app.py      # let a coding agent (Claude Code…) see and operate your app
 ```
 
 ## Documentation
@@ -87,6 +90,9 @@ termstage doctor
 | [Layouts](docs/layout.md) | Rows, grids, split panes, tabs, pop-ups, scrolling |
 | [Making apps interactive](docs/events.md) | Buttons, inputs, lists, shortcuts, mouse, `async` |
 | [Motion](docs/motion.md) | Animations and live drawings |
+| [Agent harness](docs/harness.md) | Chat, prompt, diffs, tool calls, permissions, shell |
+| [Panes](docs/panes.md) | Blender-style panes: switch, split, close, your own types |
+| [AI agents](docs/agents.md) | `termstage mcp`, `termstage drive`, `app.drive()`, golden snapshot tests |
 | [World languages](docs/world-languages.md) | Arabic, Persian, Hindi, CJK |
 | [Snapshots](docs/snapshots.md) | Tests, CI and AI agents |
 | [Command line](docs/command-line.md) | `show`, `render`, `doctor`, `inspect` |
@@ -98,8 +104,8 @@ termstage doctor
 1. ✅ Terminal core: capability detection, renderer, headless snapshots, zero-zombie cleanup
 2. ✅ Text & pictures: Arabic/RTL shaping, bundled fonts, Kitty/Sixel/iTerm2 images, Canvas, PNG export
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
-4. Agent harness kit: streaming Markdown, code, diffs, prompt, tool cards, embedded shell, `drive`/`mcp`
-5. Sessions: pop a pane out into its own terminal window and back
+4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
+5. Sessions & workspaces: pop a pane out into its own terminal window and back, save/restore layouts
 6. Optional plugins: video, web, 3D
 
 ## Develop

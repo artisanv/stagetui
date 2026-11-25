@@ -1050,3 +1050,27 @@ class StageTree(_Widget):
     def update(self, content: Any = None, **props: Any) -> None:
         """Replace the items and/or properties (open folders stay open)."""
         super().update(None if content is None else _tree_items(content), **props)
+
+
+class RemoteWidget(_Widget):
+    """A handle to a widget that termstage created by itself (for example the
+    content of a pane you split). It has the same methods as every widget,
+    plus ``call(method, args)`` for widget-specific ones."""
+
+    _type = "remote"
+
+    def __init__(self, widget_id: str) -> None:
+        super().__init__(None, id=widget_id)
+        self._key = f"#{widget_id}"
+
+    def call(self, method: str, args: Any = None) -> Any:
+        """Run a widget method, e.g. ``handle.call("append", "text")``."""
+        core = self._require_running(f"{method}()")
+        return json.loads(core.call(self._key, method, json.dumps(args, ensure_ascii=False)))
+
+    @property
+    def info(self) -> dict[str, Any]:
+        """The widget as termstage describes it (type, bounds, text…)."""
+        core = self._require_running("info")
+        node = core.query(self._key)
+        return json.loads(node) if node else {}

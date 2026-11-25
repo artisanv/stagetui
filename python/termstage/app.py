@@ -13,10 +13,12 @@ import json
 import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from . import _core
 from .widgets import Dir, Theme, _error, _Widget
+
+_HEADLESS_TASK_BUDGET = 0.5  # seconds of real time async handlers get per headless step
 
 Binding = tuple[str, str] | tuple[str, str, str]
 Step = Mapping[str, Any]
@@ -41,6 +43,12 @@ def _call(fn: Callable[..., Any], *args: Any) -> Any:
     """Call a handler with as many arguments as it wants (0, 1, 2…)."""
     n = _arity(fn)
     return fn(*(args if n is None else args[:n]))
+
+
+def _contains(node: Mapping[str, Any], id: str | None) -> bool:
+    return id is not None and any(
+        c.get("id") == id or _contains(c, id) for c in node.get("children", [])
+    )
 
 
 class Snapshot:
@@ -126,6 +134,8 @@ class StageApp:
     dir: ClassVar[Dir | None] = None
     BINDINGS: ClassVar[Sequence[Binding]] = ()
     reduce_motion: ClassVar[bool] = False
+    #: The key that reaches the app from inside a terminal pane (then press Tab, |, -, x, Space, q).
+    PREFIX: ClassVar[str] = "ctrl+space"
 
     def __init__(self) -> None:
         self._core: _core.App | None = None
@@ -158,6 +168,8 @@ class StageApp:
             found = core.find(f"#{wanted}")
             if found is not None and found[0] in self._widgets:
                 return self._widgets[found[0]]
+            if found is not None:
+                return self._remote(found[1])
         raise _error(
             f'No widget matches "{selector}"',
             'queries look widgets up by id, like "#chat"',
@@ -175,9 +187,115 @@ class StageApp:
         return self._lookup(self._core.focused_pane() if self._core else None)
 
     def _lookup(self, found: tuple[str | None, str] | None) -> _Widget | None:
-        if found is None or found[0] is None:
+        if found is None:
             return None
-        return self._widgets.get(found[0])
+        if found[0] is not None and found[0] in self._widgets:
+            return self._widgets[found[0]]
+        return self._remote(found[1])
+
+    def _remote(self, id: str) -> _Widget:
+        """The widget with Rust id ``id``: your own object if you created it,
+        otherwise a typed handle (termstage created it, e.g. a pane you switched)."""
+        from . import harness, widgets
+
+        core = self._core
+        found = core.find(f"#{id}") if core is not None else None
+        if found is not None and found[0] in self._widgets:
+            return self._widgets[found[0]]
+        kind = ""
+        if core is not None:
+            node = core.query(f"#{id}")
+            kind = json.loads(node).get("type", "") if node else ""
+        classes: dict[str, type[_Widget]] = {
+            "chat": harness.StageChat,
+            "markdown": harness.StageMarkdown,
+            "log": harness.StageLog,
+            "terminal": harness.StageTerminal,
+            "diff": harness.StageDiff,
+            "toolcall": harness.StageToolCall,
+            "prompt": harness.StagePrompt,
+            "code": harness.StageCode,
+        }
+        cls = classes.get(kind)
+        if cls is None:
+            handle: _Widget = widgets.RemoteWidget(id)
+        else:
+            handle = object.__new__(cls)
+            handle._key = f"#{id}"
+            handle._content = None
+            handle._children = None
+            handle._handlers = {}
+            handle.props = {"id": id}
+        handle._app = self
+        return handle
+
+    def panes(self) -> list[dict[str, Any]]:
+        """Every Blender-style pane: ``id``, ``type``, ``bounds``, ``focused``, ``stashed``."""
+        core = self._core
+        if core is None:
+            return []
+        tree = json.loads(core.tree())
+        out: list[dict[str, Any]] = []
+
+        def walk(nodes: list[dict[str, Any]]) -> None:
+            for n in nodes:
+                if n.get("type") == "pane":
+                    focus = tree.get("focus")
+                    inside = focus == n["id"] or any(
+                        c.get("id") == focus or _contains(c, focus) for c in n.get("children", [])
+                    )
+                    out.append(
+                        {
+                            "id": n["id"],
+                            "type": n["pane_type"],
+                            "bounds": n["bounds"],
+                            "focused": inside,
+                            "stashed": n.get("stashed", []),
+                        }
+                    )
+                walk(n.get("children", []))
+
+        walk(tree.get("children", []))
+        return out
+
+    async def ask_permission(
+        self, question: str, *, tool: str | None = None, args: Any = None
+    ) -> str:
+        """Ask the user before the agent acts. Returns ``"allow"``, ``"always"`` or ``"deny"``.
+
+        ::
+
+            if await self.ask_permission("Run the tests?", tool="bash", args={"cmd": "pytest"}) != "deny":
+                ...
+        """
+        from .harness import StagePermission
+        from .widgets import StageModal
+
+        loop = asyncio.get_running_loop()
+        answer: asyncio.Future[str] = loop.create_future()
+
+        def decided(choice: str) -> None:
+            if not answer.done():
+                answer.set_result(choice)
+
+        def closed() -> None:
+            if not answer.done():
+                answer.set_result("deny")
+
+        modal = StageModal(
+            [StagePermission(question, tool=tool, args=args, on_decide=decided, border=False)],
+            title="Permission needed",
+            icon="warning",
+            accent="amber",
+            on_close=closed,
+            visible=True,
+        )
+        self.mount(modal)
+        try:
+            return await answer
+        finally:
+            if self._core is not None:
+                modal.remove()
 
     def notify(
         self, text: str, *, icon: str | None = None, accent: str | None = None, timeout: float = 3.0
@@ -238,6 +356,9 @@ class StageApp:
                     break
                 self._raise_failure()
         finally:
+            # Freeze the snapshot: handlers still running are cancelled without
+            # touching the app (their cleanup sees no running app).
+            self._core = None
             for t in self._tasks:
                 t.cancel()
             core.stop()
@@ -268,31 +389,43 @@ class StageApp:
         end before the snapshot; ``settle=False`` captures the exact moment.
         ``cell`` is the pixel size of one character box, used for PNGs.
         """
-        cols, rows = size
-        core = self._create(cell=cell)
-        self._headless = True
-        loop = asyncio.new_event_loop()
-        self._loop = loop
-        try:
-            core.render(cols, rows)
-            self._drain(loop)
-            loop.run_until_complete(self._await(self.on_mount()))
-            core.render(cols, rows)
-            self._drain(loop)
+        with self.drive(size, cell=cell) as d:
             for step in steps or ():
-                cols, rows = self._step(core, step, cols, rows)
-                core.render(cols, rows)
-                self._drain(loop)
-                core.render(cols, rows)  # lay out what the handlers changed
-            if settle:
-                core.settle(cols, rows)
-                self._drain(loop)
-            text, tree = core.snapshot(cols, rows)
-            return Snapshot(text, json.loads(tree), core, cell)
-        finally:
-            loop.close()
-            self._loop = None
-            self._headless = False
+                d.step(step)
+            return d.snapshot(settle=settle)
+
+    def drive(
+        self, size: tuple[int, int] = (80, 24), *, cell: tuple[int, int] = (16, 32)
+    ) -> Driver:
+        """Start the app without a terminal and control it step by step::
+
+        with MyApp().drive((80, 24)) as d:
+            d.type("hello")
+            d.press("enter")
+            print(d.snapshot().text)
+        """
+        return Driver(self, size, cell)
+
+    # ----- capturing the live screen (agents, bug reports) ----------------
+
+    def capture_text(self) -> str:
+        """The screen right now as plain text (works while the app runs)."""
+        return self._capture()[0]
+
+    def capture_tree(self) -> dict[str, Any]:
+        """Every widget right now as a dictionary (works while the app runs)."""
+        return json.loads(self._capture()[1])
+
+    def capture_png(self) -> bytes:
+        """The screen right now as PNG bytes (works while the app runs)."""
+        core = self._require_core("capture_png()")
+        tree = json.loads(core.tree())
+        return core.png(tree["size"]["cols"], tree["size"]["rows"])
+
+    def _capture(self) -> tuple[str, str]:
+        core = self._require_core("capture_text()")
+        tree = json.loads(core.tree())
+        return core.snapshot(tree["size"]["cols"], tree["size"]["rows"])
 
     # ----- internals -------------------------------------------------------
 
@@ -311,10 +444,14 @@ class StageApp:
             if len(b) == 3:
                 entry["description"] = b[2]
             bindings.append(entry)
+        from .harness import _pane_types_spec
+
         spec: dict[str, Any] = {
             "theme": self.theme,
             "children": [c._spec() for c in children],
             "bindings": bindings,
+            "pane_types": _pane_types_spec(),
+            "prefix": self.PREFIX,
         }
         if self.accent is not None:
             spec["accent"] = self.accent
@@ -373,9 +510,14 @@ class StageApp:
                 self._run_action(str(value))
             elif name == "theme":
                 self.__dict__["theme"] = value
+            elif name == "pane":
+                self._pane_event(f"#{_id}", None, value)
             return True
         widget = self._widgets.get(key)
         if widget is None:
+            return True
+        if name == "pane":
+            self._pane_event(key, widget, value)
             return True
         if name == "frame":
             self._frame(widget, value)
@@ -386,6 +528,22 @@ class StageApp:
         args: tuple[Any, ...] = () if name in ("click", "close") else (value,)
         self._handle(_call(handler, *args))
         return True
+
+    def _pane_event(self, target: str, widget: _Widget | None, value: Mapping[str, Any]) -> None:
+        """A pane switched type; build custom content when termstage can't."""
+        from .harness import _build_pane_content
+
+        kind = str(value.get("type", ""))
+        core = self._core
+        if not value.get("built") and core is not None:
+            content = _build_pane_content(kind, {})
+            self._bind(content)
+            core.pane_set(target, kind, json.dumps(content._spec(), ensure_ascii=False), False)
+        if widget is not None:
+            widget._content = kind
+            handler = widget._handlers.get("pane")
+            if handler is not None:
+                self._handle(_call(handler, kind))
 
     def _frame(self, widget: _Widget, value: Mapping[str, Any]) -> None:
         canvas = getattr(widget, "canvas", None)
@@ -422,9 +580,6 @@ class StageApp:
         loop = self._loop
         if loop is None:
             return
-        if self._headless:
-            loop.run_until_complete(self._await(result))
-            return
         task = loop.create_task(self._await(result))
         self._tasks.add(task)
 
@@ -447,14 +602,26 @@ class StageApp:
             raise failure
 
     def _drain(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Handle every pending event; let async handlers run (headless: briefly)."""
         core = self._core
         assert core is not None
         for _ in range(1000):
             events = core.poll_events()
-            if not events:
-                return
             for e in events:
                 self._dispatch(e)
+            if not self._tasks:
+                if not events:
+                    return
+                continue
+            pending = list(self._tasks)
+            loop.run_until_complete(asyncio.wait(pending, timeout=_HEADLESS_TASK_BUDGET))
+            self._raise_failure()
+            if not events and all(not t.done() for t in pending):
+                more = core.poll_events()
+                for e in more:
+                    self._dispatch(e)
+                if not more:
+                    return  # waiting on the user (a permission prompt…): next step
 
     def _step(self, core: _core.App, step: Step, cols: int, rows: int) -> tuple[int, int]:
         if not isinstance(step, Mapping) or len(step) != 1:
@@ -500,3 +667,120 @@ class StageApp:
                 "use press, type, click, scroll, wait, wait_idle or resize",
             )
         return cols, rows
+
+
+class Driver:
+    """An app running without a terminal, controlled one step at a time.
+
+    Made by :meth:`StageApp.drive`. Every action runs the app's handlers and lets
+    animations advance on a virtual clock, exactly like ``run_headless(steps=...)``.
+    Used by ``termstage drive``, ``termstage mcp`` and the pytest plugin.
+    """
+
+    def __init__(self, app: StageApp, size: tuple[int, int], cell: tuple[int, int]) -> None:
+        self.app = app
+        self.cols, self.rows = size
+        self.cell = cell
+        self.core = app._create(cell=cell)
+        app._headless = True
+        self.loop = asyncio.new_event_loop()
+        app._loop = self.loop
+        self.closed = False
+        try:
+            self._render()
+            self.loop.run_until_complete(app._await(app.on_mount()))
+            self._render()
+        except BaseException:
+            self.close()
+            raise
+
+    def _render(self) -> None:
+        self.core.render(self.cols, self.rows)
+        self.app._drain(self.loop)
+        self.core.render(self.cols, self.rows)  # lay out what the handlers changed
+
+    # ----- actions -------------------------------------------------------
+
+    def step(self, step: Step) -> None:
+        """Run one step dict, e.g. ``{"press": "tab"}`` (see ``run_headless``)."""
+        self._check()
+        self.cols, self.rows = self.app._step(self.core, step, self.cols, self.rows)
+        self._render()
+
+    def press(self, key: str) -> None:
+        self.step({"press": key})
+
+    def type(self, text: str) -> None:
+        self.step({"type": text})
+
+    def click(self, target: str | tuple[int, int]) -> None:
+        """Click a widget (``"#send"``) or a cell (``(x, y)``)."""
+        self.step({"click": list(target) if isinstance(target, tuple) else target})
+
+    def scroll(self, rows: int, target: str | None = None) -> None:
+        self.step({"scroll": {"rows": rows, "target": target}})
+
+    def wait(self, seconds: float) -> None:
+        """Let (virtual) time pass: animations, timers, live canvases."""
+        self.step({"wait": seconds})
+
+    def wait_idle(self) -> None:
+        """Let entrance animations finish."""
+        self.step({"wait_idle": True})
+
+    def resize(self, cols: int, rows: int) -> None:
+        self.step({"resize": [cols, rows]})
+
+    # ----- looking -------------------------------------------------------
+
+    def snapshot(self, *, settle: bool = False, png: bool = False) -> Snapshot:
+        """The screen now. ``png=True`` renders the picture immediately."""
+        self._check()
+        if settle:
+            self.core.settle(self.cols, self.rows)
+            self.app._drain(self.loop)
+        text, tree = self.core.snapshot(self.cols, self.rows)
+        snap = Snapshot(text, json.loads(tree), self.core, self.cell)
+        if png:
+            snap._png = self.core.png(self.cols, self.rows)
+        return snap
+
+    def query(self, id: str) -> dict[str, Any] | None:
+        """One widget as a dictionary, or ``None``."""
+        node = self.core.query(id if id.startswith("#") else f"#{id}")
+        return json.loads(node) if node else None
+
+    def panes(self) -> list[dict[str, Any]]:
+        return self.app.panes()
+
+    # ----- lifecycle -----------------------------------------------------
+
+    def _check(self) -> None:
+        if self.closed:
+            raise _error(
+                "This driver is closed",
+                "the app it controlled has stopped",
+                "start a new one with app.drive()",
+            )
+
+    def close(self) -> None:
+        """Stop the app. Handlers still running are cancelled without touching it."""
+        if self.closed:
+            return
+        self.closed = True
+        app = self.app
+        app._core = None
+        for t in app._tasks:
+            t.cancel()
+        if app._tasks:
+            self.loop.run_until_complete(asyncio.gather(*app._tasks, return_exceptions=True))
+        app._tasks.clear()
+        self.loop.close()
+        app._loop = None
+        app._headless = False
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

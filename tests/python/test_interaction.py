@@ -377,6 +377,15 @@ WIDGETS = [
     (StageTabs, []),
     (StageModal, []),
     (StageBar, "status"),
+    (ts.StageMarkdown, "# hi"),
+    (ts.StageCode, "x = 1"),
+    (ts.StageDiff, ("a", "b")),
+    (ts.StageLog, "line"),
+    (ts.StageToolCall, "bash"),
+    (ts.StagePermission, "Allow?"),
+    (ts.StageChat, []),
+    (ts.StagePrompt, ""),
+    (ts.StagePane, "markdown"),
 ]
 
 

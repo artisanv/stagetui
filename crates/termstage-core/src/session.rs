@@ -42,6 +42,10 @@ enum Hit {
     Tab(usize, usize),
     Backdrop(usize),
     Toast(usize),
+    /// A pane header's title (opens the pane menu).
+    PaneTitle(usize),
+    /// A pane header button: 0 split right, 1 split down, 2 close.
+    PaneAction(usize, u8),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -87,6 +91,14 @@ pub struct Session {
     frames: HashMap<usize, FrameClock>,
     modal_return: Vec<(usize, Option<usize>)>,
     autofocused: bool,
+    /// The prefix key (default Ctrl+Space) was pressed: the next key is for the app.
+    prefix_armed: bool,
+    prefix: Key,
+    /// Text waiting to be copied to the system clipboard (OSC 52).
+    clipboard: Option<String>,
+    /// The open pane menu.
+    menu: Option<crate::panes::Menu>,
+    hover_pane_button: Option<(usize, u8)>,
 }
 
 const TICK: Duration = Duration::from_millis(16);
@@ -126,7 +138,34 @@ impl Session {
             frames: HashMap::new(),
             modal_return: Vec::new(),
             autofocused: false,
+            prefix_armed: false,
+            prefix: Key::parse(spec.prefix.as_deref().unwrap_or("ctrl+space"))?,
+            clipboard: None,
+            menu: None,
+            hover_pane_button: None,
         })
+    }
+
+    /// Text the app asked to copy, if any (the terminal view sends it as OSC 52).
+    pub fn take_clipboard(&mut self) -> Option<String> {
+        self.clipboard.take()
+    }
+
+    /// Run a widget-specific method, e.g. `chat.add` or `log.append`.
+    pub fn call(&mut self, target: &str, method: &str, args: &Value) -> Result<Value> {
+        let i = self.target(target)?;
+        let n = &mut self.tree.nodes[i];
+        let name = n.kind.name();
+        let w = n.kind.widget_mut().ok_or_else(|| {
+            Error::friendly(
+                format!("A {name} has no method \"{method}\""),
+                "containers only hold other widgets",
+                "call the method on the widget inside it",
+            )
+        })?;
+        let out = w.call(method, args)?;
+        self.dirty = true;
+        Ok(out)
     }
 
     /// The widget tree.
@@ -150,6 +189,11 @@ impl Session {
     }
 
     // ----- time -----------------------------------------------------------
+
+    /// The size of the last frame `(cols, rows)`.
+    pub fn size(&self) -> (u16, u16) {
+        self.size
+    }
 
     /// The animation clock.
     pub fn now(&self) -> Duration {
@@ -246,7 +290,15 @@ impl Session {
 
     /// Whether something changed since the last frame.
     pub fn is_dirty(&self) -> bool {
-        self.dirty || self.next_wake().is_some_and(|w| w.is_zero())
+        self.dirty || self.next_wake().is_some_and(|w| w.is_zero()) || self.outside_changes()
+    }
+
+    /// A widget changed by something outside the app (shell output).
+    fn outside_changes(&self) -> bool {
+        self.tree
+            .nodes
+            .iter()
+            .any(|n| n.alive && n.widget().is_some_and(Widget::poll_dirty))
     }
 
     /// Mark the screen as needing a redraw.
@@ -316,10 +368,18 @@ impl Session {
         if !self.autofocused {
             self.autofocused = true;
             if self.focus.is_none() {
-                self.focus = self
-                    .focusables()
-                    .into_iter()
-                    .find(|i| self.tree.nodes[*i].widget().is_some_and(Widget::takes_text));
+                // A text box (prompt, input) first; a terminal only if there is none.
+                let list = self.focusables();
+                let wants = |i: &usize, terminal: bool| {
+                    self.tree.nodes[*i]
+                        .widget()
+                        .is_some_and(|w| w.takes_text() && w.captures_keys() == terminal)
+                };
+                self.focus = list
+                    .iter()
+                    .find(|i| wants(i, false))
+                    .or_else(|| list.iter().find(|i| wants(i, true)))
+                    .copied();
             }
         }
         if let Some(f) = self.focus
@@ -381,6 +441,20 @@ impl Session {
             return;
         }
         self.hits.push((bounds, Hit::Node(i)));
+        if self.tree.is_typed_pane(i) {
+            let (title, buttons) = self.pane_header(i);
+            for (r, h) in std::iter::once((title, Hit::PaneTitle(i))).chain(
+                buttons
+                    .into_iter()
+                    .enumerate()
+                    .map(|(k, r)| (r, Hit::PaneAction(i, k as u8))),
+            ) {
+                let r = r.intersection(bounds);
+                if !r.is_empty() {
+                    self.hits.push((r, h));
+                }
+            }
+        }
         if let Kind::Tabs(_) = &self.tree.nodes[i].kind {
             for (k, r) in self.tab_titles(i) {
                 let r = r.intersection(bounds);
@@ -432,6 +506,412 @@ impl Session {
         out
     }
 
+    /// Title chip and the three buttons (split right, split down, close) of a pane header.
+    fn pane_header(&self, i: usize) -> (Rect, Vec<Rect>) {
+        let r = self.tree.nodes[i].rect;
+        if r.x < 0 || r.y < 0 {
+            return (Rect::default(), Vec::new());
+        }
+        let (x, y, w) = (r.x as u16, r.y as u16, r.w);
+        let title_w = (text::width(&self.pane_label(i)) as u16 + 2).min(w);
+        let buttons = if w >= title_w + 10 {
+            (0..3)
+                .map(|k| Rect::new(x + w - 9 + 3 * k, y, 3, 1))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        (Rect::new(x, y, title_w, 1), buttons)
+    }
+
+    fn pane_label(&self, i: usize) -> String {
+        let Kind::Pane(pb) = &self.tree.nodes[i].kind else {
+            return String::new();
+        };
+        let t = self.tree.pane_types.iter().find(|t| t.name == pb.ptype);
+        let icon = t
+            .and_then(|t| t.icon.as_deref())
+            .and_then(|i| crate::widgets::icon(i).ok())
+            .unwrap_or("◆");
+        let title = t
+            .and_then(|t| t.title.clone())
+            .unwrap_or_else(|| pb.ptype.clone());
+        format!("{icon} {title} ▾")
+    }
+
+    /// The pane holding the focus (or the first pane).
+    fn current_pane(&self) -> Option<usize> {
+        let mut cur = self.focus;
+        while let Some(c) = cur {
+            if self.tree.is_typed_pane(c) || self.tree.is_pane(c) {
+                return Some(c);
+            }
+            cur = self.tree.nodes[c].parent;
+        }
+        self.tree
+            .preorder()
+            .into_iter()
+            .find(|i| self.tree.is_typed_pane(*i) && self.tree.nodes[*i].bounds.width > 0)
+    }
+
+    fn paint_pane_header(&self, i: usize, target: &mut Frame, area: Rect, off: (i32, i32)) {
+        let n = &self.tree.nodes[i];
+        let t = &n.theme;
+        let active = self.focus.is_some_and(|f| self.within(f, i));
+        let menu_open = self.menu.as_ref().is_some_and(|m| m.pane == i);
+        let bg = if active {
+            t.accent.mix(t.surface, 0.78)
+        } else {
+            t.surface.mix(t.border, 0.35)
+        };
+        let row = Rect::new(area.x, area.y, area.width, 1);
+        fill(target, row, t.fg, bg);
+        let (title, buttons) = self.pane_header(i);
+        let shift = |r: Rect| -> Rect {
+            Rect::new(
+                (i32::from(r.x) + off.0).max(0) as u16,
+                (i32::from(r.y) + off.1).max(0) as u16,
+                r.width,
+                r.height,
+            )
+        };
+        let tr = shift(title).intersection(row);
+        let (tfg, tbg) = if menu_open {
+            (t.bg, t.accent)
+        } else if active {
+            (t.accent, bg)
+        } else {
+            (t.fg.mix(t.muted, 0.3), bg)
+        };
+        fill(target, tr, tfg, tbg);
+        let line = text::layout(
+            &self.pane_label(i),
+            usize::from(tr.width.saturating_sub(2)).max(1),
+            Direction::Ltr,
+        )
+        .swap_remove(0);
+        target.put_line(
+            tr.x + 1,
+            tr.y,
+            tr.width.saturating_sub(2),
+            &line,
+            tfg,
+            tbg,
+            active,
+        );
+        for (k, b) in buttons.into_iter().enumerate() {
+            let b = shift(b).intersection(row);
+            let glyph = ["⊞", "⊟", "×"][k];
+            let hot = self.hover_pane_button == Some((i, k as u8));
+            let fg = if hot {
+                t.accent
+            } else {
+                t.muted.mix(t.fg, 0.25)
+            };
+            target.put_str(
+                b.x + 1,
+                b.y,
+                glyph,
+                1,
+                Style::new().fg(fg.color()).bg(bg.color()),
+            );
+        }
+    }
+
+    /// Where the open pane menu is drawn.
+    fn menu_rect(&self) -> Option<Rect> {
+        let m = self.menu.as_ref()?;
+        let pane = self.tree.nodes.get(m.pane)?;
+        let (cols, rows) = self.size;
+        let screen = Rect::new(0, 0, cols, rows);
+        let w = m
+            .items
+            .iter()
+            .map(|i| text::width(&i.label))
+            .max()
+            .unwrap_or(10) as u16
+            + 6;
+        let h = m.items.len() as u16 + 3;
+        let x = pane.rect.x.max(0) as u16;
+        let below = (pane.rect.y + 1).max(0) as u16;
+        let y = if below + h <= rows {
+            below
+        } else {
+            rows.saturating_sub(h)
+        };
+        Some(Rect::new(x, y, w.min(cols), h).intersection(screen))
+    }
+
+    /// Menu row → item index (the separator row has none).
+    fn menu_item_at(&self, row: u16) -> Option<usize> {
+        let m = self.menu.as_ref()?;
+        let sep = m.first_action();
+        let r = usize::from(row.checked_sub(1)?);
+        let idx = if r < sep {
+            r
+        } else if r == sep {
+            return None;
+        } else {
+            r - 1
+        };
+        (idx < m.items.len()).then_some(idx)
+    }
+
+    fn paint_menu(&self, frame: &mut Frame) {
+        let (Some(m), Some(rect)) = (&self.menu, self.menu_rect()) else {
+            return;
+        };
+        let t = &self.tree.nodes[m.pane].theme;
+        frame.occlude(rect);
+        let outside = crate::widgets::behind(frame, rect.x, rect.y, t.bg);
+        fill(frame, rect, t.fg, t.surface);
+        draw_box(
+            frame,
+            rect,
+            true,
+            t.accent,
+            outside,
+            Some("Pane"),
+            t.muted,
+            false,
+        );
+        let sep = m.first_action();
+        let mut y = rect.y + 1;
+        for (k, item) in m.items.iter().enumerate() {
+            if k == sep {
+                let rule = Style::new().fg(t.border.color()).bg(t.surface.color());
+                for x in rect.x + 1..rect.right().saturating_sub(1) {
+                    frame.cells[(x, y)].set_symbol("─").set_style(rule);
+                }
+                y += 1;
+            }
+            if y >= rect.bottom().saturating_sub(1) {
+                break;
+            }
+            let on = k == m.hover;
+            let bg = if on {
+                t.accent.mix(t.surface, 0.55)
+            } else {
+                t.surface
+            };
+            fill(
+                frame,
+                Rect::new(rect.x + 1, y, rect.width.saturating_sub(2), 1),
+                t.fg,
+                bg,
+            );
+            let mark = if item.current { "✓" } else { " " };
+            let label = format!("{mark} {}", item.label);
+            let line = text::layout(
+                &label,
+                usize::from(rect.width.saturating_sub(4)),
+                Direction::Ltr,
+            )
+            .swap_remove(0);
+            let fg = if item.current { t.accent } else { t.fg };
+            frame.put_line(
+                rect.x + 2,
+                y,
+                rect.width.saturating_sub(4),
+                &line,
+                fg,
+                bg,
+                item.current,
+            );
+            y += 1;
+        }
+    }
+
+    fn open_menu(&mut self, pane: usize) {
+        let current = match &self.tree.nodes[pane].kind {
+            Kind::Pane(pb) => pb.ptype.clone(),
+            _ => String::new(),
+        };
+        self.menu = Some(crate::panes::Menu::new(
+            pane,
+            &self.tree.pane_types,
+            &current,
+        ));
+        self.dirty = true;
+    }
+
+    fn menu_key(&mut self, k: Key) {
+        let Some(m) = &mut self.menu else { return };
+        let n = m.items.len();
+        match k.code {
+            Code::Up => m.hover = (m.hover + n - 1) % n,
+            Code::Down | Code::Tab => m.hover = (m.hover + 1) % n,
+            Code::Home | Code::PageUp => m.hover = 0,
+            Code::End | Code::PageDown => m.hover = n - 1,
+            Code::Enter | Code::Char(' ') => {
+                let (pane, key) = (m.pane, m.items[m.hover].key.clone());
+                self.menu = None;
+                self.menu_choose(pane, &key);
+            }
+            _ => self.menu = None,
+        }
+        self.dirty = true;
+    }
+
+    fn menu_choose(&mut self, pane: usize, key: &str) {
+        match key {
+            "@split_right" => self.split_pane(pane, true),
+            "@split_down" => self.split_pane(pane, false),
+            "@close" => self.close_pane(pane),
+            name => self.switch_pane(pane, name),
+        }
+    }
+
+    /// Show another type in a pane: restore its stashed content, build a
+    /// built-in one, or ask the app to build a custom one.
+    pub fn switch_pane(&mut self, pane: usize, name: &str) {
+        let Kind::Pane(pb) = &self.tree.nodes[pane].kind else {
+            return;
+        };
+        if pb.ptype == name {
+            return;
+        }
+        let stashed = self.tree.nodes[pane]
+            .children
+            .iter()
+            .zip(&pb.types)
+            .any(|(c, t)| t == name && self.tree.nodes[*c].alive);
+        let custom = self
+            .tree
+            .pane_types
+            .iter()
+            .any(|t| t.name == name && t.custom);
+        if stashed {
+            if let Kind::Pane(pb) = &mut self.tree.nodes[pane].kind {
+                pb.ptype = name.to_string();
+            }
+            self.focus_into(pane);
+            self.emit(
+                pane,
+                "pane",
+                json!({ "type": name, "built": true, "restored": true }),
+            );
+        } else if let Some(spec) = crate::panes::builtin_content(name).filter(|_| !custom) {
+            let _ = self.pane_add(pane, name, &spec);
+            self.emit(
+                pane,
+                "pane",
+                json!({ "type": name, "built": true, "restored": false }),
+            );
+        } else {
+            self.emit(
+                pane,
+                "pane",
+                json!({ "type": name, "built": false, "restored": false }),
+            );
+        }
+        self.dirty = true;
+    }
+
+    /// Put `spec` into `pane` as the content for type `name` and show it.
+    fn pane_add(&mut self, pane: usize, name: &str, spec: &NodeSpec) -> Result<usize> {
+        let c = self.tree.insert(spec, Some(pane))?;
+        self.tree.nodes[pane].children.push(c);
+        if let Kind::Pane(pb) = &mut self.tree.nodes[pane].kind {
+            pb.types.push(name.to_string());
+            pb.ptype = name.to_string();
+        }
+        self.focus_into(pane);
+        self.dirty = true;
+        Ok(c)
+    }
+
+    /// Set what a pane shows (from the app): `replace` drops a stashed copy of the same type.
+    pub fn pane_set(
+        &mut self,
+        target: &str,
+        name: &str,
+        spec: &NodeSpec,
+        replace: bool,
+    ) -> Result<String> {
+        let pane = self.target(target)?;
+        let Kind::Pane(pb) = &self.tree.nodes[pane].kind else {
+            return Err(Error::friendly(
+                format!("\"{}\" is not a pane", self.tree.nodes[pane].id),
+                "only StagePane widgets have a type you can switch",
+                "use StagePane(\"chat\") in your layout, then pane.set_type(...)",
+            ));
+        };
+        let old: Vec<usize> = self.tree.nodes[pane]
+            .children
+            .iter()
+            .zip(&pb.types)
+            .filter(|(c, t)| *t == name && self.tree.nodes[**c].alive)
+            .map(|(c, _)| *c)
+            .collect();
+        if !replace && !old.is_empty() {
+            self.switch_pane(pane, name);
+            return Ok(self.tree.nodes[old[0]].id.clone());
+        }
+        for c in old {
+            self.tree.remove(c);
+        }
+        let c = self.pane_add(pane, name, spec)?;
+        Ok(self.tree.nodes[c].id.clone())
+    }
+
+    /// Move the focus into a pane's content (or onto the pane itself) — only if
+    /// the focus was in that pane or nowhere, so code switching a pane doesn't
+    /// pull the user away from what they are typing.
+    fn focus_into(&mut self, pane: usize) {
+        if self.focus.is_some_and(|f| !self.within(f, pane)) {
+            return;
+        }
+        let Kind::Pane(pb) = &self.tree.nodes[pane].kind else {
+            return;
+        };
+        let target = crate::layout::pane_child(&self.tree, pane, pb)
+            .and_then(|c| {
+                self.tree.preorder().into_iter().find(|d| {
+                    self.within(*d, c)
+                        && self.tree.nodes[*d].widget().is_some_and(Widget::focusable)
+                })
+            })
+            .unwrap_or(pane);
+        self.focus = Some(target);
+    }
+
+    fn split_pane(&mut self, pane: usize, horizontal: bool) {
+        match self
+            .tree
+            .split(pane, &crate::panes::empty_pane(), horizontal)
+        {
+            Ok(new) => {
+                self.focus = Some(new);
+                self.emit(
+                    new,
+                    "mount",
+                    json!({ "type": "pane", "split_from": self.tree.nodes[pane].id }),
+                );
+            }
+            Err(_) => return,
+        }
+        self.dirty = true;
+    }
+
+    fn close_pane(&mut self, pane: usize) {
+        let in_split = self.tree.nodes[pane]
+            .parent
+            .is_some_and(|p| matches!(self.tree.nodes[p].kind, Kind::Split(_)));
+        if !in_split {
+            let _ = self.notify(
+                "This is the last pane",
+                Some("info"),
+                None,
+                Duration::from_secs(2),
+            );
+            return;
+        }
+        let id = self.tree.nodes[pane].id.clone();
+        self.emit(pane, "close", Value::Null);
+        let _ = self.remove(&format!("#{id}"));
+    }
+
     fn tab_label(&self, c: usize) -> String {
         let n = &self.tree.nodes[c];
         let title = n.spec.props.title.clone().unwrap_or_else(|| n.id.clone());
@@ -460,7 +940,33 @@ impl Session {
         }
     }
 
-    fn hints(&self) -> Vec<(String, String)> {
+    pub(crate) fn hints(&self) -> Vec<(String, String)> {
+        if self.prefix_armed {
+            return [
+                ("Tab", "Next pane"),
+                ("|", "Split →"),
+                ("-", "Split ↓"),
+                ("x", "Close pane"),
+                ("Space", "Pane type"),
+                ("q", "Quit"),
+            ]
+            .iter()
+            .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
+            .collect();
+        }
+        // A shell keeps every key: say how to get out.
+        let in_shell = self.focus.is_some_and(|f| {
+            self.tree.nodes[f]
+                .widget()
+                .is_some_and(Widget::captures_keys)
+        });
+        if in_shell {
+            let prefix = self.prefix.label();
+            return vec![
+                (format!("{prefix} Tab"), "Leave the shell".into()),
+                (format!("{prefix} q"), "Quit".into()),
+            ];
+        }
         let mut out: Vec<(String, String)> = self
             .tree
             .bindings
@@ -517,6 +1023,7 @@ impl Session {
                 w.paint_popup(popup, &mut frame, &self.pcx(i, 0.0, &hints));
             }
         }
+        self.paint_menu(&mut frame);
         for &m in &self.laid.modals {
             self.paint_modal(m, &mut frame, &hints);
         }
@@ -595,6 +1102,7 @@ impl Session {
     ) {
         let n = &self.tree.nodes[i];
         match &n.kind {
+            Kind::Pane(_) => self.paint_pane_header(i, target, area, off),
             Kind::Tabs(t) => {
                 let theme = &n.theme;
                 let titles = self.tab_titles(i);
@@ -965,6 +1473,24 @@ impl Session {
         }
     }
 
+    /// Whether node `i` can hold the keyboard focus: interactive widgets, and
+    /// panes whose content has nothing focusable (so they can still be split or closed).
+    fn can_focus(&self, i: usize) -> bool {
+        let n = &self.tree.nodes[i];
+        if n.widget().is_some_and(Widget::focusable) {
+            return true;
+        }
+        let Kind::Pane(pb) = &n.kind else {
+            return false;
+        };
+        let Some(c) = crate::layout::pane_child(&self.tree, i, pb) else {
+            return true;
+        };
+        !self.tree.preorder().into_iter().any(|d| {
+            self.within(d, c) && self.tree.nodes[d].widget().is_some_and(Widget::focusable)
+        })
+    }
+
     /// Widgets that can take focus, in order (only inside the top modal while one is open).
     fn focusables(&self) -> Vec<usize> {
         let scope = self.top_modal();
@@ -975,7 +1501,7 @@ impl Session {
                 let n = &self.tree.nodes[*i];
                 n.visible
                     && n.bounds.width > 0
-                    && n.widget().is_some_and(Widget::focusable)
+                    && self.can_focus(*i)
                     && scope.is_none_or(|m| self.within(*i, m))
                     && (scope.is_some() || !self.in_modal(*i))
             })
@@ -1108,10 +1634,56 @@ impl Session {
                 self.dirty = true;
                 self.emit(i, name, value);
             }
+            Reaction::Copy(text) => {
+                self.dirty = true;
+                self.emit(i, "copy", Value::String(text.clone()));
+                self.clipboard = Some(text);
+                self.toasts.push((
+                    Rect::default(),
+                    Toast {
+                        text: "Copied".into(),
+                        icon: Some("✓"),
+                        accent: self.tree.theme.accent,
+                        born: self.now,
+                        ttl: Duration::from_millis(1200),
+                    },
+                ));
+            }
         }
     }
 
     fn key(&mut self, k: Key) {
+        if self.menu.is_some() {
+            self.menu_key(k);
+            return;
+        }
+        // The prefix key, then one key for the app — reaches it even from a shell pane.
+        if self.prefix_armed {
+            self.prefix_armed = false;
+            self.dirty = true;
+            self.prefixed(k);
+            return;
+        }
+        if k == self.prefix {
+            self.prefix_armed = true;
+            self.dirty = true;
+            return;
+        }
+        if let Some(f) = self.focus
+            && self.tree.nodes[f]
+                .widget()
+                .is_some_and(Widget::captures_keys)
+        {
+            let area = self.tree.nodes[f].bounds;
+            let r = self.tree.nodes[f]
+                .kind
+                .widget_mut()
+                .map(|w| w.key(&k, area));
+            if let Some(r) = r {
+                self.react(f, r);
+            }
+            return;
+        }
         if k.mods.ctrl && k.code == Code::Char('c') {
             self.request_quit();
             return;
@@ -1180,6 +1752,33 @@ impl Session {
         }
     }
 
+    /// The key after the prefix: pane and app commands.
+    fn prefixed(&mut self, k: Key) {
+        if let Some(b) = self.tree.bindings.iter().find(|b| b.key == k).cloned() {
+            self.action(&b.action);
+            return;
+        }
+        let rtl = self.tree.dir == Direction::Rtl;
+        match k.code {
+            Code::Tab => self.move_focus(!k.mods.shift),
+            Code::Down => self.move_focus(true),
+            Code::Up => self.move_focus(false),
+            Code::Right => self.move_focus(!rtl),
+            Code::Left => self.move_focus(rtl),
+            Code::Char('|') | Code::Char('\\') => self.action("split_pane_right"),
+            Code::Char('-') => self.action("split_pane_down"),
+            Code::Char('x') => self.action("close_pane"),
+            Code::Char(' ') | Code::Enter => self.action("pane_menu"),
+            Code::Char('q') => self.request_quit(),
+            _ => {}
+        }
+    }
+
+    /// Whether the prefix key was just pressed (the status bar shows pane keys).
+    pub fn prefix_armed(&self) -> bool {
+        self.prefix_armed
+    }
+
     /// Run an action by name: built-ins here, the rest go to the app.
     pub fn action(&mut self, name: &str) {
         match name {
@@ -1199,6 +1798,21 @@ impl Session {
             }
             "close_modal" => {
                 self.close_top_modal();
+            }
+            "pane_menu" => {
+                if let Some(p) = self.current_pane().filter(|p| self.tree.is_typed_pane(*p)) {
+                    self.open_menu(p);
+                }
+            }
+            "split_pane_right" | "split_pane_down" => {
+                if let Some(p) = self.current_pane() {
+                    self.split_pane(p, name == "split_pane_right");
+                }
+            }
+            "close_pane" => {
+                if let Some(p) = self.current_pane() {
+                    self.close_pane(p);
+                }
             }
             other => self.emit_app("action", json!(other)),
         }
@@ -1305,7 +1919,7 @@ impl Session {
     /// The nearest focusable widget at or above `i`.
     fn focus_target(&self, mut i: usize) -> Option<usize> {
         loop {
-            if self.tree.nodes[i].widget().is_some_and(Widget::focusable) {
+            if self.can_focus(i) || self.tree.is_typed_pane(i) {
                 return Some(i);
             }
             i = self.tree.nodes[i].parent?;
@@ -1314,6 +1928,63 @@ impl Session {
 
     fn mouse(&mut self, m: Mouse) {
         let (x, y) = (m.x, m.y);
+        // Widgets that want raw mouse events (a shell running a mouse-aware app).
+        if self.popup().is_none()
+            && self.drag.is_none()
+            && let Some(Hit::Node(i)) = self.hit(x, y)
+            && let Some(t) = self.focus_target(i)
+        {
+            let r = self.tree.nodes[t].rect;
+            let b = self.tree.nodes[t].bounds;
+            let (lx, ly) = (
+                (i32::from(x) - r.x).max(0) as u16,
+                (i32::from(y) - r.y).max(0) as u16,
+            );
+            let res = self.tree.nodes[t]
+                .kind
+                .widget_mut()
+                .map(|w| w.mouse(m.kind, lx, ly, b));
+            if let Some(res) = res
+                && res != Reaction::Ignored
+            {
+                if matches!(m.kind, MouseKind::Down(_)) {
+                    self.set_focus(Some(t));
+                }
+                self.react(t, res);
+                return;
+            }
+        }
+        if self.menu.is_some() {
+            if let MouseKind::Down(_) = m.kind {
+                let rect = self.menu_rect().unwrap_or_default();
+                if rect.contains((x, y).into()) {
+                    if let Some(k) = self.menu_item_at(y - rect.y) {
+                        let pane = self.menu.as_ref().map_or(0, |m| m.pane);
+                        let key = self
+                            .menu
+                            .as_ref()
+                            .map(|m| m.items[k].key.clone())
+                            .unwrap_or_default();
+                        self.menu = None;
+                        self.menu_choose(pane, &key);
+                    }
+                } else {
+                    self.menu = None;
+                }
+                self.dirty = true;
+            } else if m.kind == MouseKind::Move {
+                let rect = self.menu_rect().unwrap_or_default();
+                if rect.contains((x, y).into())
+                    && let Some(k) = self.menu_item_at(y - rect.y)
+                    && let Some(menu) = &mut self.menu
+                    && menu.hover != k
+                {
+                    menu.hover = k;
+                    self.dirty = true;
+                }
+            }
+            return;
+        }
         match m.kind {
             MouseKind::Down(Button::Left) => {
                 if let Some((p, rect)) = self.popup() {
@@ -1343,6 +2014,16 @@ impl Session {
                         self.dirty = true;
                     }
                     Some(Hit::Tab(t, k)) => self.select_tab(t, k),
+                    Some(Hit::PaneTitle(p)) => {
+                        self.set_focus(Some(p));
+                        self.focus_into(p);
+                        self.open_menu(p);
+                    }
+                    Some(Hit::PaneAction(p, k)) => match k {
+                        0 => self.split_pane(p, true),
+                        1 => self.split_pane(p, false),
+                        _ => self.close_pane(p),
+                    },
                     Some(Hit::Backdrop(_)) => {
                         self.close_top_modal();
                     }
@@ -1387,14 +2068,19 @@ impl Session {
                 }
             }
             MouseKind::Move => {
-                let (hover, divider) = match self.hit(x, y) {
-                    Some(Hit::Node(i)) => (self.focus_target(i), None),
-                    Some(Hit::Divider(d)) => (None, Some(d)),
-                    _ => (None, None),
+                let (hover, divider, button) = match self.hit(x, y) {
+                    Some(Hit::Node(i)) => (self.focus_target(i), None, None),
+                    Some(Hit::Divider(d)) => (None, Some(d), None),
+                    Some(Hit::PaneAction(p, k)) => (None, None, Some((p, k))),
+                    _ => (None, None, None),
                 };
-                if hover != self.hover || divider != self.hover_divider {
+                if hover != self.hover
+                    || divider != self.hover_divider
+                    || button != self.hover_pane_button
+                {
                     self.hover = hover;
                     self.hover_divider = divider;
+                    self.hover_pane_button = button;
                     self.dirty = true;
                 }
             }
@@ -1555,7 +2241,7 @@ impl Session {
     /// Give keyboard focus to a widget.
     pub fn focus(&mut self, target: &str) -> Result<()> {
         let i = self.target(target)?;
-        if !self.tree.nodes[i].widget().is_some_and(Widget::focusable) {
+        if !self.can_focus(i) && !self.tree.is_typed_pane(i) {
             return Err(Error::friendly(
                 format!("\"{}\" can't take focus", self.tree.nodes[i].id),
                 "only interactive widgets (buttons, inputs, lists, panes…) take keyboard focus",
@@ -1639,6 +2325,9 @@ impl Session {
                 }
             }
             None => self.tree.roots.push(i),
+        }
+        if self.tree.nodes[i].visible && matches!(self.tree.nodes[i].kind, Kind::Modal(_)) {
+            self.after_visibility(i, true);
         }
         self.dirty = true;
         Ok(self.tree.nodes[i].id.clone())
@@ -2087,6 +2776,121 @@ mod tests {
         assert_eq!(s.focused().unwrap().1, "b");
         s.type_text("مرحبا");
         assert_eq!(s.value("#b").unwrap(), json!("مرحبا"));
+    }
+
+    fn pane_type(s: &Session, id: &str) -> String {
+        s.query(&format!("#{id}")).unwrap()["pane_type"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn panes_switch_type_and_restore_stashed_content() {
+        let mut s = session(
+            r##"{"children":[{"type":"split","children":[
+            {"type":"pane","content":"markdown","props":{"id":"a"},"children":[{"type":"markdown","content":"# Notes","props":{"id":"notes"}}]},
+            {"type":"pane","content":"log","props":{"id":"b"},"children":[{"type":"log","props":{"id":"logs"}}]}]}]}"##,
+        );
+        s.frame(100, 30);
+        // Open the menu by clicking pane a's title, choose "Chat".
+        let a = s.tree().get("a").unwrap().rect;
+        s.click_at(a.x as u16 + 2, a.y as u16);
+        s.frame(100, 30);
+        let menu = s.menu.clone().expect("menu open");
+        let chat = menu.items.iter().position(|i| i.key == "chat").unwrap();
+        for _ in 0..chat.abs_diff(menu.hover) {
+            s.press(if chat > menu.hover { "down" } else { "up" })
+                .unwrap();
+        }
+        s.press("enter").unwrap();
+        s.frame(100, 30);
+        assert_eq!(pane_type(&s, "a"), "chat");
+        assert!(
+            !s.query("#notes").unwrap()["on_screen"].as_bool().unwrap(),
+            "markdown is stashed"
+        );
+        let ev = s.take_events();
+        assert!(
+            ev.iter()
+                .any(|e| e.name == "pane" && e.value["type"] == "chat")
+        );
+        // Switching back restores the same markdown widget.
+        let a_idx = s.tree().find("#a").unwrap();
+        s.switch_pane(a_idx, "markdown");
+        s.frame(100, 30);
+        assert!(s.query("#notes").unwrap()["on_screen"].as_bool().unwrap());
+        assert_eq!(s.query("#a").unwrap()["stashed"], json!(["chat"]));
+    }
+
+    #[test]
+    fn prefix_keys_split_and_close_panes() {
+        let mut s = session(
+            r#"{"children":[{"type":"pane","content":"empty","props":{"id":"p"},"children":[{"type":"text","content":"x"}]}]}"#,
+        );
+        s.frame(80, 24);
+        s.focus("#p").unwrap();
+        s.press("ctrl+space").unwrap();
+        assert!(s.prefix_armed());
+        s.press("|").unwrap();
+        s.frame(80, 24);
+        let panes = |s: &Session| {
+            s.tree()
+                .preorder()
+                .into_iter()
+                .filter(|i| s.tree().is_typed_pane(*i))
+                .count()
+        };
+        assert_eq!(panes(&s), 2);
+        // The bar shows pane keys while the prefix is armed.
+        s.press("ctrl+space").unwrap();
+        assert!(s.hints().iter().any(|(_, d)| d == "Close pane"));
+        s.press("x").unwrap();
+        s.frame(80, 24);
+        assert_eq!(panes(&s), 1);
+        s.press("ctrl+space").unwrap();
+        s.press("x").unwrap();
+        assert_eq!(panes(&s), 1, "the last pane stays");
+        assert!(s.tree_json(80, 24)["toasts"][0] == "This is the last pane");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_panes_get_every_key_but_the_prefix() {
+        let mut s = session(
+            r#"{"children":[{"type":"terminal","content":["cat"],"props":{"id":"t"}},{"type":"button","content":"b","props":{"id":"b"}}]}"#,
+        );
+        s.frame(60, 24);
+        s.focus("#t").unwrap();
+        s.type_text("q");
+        s.press("ctrl+c").unwrap();
+        assert!(!s.quit_requested(), "q and Ctrl+C go to the program");
+        assert!(
+            s.hints()
+                .iter()
+                .any(|(k, d)| k == "Ctrl+Space Tab" && d == "Leave the shell"),
+            "the bar says how to leave"
+        );
+        s.press("ctrl+space").unwrap();
+        s.press("tab").unwrap();
+        assert_eq!(
+            s.focused().unwrap().1,
+            "b",
+            "prefix + Tab leaves the terminal"
+        );
+    }
+
+    #[test]
+    fn copy_reaches_the_clipboard() {
+        let mut s = session(
+            r#"{"children":[{"type":"chat","content":[{"role":"assistant","text":"copy me"}],"props":{"id":"c"}}]}"#,
+        );
+        s.frame(60, 20);
+        s.focus("#c").unwrap();
+        s.press("up").unwrap();
+        s.press("y").unwrap();
+        assert_eq!(s.take_clipboard().as_deref(), Some("copy me"));
+        assert!(crate::app::osc52("hi").starts_with("\x1b]52;c;aGk="));
     }
 
     #[test]

@@ -17,15 +17,40 @@ use crate::motion::Anim;
 use crate::style::{self, Rgb, Theme};
 use crate::text::{self, Direction};
 use crate::widgets::{
-    Bar, Button, Card, Checkbox, ImageView, Input, Progress, Select, Spinner, Table, TextBlock,
-    TreeItem, TreeView, Variant, Widget,
+    Bar, Button, Card, Chat, Checkbox, Code, Diff, ImageView, Input, Log, Markdown, Permission,
+    Progress, Prompt, Select, Spinner, Table, Terminal, TextBlock, ToolCall, TreeItem, TreeView,
+    Variant, Widget, tool_from,
 };
 use crate::{Error, Result};
 
 /// Widget types, as written in app descriptions (`"type": "card"`).
-pub const WIDGET_TYPES: [&str; 16] = [
-    "stage", "split", "tabs", "modal", "bar", "card", "text", "image", "button", "input",
-    "checkbox", "select", "progress", "spinner", "table", "tree",
+pub const WIDGET_TYPES: [&str; 26] = [
+    "stage",
+    "split",
+    "tabs",
+    "modal",
+    "pane",
+    "bar",
+    "card",
+    "text",
+    "image",
+    "button",
+    "input",
+    "checkbox",
+    "select",
+    "progress",
+    "spinner",
+    "table",
+    "tree",
+    "markdown",
+    "code",
+    "diff",
+    "log",
+    "toolcall",
+    "permission",
+    "chat",
+    "prompt",
+    "terminal",
 ];
 pub use crate::motion::ANIMATIONS;
 /// Allowed `dir=` values (Rule 3).
@@ -45,8 +70,28 @@ pub struct AppSpec {
     pub bindings: Vec<BindingSpec>,
     #[serde(default)]
     pub reduce_motion: Option<bool>,
+    /// The key that reaches the app from inside a shell pane (default `ctrl+space`).
+    #[serde(default)]
+    pub prefix: Option<String>,
+    /// Pane types offered in the pane menu: `[{"name", "title", "icon"}]`.
+    #[serde(default)]
+    pub pane_types: Vec<PaneTypeSpec>,
     #[serde(default)]
     pub children: Vec<NodeSpec>,
+}
+
+/// A pane type offered in the pane switcher menu.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PaneTypeSpec {
+    pub name: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Built by the app (Python), not by termstage's built-ins.
+    #[serde(default)]
+    pub custom: bool,
 }
 
 fn default_theme() -> String {
@@ -213,6 +258,35 @@ pub struct Props {
     pub dismissable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fps: Option<u16>,
+    // Harness widgets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_numbers: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_lines: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commands: Option<Vec<(String, String)>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mentions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border: Option<bool>,
 }
 
 /// How children line up across a stack.
@@ -267,6 +341,16 @@ pub struct TabsBox {
     pub active: usize,
 }
 
+/// A Blender-style pane: shows one of several contents, chosen by type.
+#[derive(Debug, Clone)]
+pub struct PaneBox {
+    /// The type on show (`"chat"`, `"terminal"`, …).
+    pub ptype: String,
+    /// The type of each child; only the child of the current type is shown,
+    /// the others are kept (stashed) so switching back restores them.
+    pub types: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModalBox {
     pub title: Option<String>,
@@ -281,6 +365,7 @@ pub enum Kind {
     Split(SplitBox),
     Tabs(TabsBox),
     Modal(ModalBox),
+    Pane(PaneBox),
     Bar(Bar),
     Card(Card),
     Text(TextBlock),
@@ -293,6 +378,15 @@ pub enum Kind {
     Spinner(Spinner),
     Table(Table),
     Tree(TreeView),
+    Markdown(Markdown),
+    Code(Code),
+    Diff(Diff),
+    Log(Log),
+    ToolCall(ToolCall),
+    Permission(Permission),
+    Chat(Chat),
+    Prompt(Prompt),
+    Terminal(Terminal),
 }
 
 impl Kind {
@@ -310,7 +404,18 @@ impl Kind {
             Self::Spinner(w) => w,
             Self::Table(w) => w,
             Self::Tree(w) => w,
-            Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) => return None,
+            Self::Markdown(w) => w,
+            Self::Code(w) => w,
+            Self::Diff(w) => w,
+            Self::Log(w) => w,
+            Self::ToolCall(w) => w,
+            Self::Permission(w) => w,
+            Self::Chat(w) => w,
+            Self::Prompt(w) => w,
+            Self::Terminal(w) => w,
+            Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) | Self::Pane(_) => {
+                return None;
+            }
         })
     }
 
@@ -328,7 +433,18 @@ impl Kind {
             Self::Spinner(w) => w,
             Self::Table(w) => w,
             Self::Tree(w) => w,
-            Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) => return None,
+            Self::Markdown(w) => w,
+            Self::Code(w) => w,
+            Self::Diff(w) => w,
+            Self::Log(w) => w,
+            Self::ToolCall(w) => w,
+            Self::Permission(w) => w,
+            Self::Chat(w) => w,
+            Self::Prompt(w) => w,
+            Self::Terminal(w) => w,
+            Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) | Self::Pane(_) => {
+                return None;
+            }
         })
     }
 
@@ -338,6 +454,7 @@ impl Kind {
             Self::Split(_) => "split",
             Self::Tabs(_) => "tabs",
             Self::Modal(_) => "modal",
+            Self::Pane(_) => "pane",
             Self::Bar(_) => "bar",
             Self::Card(_) => "card",
             Self::Text(_) => "text",
@@ -350,6 +467,15 @@ impl Kind {
             Self::Spinner(_) => "spinner",
             Self::Table(_) => "table",
             Self::Tree(_) => "tree",
+            Self::Markdown(_) => "markdown",
+            Self::Code(_) => "code",
+            Self::Diff(_) => "diff",
+            Self::Log(_) => "log",
+            Self::ToolCall(_) => "toolcall",
+            Self::Permission(_) => "permission",
+            Self::Chat(_) => "chat",
+            Self::Prompt(_) => "prompt",
+            Self::Terminal(_) => "terminal",
         }
     }
 
@@ -482,6 +608,8 @@ pub struct Tree {
     pub dir: Direction,
     pub bindings: Vec<Binding>,
     pub reduce_motion: bool,
+    /// Pane types offered in the pane menu.
+    pub pane_types: Vec<PaneTypeSpec>,
     counters: HashMap<&'static str, usize>,
 }
 
@@ -520,6 +648,11 @@ impl Tree {
             bindings,
             reduce_motion: spec.reduce_motion.unwrap_or(false)
                 || std::env::var("TERMSTAGE_REDUCE_MOTION").is_ok_and(|v| v == "1"),
+            pane_types: if spec.pane_types.is_empty() {
+                crate::panes::builtin_types()
+            } else {
+                spec.pane_types.clone()
+            },
             counters: HashMap::new(),
         };
         for child in &spec.children {
@@ -585,7 +718,16 @@ impl Tree {
         if let Kind::Split(s) = &mut self.nodes[idx].kind {
             s.ratios = normalize_ratios(spec.props.ratio.as_deref(), spec.children.len())?;
         }
+        if let Kind::Pane(p) = &mut self.nodes[idx].kind {
+            // Children described in the app are the pane's current content.
+            p.types = vec![p.ptype.clone(); spec.children.len()];
+        }
         Ok(idx)
+    }
+
+    /// Whether node `i` is a Blender-style pane.
+    pub fn is_typed_pane(&self, i: usize) -> bool {
+        matches!(self.nodes[i].kind, Kind::Pane(_))
     }
 
     fn build_node(&mut self, spec: &NodeSpec, parent: Option<usize>) -> Result<Node> {
@@ -618,7 +760,19 @@ impl Tree {
                 (_, Some(w)) => Some(w.resolve("width")?),
             },
             height: match (&kind, &p.height) {
-                (Kind::Image(_) | Kind::Table(_) | Kind::Tree(_), _) | (_, None) => None,
+                (
+                    Kind::Image(_)
+                    | Kind::Table(_)
+                    | Kind::Tree(_)
+                    | Kind::Markdown(_)
+                    | Kind::Code(_)
+                    | Kind::Diff(_)
+                    | Kind::Log(_)
+                    | Kind::Chat(_)
+                    | Kind::Terminal(_),
+                    _,
+                )
+                | (_, None) => None,
                 (_, Some(h)) => Some(h.resolve("height")?),
             },
             grow: p.grow.filter(|g| *g > 0.0),
@@ -917,6 +1071,11 @@ impl Tree {
             Some(p) => {
                 let pos = self.nodes[p].children.iter().position(|c| *c == idx);
                 self.nodes[p].children.retain(|c| *c != idx);
+                if let (Kind::Pane(pb), Some(pos)) = (&mut self.nodes[p].kind, pos)
+                    && pos < pb.types.len()
+                {
+                    pb.types.remove(pos);
+                }
                 if let (Kind::Split(s), Some(pos)) = (&mut self.nodes[p].kind, pos) {
                     if pos < s.ratios.len() {
                         s.ratios.remove(pos);
@@ -1053,6 +1212,11 @@ impl Tree {
                 Kind::Modal(m) => {
                     map.insert("title".into(), json!(m.title));
                 }
+                Kind::Pane(p) => {
+                    map.insert("pane_type".into(), json!(p.ptype));
+                    let stashed: Vec<&String> = p.types.iter().filter(|t| **t != p.ptype).collect();
+                    map.insert("stashed".into(), json!(stashed));
+                }
                 _ => {}
             }
             if let Some(t) = &n.spec.props.title
@@ -1107,6 +1271,13 @@ fn normalize_ratios(given: Option<&[f32]>, n: usize) -> Result<Vec<f32>> {
     };
     let sum: f32 = r.iter().sum();
     Ok(r.into_iter().map(|v| v / sum).collect())
+}
+
+fn cells_prop(s: &Option<SizeSpec>) -> Option<u16> {
+    match s {
+        Some(SizeSpec::Cells(n)) => Some(*n),
+        _ => None,
+    }
 }
 
 fn text_content(spec: &NodeSpec) -> String {
@@ -1374,6 +1545,115 @@ fn build_kind(kind: &str, spec: &NodeSpec) -> Result<Kind> {
                 },
             })
         }
+        "pane" => Kind::Pane(PaneBox {
+            ptype: text_content(spec)
+                .trim()
+                .to_string()
+                .chars()
+                .take(64)
+                .collect::<String>(),
+            types: Vec::new(),
+        }),
+        "markdown" => {
+            let mut m = Markdown::new(text_content(spec));
+            m.height = cells_prop(&p.height);
+            Kind::Markdown(m)
+        }
+        "code" => {
+            let mut c = Code::new(text_content(spec));
+            c.language = p.language.clone();
+            c.title = p.title.clone().or_else(|| p.path.clone());
+            c.line_numbers = p.line_numbers.unwrap_or(true);
+            c.height = cells_prop(&p.height);
+            Kind::Code(c)
+        }
+        "diff" => {
+            let (old, new) = match &spec.content {
+                Value::Null => (String::new(), String::new()),
+                Value::Array(a) if a.len() == 2 => (
+                    a[0].as_str().unwrap_or_default().to_string(),
+                    a[1].as_str().unwrap_or_default().to_string(),
+                ),
+                Value::Object(o) => (
+                    o.get("old")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    o.get("new")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                ),
+                _ => {
+                    return Err(bad_content(
+                        "StageDiff",
+                        "the old and new text, as a pair",
+                        "StageDiff((old_text, new_text), path=\"app.py\")",
+                    ));
+                }
+            };
+            let mut d = Diff::new(old, new, p.path.clone().or_else(|| p.title.clone()));
+            d.height = cells_prop(&p.height);
+            Kind::Diff(d)
+        }
+        "log" => {
+            let mut l = Log::new(&text_content(spec), p.max_lines.unwrap_or(5000) as usize);
+            l.filter = p.filter.clone().unwrap_or_default();
+            l.height = cells_prop(&p.height);
+            Kind::Log(l)
+        }
+        "toolcall" => {
+            let mut t = tool_from(&serde_json::json!({ "name": text_content(spec) }));
+            t.args = p.args.clone().unwrap_or(Value::Null);
+            t.status = p.status.clone().unwrap_or_else(|| "running".into());
+            t.output = p.output.clone().unwrap_or_default();
+            t.expanded = p.expanded.unwrap_or(false);
+            Kind::ToolCall(t)
+        }
+        "permission" => Kind::Permission(Permission {
+            boxed: p.border.unwrap_or(true),
+            question: text_content(spec),
+            tool: p.tool.clone(),
+            args: p.args.clone().unwrap_or(Value::Null),
+            choice: 0,
+            decided: None,
+        }),
+        "chat" => {
+            let mut c = Chat::new(&spec.content)?;
+            c.height = cells_prop(&p.height);
+            Kind::Chat(c)
+        }
+        "prompt" => {
+            let mut pr = Prompt::new(&text_content(spec));
+            pr.placeholder = p.placeholder.clone().unwrap_or_default();
+            pr.title = p.title.clone();
+            pr.commands = p.commands.clone().unwrap_or_default();
+            pr.mentions = p.mentions.clone();
+            pr.max_lines = p.max_lines.map_or(8, |m| m.clamp(1, 50) as u16);
+            Kind::Prompt(pr)
+        }
+        "terminal" => {
+            let command = match &spec.content {
+                Value::Array(a) => a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect(),
+                Value::String(s) if s.trim().is_empty() => Vec::new(),
+                Value::String(s) if !s.trim().contains(' ') => vec![s.trim().to_string()],
+                Value::String(s) => {
+                    if cfg!(windows) {
+                        vec!["cmd.exe".into(), "/C".into(), s.clone()]
+                    } else {
+                        vec!["/bin/sh".into(), "-c".into(), s.clone()]
+                    }
+                }
+                _ => Vec::new(),
+            };
+            let mut t = Terminal::new(command, p.cwd.clone());
+            t.title = p.title.clone();
+            t.height = cells_prop(&p.height);
+            Kind::Terminal(t)
+        }
         _ => unreachable!("checked against WIDGET_TYPES"),
     })
 }
@@ -1403,12 +1683,27 @@ fn carry_state(new: &mut Kind, old: &Kind, spec: &NodeSpec) {
             }
         }
         (Kind::Tabs(n), Kind::Tabs(o)) if spec.props.active.is_none() => n.active = o.active,
+        (Kind::Pane(n), Kind::Pane(o)) => n.types = o.types.clone(),
+        (Kind::Markdown(n), Kind::Markdown(o)) => n.carry(o),
+        (Kind::Code(n), Kind::Code(o)) => n.carry(o),
+        (Kind::Diff(n), Kind::Diff(o)) => n.carry(o),
+        (Kind::Log(n), Kind::Log(o)) => {
+            n.carry(o);
+            if !content_given {
+                n.lines = o.lines.clone();
+            }
+        }
+        (Kind::Chat(n), Kind::Chat(o)) => n.carry(o),
+        (Kind::Prompt(n), Kind::Prompt(o)) => n.carry(o),
+        (Kind::Terminal(n), Kind::Terminal(o)) => n.carry(o),
+        (Kind::ToolCall(n), Kind::ToolCall(o)) if spec.props.expanded.is_none() => {
+            n.expanded = o.expanded;
+        }
         (Kind::Checkbox(n), Kind::Checkbox(o)) if spec.props.checked.is_none() => {
             n.checked = o.checked;
         }
         _ => {}
     }
-    let _ = content_given;
 }
 
 #[cfg(test)]

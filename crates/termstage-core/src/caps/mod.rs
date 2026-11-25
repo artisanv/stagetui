@@ -135,7 +135,7 @@ pub struct ProbeInfo {
 /// Everything termstage knows about where it is running.
 #[derive(Debug, Clone, Serialize)]
 pub struct Capabilities {
-    pub version: &'static str,
+    pub version: String,
     pub platform: Platform,
     pub terminal: TerminalId,
     pub tty: TtyInfo,
@@ -451,7 +451,7 @@ pub fn resolve(
         };
 
     Capabilities {
-        version: crate::VERSION,
+        version: crate::version(),
         platform: Platform {
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,

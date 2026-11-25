@@ -80,6 +80,17 @@ impl Reaper {
         Ok(TrackedChild { child: Some(child) })
     }
 
+    /// Track a process (and its process group) started elsewhere — e.g. a
+    /// program in a pseudo-terminal — so it is killed if we die.
+    pub fn track_pid(&self, pid: u32) -> io::Result<()> {
+        self.send(&Msg::Pid(pid))
+    }
+
+    /// Stop tracking a process that exited normally.
+    pub fn untrack_pid(&self, pid: u32) -> io::Result<()> {
+        self.send(&Msg::Unpid(pid))
+    }
+
     /// Track a POSIX shared-memory name so it is unlinked if we die.
     pub fn track_shm(&self, name: &str) -> io::Result<()> {
         self.send(&Msg::Shm(name.to_string()))

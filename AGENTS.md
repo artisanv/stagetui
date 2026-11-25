@@ -11,7 +11,9 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
   - `session.rs` state machine: focus, keys, mouse, scroll, drag, modals, toasts, motion, events
   - `input.rs` keys/mouse (crossterm + `"ctrl+s"` parsing); `motion.rs` effects on a clock
   - `app.rs` terminal runtime: input thread + dirty-driven render thread + event queue
-  - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar
+  - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
+    markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
+  - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect
   - `frame.rs` one painted screen: cells + reading-order text runs + image placements (blit/clip/occlude)
   - `view.rs` per-terminal graphics state; `inline.rs` `show`; `headless.rs` snapshots
 - `crates/termstage-cli` — `termstage` CLI (clap). Also used by Python's console script.
@@ -41,6 +43,10 @@ cargo clippy --all-targets -- -D warnings && cargo fmt --all
 cargo clippy --target x86_64-pc-windows-msvc -p termstage-core -p termstage-cli --all-targets -- -D warnings
 TERMSTAGE_UPDATE_SNAPSHOTS=1 cargo test -p termstage-core headless   # refresh golden snapshots (review the diff!)
 ```
+
+## Operating an app as an agent
+`termstage mcp my_app.py` exposes the app as MCP tools (snapshot, press, type, click, …);
+`termstage drive my_app.py` is the same over plain JSON-RPC. In Python: `with App().drive((100, 30)) as d: ...`.
 
 ## Seeing what you built (headless)
 ```python

@@ -42,6 +42,23 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Renderers of running apps, woken when something outside changes (shell output).
+static WAKERS: Mutex<Vec<Sender<Msg>>> = Mutex::new(Vec::new());
+
+/// Wake every running app's renderer (called by background readers such as
+/// embedded terminals). Cheap: wake-ups coalesce in the render loop.
+pub fn wake_all() {
+    lock(&WAKERS).retain(|tx| tx.send(Msg::Wake).is_ok());
+}
+
+/// OSC 52: ask the terminal to put `text` on the system clipboard.
+pub fn osc52(text: &str) -> String {
+    format!(
+        "\x1b]52;c;{}\x07",
+        crate::gfx::base64::encode(text.as_bytes())
+    )
+}
+
 impl App {
     pub fn new(session: Session) -> Arc<Self> {
         Arc::new(Self {
@@ -100,6 +117,7 @@ impl App {
         lock(&self.queue).clear();
         let (tx, rx) = mpsc::channel();
         *lock(&self.wake) = Some(tx.clone());
+        lock(&WAKERS).push(tx.clone());
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<()>>(1);
         let me = Arc::clone(self);
         let render = std::thread::Builder::new()
@@ -166,7 +184,7 @@ impl App {
         let _ = ready.send(Ok(()));
         let start = Instant::now();
         loop {
-            let (frame, wake, quit, events) = {
+            let (frame, wake, quit, events, clip) = {
                 let mut s = self.session();
                 s.set_time(start.elapsed());
                 let frame = if s.is_dirty() {
@@ -175,11 +193,23 @@ impl App {
                 } else {
                     None
                 };
-                (frame, s.next_wake(), s.quit_requested(), s.take_events())
+                (
+                    frame,
+                    s.next_wake(),
+                    s.quit_requested(),
+                    s.take_events(),
+                    s.take_clipboard(),
+                )
             };
             self.push(events);
             if quit {
                 break;
+            }
+            if let Some(text) = clip {
+                use std::io::Write as _;
+                let mut out = io::stdout();
+                let _ = out.write_all(osc52(&text).as_bytes());
+                let _ = out.flush();
             }
             if let Some(f) = frame
                 && let Err(e) = view.present(&f)

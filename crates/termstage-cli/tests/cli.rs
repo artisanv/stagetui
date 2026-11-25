@@ -18,7 +18,7 @@ fn inspect_headless_is_json() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["headless"], true);
     assert_eq!(v["graphics"]["best"], "halfblocks");
-    assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(v["version"], termstage_core::version());
     assert_eq!(v["probe"]["performed"], false);
 }
 

@@ -64,6 +64,13 @@ fn fonts(py: Python<'_>) -> PyResult<String> {
     serde_json::to_string(&c).map_err(|e| to_py(py, &e.into()))
 }
 
+/// Fraction of pixels (0.0–1.0) that differ between two PNGs (for snapshot tests).
+#[pyfunction]
+#[pyo3(signature = (a, b, threshold = 16))]
+fn png_diff(py: Python<'_>, a: &[u8], b: &[u8], threshold: u8) -> PyResult<f64> {
+    gfx::png_diff(a, b, threshold).map_err(|e| to_py(py, &e))
+}
+
 /// Keep image bytes in memory; returns a `mem:<id>` source for StageImage.
 #[pyfunction]
 #[pyo3(signature = (data, name = "image"))]
@@ -168,13 +175,14 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
             "import sys, termstage._core as c; sys.exit(c._reaper_main())".into(),
         ]);
     }
-    m.add("__version__", termstage_core::VERSION)?;
+    m.add("__version__", termstage_core::version())?;
     m.add("TermstageError", py.get_type::<TermstageError>())?;
     m.add_class::<canvas::PyCanvas>()?;
     m.add_class::<app::PyApp>()?;
     m.add_function(wrap_pyfunction!(inspect, m)?)?;
     m.add_function(wrap_pyfunction!(fonts, m)?)?;
     m.add_function(wrap_pyfunction!(register_image, m)?)?;
+    m.add_function(wrap_pyfunction!(png_diff, m)?)?;
     m.add_function(wrap_pyfunction!(show, m)?)?;
     m.add_function(wrap_pyfunction!(cli_main, m)?)?;
     m.add_function(wrap_pyfunction!(_spawn_tracked, m)?)?;

@@ -144,6 +144,49 @@ impl PyApp {
         self.run(py, |s| s.mount(parent, &spec))
     }
 
+    /// Run a widget method (`chat.add`, `log.append`, …). Args and result are JSON.
+    fn call(
+        &self,
+        py: Python<'_>,
+        target: &str,
+        method: &str,
+        args_json: &str,
+    ) -> PyResult<String> {
+        let args = json(py, args_json)?;
+        self.run(py, |s| s.call(target, method, &args))
+            .map(|v| v.to_string())
+    }
+
+    /// Set what a pane shows; returns the content widget's id.
+    #[pyo3(signature = (target, pane_type, spec_json, replace = true))]
+    fn pane_set(
+        &self,
+        py: Python<'_>,
+        target: &str,
+        pane_type: &str,
+        spec_json: &str,
+        replace: bool,
+    ) -> PyResult<String> {
+        let spec = spec(py, spec_json)?;
+        self.run(py, |s| s.pane_set(target, pane_type, &spec, replace))
+    }
+
+    /// Switch a pane to another type (restoring stashed content if any).
+    fn switch_pane(&self, py: Python<'_>, target: &str, pane_type: &str) -> PyResult<()> {
+        self.run(py, |s| {
+            let i = s.tree().require(target)?;
+            s.switch_pane(i, pane_type);
+            Ok(())
+        })
+    }
+
+    /// The whole widget tree as JSON (bounds from the last frame).
+    fn tree(&self) -> String {
+        let s = self.app.session();
+        let (c, r) = s.size();
+        s.tree_json(c, r).to_string()
+    }
+
     fn set_theme(&self, py: Python<'_>, name: &str) -> PyResult<()> {
         self.run(py, |s| s.set_theme(name))
     }

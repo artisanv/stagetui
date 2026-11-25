@@ -95,6 +95,33 @@ enum Command {
         #[command(flatten)]
         look: verbs::Look,
     },
+    /// Let a program (an AI agent, a test) control a termstage app: JSON-RPC 2.0,
+    /// one message per line on stdin/stdout.
+    ///
+    /// Methods: snapshot, press, type, click, scroll, resize, wait, wait_idle, query,
+    /// panes, set_pane_type, shutdown.
+    ///
+    /// Example:
+    ///   echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | termstage drive my_app.py
+    Drive {
+        /// A `.py` file with a StageApp.
+        app: String,
+        /// Screen size in cells.
+        #[arg(long, default_value = "100x30")]
+        size: String,
+    },
+    /// Serve a termstage app as MCP tools (stdio), so coding agents such as Claude Code
+    /// can see and operate it.
+    ///
+    /// Example (Claude Code):
+    ///   claude mcp add my-app -- termstage mcp my_app.py
+    Mcp {
+        /// A `.py` file with a StageApp.
+        app: String,
+        /// Screen size in cells.
+        #[arg(long, default_value = "100x30")]
+        size: String,
+    },
     /// Reaper sidecar (internal).
     #[command(name = "__reaper", hide = true)]
     Reaper,
@@ -191,6 +218,8 @@ where
             cell,
             look,
         }),
+        Command::Drive { app, size } => verbs::agent("drive", &app, &size),
+        Command::Mcp { app, size } => verbs::agent("mcp", &app, &size),
         Command::Reaper => termstage_core::reaper::sidecar_main(),
         Command::ReaperSelftest { shm } => reaper_selftest(shm.as_deref()),
     }

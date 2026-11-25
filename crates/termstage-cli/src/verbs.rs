@@ -254,3 +254,29 @@ fn outputs(
     }
     Ok(0)
 }
+
+/// `termstage drive` / `termstage mcp`: hand the app to Python, which owns its code.
+/// stdin/stdout are passed straight through (they carry the protocol).
+pub fn agent(mode: &str, app: &str, size: &str) -> i32 {
+    if !Path::new(app).is_file() {
+        return fail(&Error::friendly(
+            format!("App file \"{app}\" was not found"),
+            format!("termstage {mode} needs a .py file that defines a StageApp"),
+            format!("check the path, e.g. termstage {mode} examples/07_harness.py"),
+        ));
+    }
+    if let Err(e) = size_arg(size, "--size", "--size 100x30") {
+        return fail(&e);
+    }
+    let status = std::process::Command::new(python())
+        .args(["-m", "termstage._agent", mode, app, "--size", size])
+        .status();
+    match status {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => fail(&Error::friendly(
+            format!("Could not start Python for termstage {mode}"),
+            e.to_string(),
+            "install termstage in a Python environment (pip install termstage) and run `termstage` from it",
+        )),
+    }
+}

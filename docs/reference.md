@@ -43,8 +43,29 @@ Bundled fonts and which writing systems have fonts available.
 | `set_theme(name)` | Switch the theme while running |
 | `mount(widget)` | Add a widget at the end of the screen |
 | `exit()` | Quit |
+| `panes()` | Every pane: `id`, `type`, `bounds`, `focused`, `stashed` |
+| `drive(size=(80, 24), *, cell=(16, 32)) -> Driver` | Run without a terminal, step by step (use with `with`) |
+| `capture_text()`, `capture_tree()`, `capture_png()` | The live screen while the app runs |
+| `await ask_permission(question, *, tool=None, args=None)` | Pop-up: returns `"allow"`, `"always"` or `"deny"` |
+| `PREFIX = "ctrl+space"` | Class attribute: the key that reaches the app from a terminal pane |
 
-Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`.
+Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`,
+`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`.
+
+### `class Driver`
+Made by `app.drive()`; use it in a `with` block.
+
+| Member | Description |
+|---|---|
+| `press(key)`, `type(text)`, `click("#id" or (x, y))`, `scroll(rows, target=None)` | Act like a person |
+| `wait(seconds)`, `wait_idle()`, `resize(cols, rows)`, `step({...})` | Time, size, any `run_headless` step |
+| `snapshot(*, settle=False, png=False) -> Snapshot` | The screen now |
+| `query(id) -> dict | None`, `panes()` | Look at widgets and panes |
+| `close()` | Stop (done by `with`) |
+
+### pytest: `stage_snapshot` fixture
+`stage_snapshot.assert_match(snap, name=None, *, png=False, tolerance=0.002)` — compare with
+the saved copy in `__snapshots__/` (created on the first run). Refresh with `pytest --stage-update`.
 
 ### `class Snapshot`
 | Member | Description |
@@ -81,11 +102,39 @@ All widgets accept `id`, `theme`, `accent` and (most) `animate`, `visible`,
 | `StageTabs(children)` | list of widgets | `active` | `on_change(index)` |
 | `StageModal(children)` | list of widgets | `title`, `icon`, `dismissable` | `on_close()` |
 | `StageBar(text)` | text | `hints` | — |
+| `StageChat(messages)` | list of `{"role", "text"}` | `height` | `on_copy(text)` |
+| `StageMarkdown(text)` | Markdown | `height` | — |
+| `StagePrompt(text)` | starting text | `placeholder`, `title`, `commands`, `mentions`, `max_lines` | `on_submit(text)`, `on_change(text)` |
+| `StageCode(source)` | code | `language`, `path`, `line_numbers`, `height` | — |
+| `StageDiff((old, new))` | a pair of texts, or `None` | `path`, `height` | `on_decide({"hunk", "decision"})` |
+| `StageToolCall(name)` | tool name | `args`, `status`, `output`, `expanded` | — |
+| `StagePermission(question)` | text | `tool`, `args`, `border` | `on_decide(choice)` |
+| `StageTerminal(command)` | command (`""` = your shell) or list | `cwd`, `title`, `height` | — |
+| `StageLog(text)` | starting text | `max_lines`, `filter`, `height` | — |
+| `StagePane(type, **options)` | a pane type | the type's options | `on_change(type)` |
 
 ### Methods on every widget
 `update(content=None, **options)` · `load(content)` · `show()` · `hide()` ·
 `focus()` · `split(widget, direction="horizontal")` · `remove()` · `value` ·
 `detach()` / `attach()` (*coming in Milestone 5*). Containers also have `add(widget)`.
+
+### Extra methods
+| Widget | Methods |
+|---|---|
+| `StageChat` | `add(role, text="", *, name=None) -> ChatMessage`, `add_tool(name, args=None) -> ChatMessage`, `clear()`, `messages` |
+| `ChatMessage` | `append(text)`, `update(text)`, `finish(output="", *, ok=True)` (tool calls) |
+| `StageMarkdown` | `append(text)`, `clear()` |
+| `StagePrompt` | `clear()` |
+| `StageDiff` | `accept_all()`, `reject_all()`, `decide(hunk, "accept"/"reject")`, `result` |
+| `StageToolCall` | `finish(output="", *, ok=True)`, `append(text)` |
+| `StageTerminal` | `send(text)`, `restart()`, `screen` |
+| `StageLog` | `append(text_or_lines)`, `clear()`, `filter(text)` |
+| `StagePane` | `set_type(type, **options)`, `switch(type)`, `type`, `content` |
+| `StageCode` | `StageCode.from_file(path)` |
+
+### `@ts.pane_type(name, *, title=None, icon="cube")`
+Register a function returning a widget as a pane type (offered in every pane's menu).
+Built-in types: `chat`, `terminal`, `files`, `diff`, `code`, `markdown`, `log`, `empty`.
 
 ### `Style(padding=None, rounded=None, accent=None, shadow=None, width=None, height=None, grow=None)`
 Reusable look settings for `style=`.

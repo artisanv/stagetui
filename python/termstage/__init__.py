@@ -23,8 +23,22 @@ from __future__ import annotations
 
 from ._core import Canvas, TermstageError, __version__
 from ._inspect import fonts, inspect
-from .app import Snapshot, StageApp
+from .app import Driver, Snapshot, StageApp
 from .component import component
+from .harness import (
+    ChatMessage,
+    StageChat,
+    StageCode,
+    StageDiff,
+    StageLog,
+    StageMarkdown,
+    StagePane,
+    StagePermission,
+    StagePrompt,
+    StageTerminal,
+    StageToolCall,
+    pane_type,
+)
 from .verbs import draw, show
 from .widgets import (
     Stage,
@@ -49,6 +63,8 @@ from .widgets import (
 
 __all__ = [
     "Canvas",
+    "ChatMessage",
+    "Driver",
     "Snapshot",
     "Stage",
     "StageApp",
@@ -56,17 +72,27 @@ __all__ = [
     "StageButton",
     "StageCanvas",
     "StageCard",
+    "StageChat",
     "StageCheckbox",
+    "StageCode",
+    "StageDiff",
     "StageImage",
     "StageInput",
+    "StageLog",
+    "StageMarkdown",
     "StageModal",
+    "StagePane",
+    "StagePermission",
     "StageProgress",
+    "StagePrompt",
     "StageSelect",
     "StageSpinner",
     "StageSplit",
     "StageTable",
     "StageTabs",
+    "StageTerminal",
     "StageText",
+    "StageToolCall",
     "StageTree",
     "Style",
     "TermstageError",
@@ -75,5 +101,6 @@ __all__ = [
     "draw",
     "fonts",
     "inspect",
+    "pane_type",
     "show",
 ]

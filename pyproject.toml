@@ -32,6 +32,9 @@ classifiers = [
 [project.scripts]
 termstage = "termstage._core:cli_main"
 
+[project.entry-points.pytest11]
+termstage = "termstage.testing"
+
 [dependency-groups]
 dev = ["maturin>=1.9,<2", "pytest>=8"]
 

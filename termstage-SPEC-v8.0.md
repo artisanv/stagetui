@@ -16,6 +16,7 @@
 | Arabic/RTL | cosmic-text pixels only | **Dual path**: Rust-shaped presentation forms in cells + pixel runs where graphics exist | Works on every terminal, not just graphics ones |
 | Shared memory | Reusable ring buffer | Per-frame named segments (terminal unlinks after read) | Matches the actual Kitty `t=s` contract |
 | Sessions | Single process/terminal | **Session/View split** → pane detach/reattach to another terminal window | New feature (§7) |
+| Panes | Fixed widgets per split | **Blender-style pane types + workspaces**: any pane can be switched to chat, shell, diff, files, … and layouts saved/restored | Owner's idea (added after Milestone 3): one workspace model for humans and harnesses (§7.1–7.2) |
 | CLI alias | `ts` | **Removed** (`ts` collides with moreutils) | Avoid clobbering a common tool |
 
 ---
@@ -237,7 +238,7 @@ Rust core          Session ── widget tree ── taffy layout ── paint
 
 ---
 
-## 7. Sessions, Pane Detach & Reattach
+## 7. Sessions, Pane Types, Workspaces, Detach & Reattach
 
 **Goal:** any pane (video, agent log, shell, chat) can pop out into its own terminal window and snap back, without interrupting it.
 
@@ -246,11 +247,33 @@ Rust core          Session ── widget tree ── taffy layout ── paint
 * **IPC:** `interprocess` local sockets (Unix domain sockets / Windows named pipes), `postcard`-framed messages. Each View renders with **its own** terminal's capabilities (a Kitty window and a Windows Terminal window can view the same session).
 * **Terminal launcher** (auto-detected, overridable via `detach_launcher=`): Kitty (`kitty @ launch --type=os-window`, else `kitty -e`), WezTerm (`wezterm cli spawn --new-window`), Ghostty, Windows Terminal (`wt.exe -w new`), iTerm2/Terminal.app (AppleScript), GNOME Terminal, foot, Alacritty, `$TERMINAL -e`. Inside tmux → new tmux window. Over SSH → print the `termstage attach` command.
 
+### 7.1 Pane types — the Blender-style "what's in this pane?" switcher
+
+Inspired by Blender's editor-type menu: every pane of a split can be **switched to show anything**, and the screen is the user's to arrange.
+
+* **`StagePane(type, **args)`** — a pane whose content comes from a registered **pane type**. Built-in types: `"chat"`, `"terminal"` (embedded PTY shell or any command, e.g. `vim`, `htop`, `git`), `"diff"`, `"code"`, `"files"` (tree of a folder), `"log"`, `"markdown"`, `"empty"` (a picker).
+  ```python
+  StageSplit([StagePane("chat"), StageSplit([StagePane("diff"), StagePane("terminal", command="bash")], direction="vertical")])
+  ```
+* **Custom types:** `@ts.pane_type("metrics", title="Metrics", icon="bolt")` registers a function that returns widgets. Plugins (§8) register `"video"`, `"web"`, `"3d"` into the same menu.
+* **Switcher:** clicking a pane's title (or `prefix` then `space`) opens a menu of registered types; choosing one swaps the content. The old content is **stashed, not destroyed** — switching back restores it, and running shells/streams keep running.
+* **Split / join / close** from the same menu and from keys (`|`, `-`, `x` after the prefix), plus mouse-drag dividers (done in M3). Splitting an `"empty"` pane shows the picker.
+* **Prefix key:** a `"terminal"` pane receives every key, so termstage listens for a prefix (default `ctrl+space`, configurable `PREFIX = "ctrl+a"`) — tmux-style — to reach its own commands.
+* **Agents:** `app.panes()` → `[{id, type, args, bounds, focused}]`; `pane.set_type("diff", path=...)`; driver/MCP tools `list_panes`, `open_pane`, `set_pane_type`, `split_pane`, `close_pane`, `focus_pane`. A harness opens a diff while editing, a shell while running tests — and the human can rearrange it.
+* **Honest limits:** "any application" means **terminal applications**. Windowed apps (browser, Blender itself) appear only as pixel streams via plugins (§8) — heavy and not in core. Pictures drawn by apps *inside* a terminal pane are not passed through in the first version (text only).
+
+### 7.2 Workspaces — named layouts, like Blender's Layout / Modeling tabs
+
+* `app.save_workspace("review")` serializes the layout tree — splits, ratios, pane types and their args — to JSON (default `~/.config/termstage/workspaces/<app>.json`, or any path). `app.load_workspace("review")` restores it; live content (shells, chats) is re-attached by id where it still exists.
+* `StageWorkspaces(["Code", "Review", "Agent"])`: workspace tabs across the top; switching keeps every workspace's panes alive in the Session.
+* Detached panes (§7) remember their type and come back to the same slot.
+* `termstage attach <session>` restores the last workspace of a session.
+
 ---
 
 ## 8. Plugins (later, optional)
 
-Rust trait `PaneSource` (frames + optional audio + input handling + lifecycle), in-process or out-of-process.
+Rust trait `PaneSource` (frames + optional audio + input handling + lifecycle), in-process or out-of-process. Every plugin registers a **pane type** (§7.1), so it appears in the pane switcher.
 * `termstage-video` — FFmpeg decode, `cpal` 48 kHz stereo, per-pane volume/mute/focus ducking, A/V sync.
 * `termstage-web` — Rust CDP client (`chromiumoxide`) driving the user's installed Chrome/Chromium (no Node/Playwright), audio left native (unmuted) with per-pane gain via injected script; `blitz` (Rust HTML/CSS, no JS) for lightweight HTML/Markdown previews.
 * `termstage-3d` — `wgpu` offscreen (Vulkan/Metal/DX12/WARP; Linux software path needs lavapipe/llvmpipe).
@@ -352,15 +375,17 @@ termstage/
 * **Tests:** split reflow without overlap, grammar conformance across all widgets, motion under virtual clock, RTL mirroring snapshots.
 * **Hand test:** `python examples/05_ui_gallery.py`, `python examples/06_splits.py`.
 
-### Milestone 4 — Harness Kit & Agent Interface → first alpha release
+### Milestone 4 — Harness Kit, Pane Types & Agent Interface → first alpha release
 * `StageMarkdown`, `StageCode`, `StageDiff`, `StagePrompt`, `StageChat`, `StageToolCall`, `StagePermission`, `StageTerminal`, `StageLog`.
-* `run_headless(steps)`, `capture_*`, `termstage drive`, `termstage mcp`, pytest plugin, `AGENTS.md`, `llms.txt`.
-* **Tests:** streaming throughput, PTY round-trip on all OSes (ConPTY on Windows), driver protocol conformance, MCP tool listing/calls.
-* **Hand test:** `python examples/07_harness.py`; then have a coding agent run `termstage mcp examples/07_harness.py` and operate it.
+* **Pane types (§7.1):** `StagePane`, type registry + `@ts.pane_type`, switcher menu, stash/restore, prefix key, built-in types (chat, terminal, diff, code, files, log, markdown, empty), `app.panes()`.
+* `run_headless(steps)` (done in M3), `capture_*`, `termstage drive`, `termstage mcp` (incl. pane tools), pytest plugin, `AGENTS.md`, `llms.txt`.
+* **Tests:** streaming throughput, PTY round-trip on all OSes (ConPTY on Windows), pane type switch keeps stashed state and live shells, prefix routing, driver protocol conformance, MCP tool listing/calls.
+* **Hand test:** `python examples/07_harness.py`; `python examples/08_workspace.py` (Blender-style: split, switch a pane to "terminal", run `htop`, switch back); then have a coding agent run `termstage mcp examples/07_harness.py` and operate it.
 
-### Milestone 5 — Sessions, Detach & Reattach
+### Milestone 5 — Sessions, Workspaces, Detach & Reattach
 * IPC Views, auth token, `termstage sessions`, `termstage attach`, pane detach/reattach, whole-session detach, launcher matrix, per-View capabilities.
-* **Tests:** detach/reattach keeps PTY and stream state, two Views with different protocols on one session, socket permission checks, no orphan processes after window close.
+* **Workspaces (§7.2):** save/load layouts, `StageWorkspaces` tabs, detached panes keep their type and slot.
+* **Tests:** detach/reattach keeps PTY and stream state, two Views with different protocols on one session, socket permission checks, no orphan processes after window close, workspace round-trip (save → load → identical tree).
 * **Hand test:** `python examples/09_detach.py` → `ctrl+shift+d` pops the pane into a new window; closing it snaps the pane back.
 
 ### Milestone 6 — Plugins & 1.0

@@ -8,15 +8,23 @@
 mod bar;
 mod button;
 mod card;
+mod chat;
 mod checkbox;
+mod code;
+mod diff;
 mod icons;
 mod image_view;
 mod input;
+mod log;
+pub mod markdown;
 mod progress;
+mod prompt;
 mod select;
 mod spinner;
 mod table;
+mod terminal;
 mod text_block;
+mod tool_call;
 mod tree_view;
 
 use std::time::Duration;
@@ -24,15 +32,23 @@ use std::time::Duration;
 pub use bar::Bar;
 pub use button::{Button, Variant};
 pub use card::Card;
+pub use chat::Chat;
 pub use checkbox::Checkbox;
+pub use code::Code;
+pub use diff::Diff;
 pub use icons::{ICONS, icon, mirror};
 pub use image_view::ImageView;
 pub use input::Input;
+pub use log::Log;
+pub use markdown::Markdown;
 pub use progress::Progress;
+pub use prompt::Prompt;
 pub use select::Select;
 pub use spinner::Spinner;
 pub use table::Table;
+pub use terminal::{Terminal, default_shell};
 pub use text_block::TextBlock;
+pub use tool_call::{Permission, ToolCall, tool_from};
 pub use tree_view::{TreeItem, TreeView};
 
 use ratatui_core::layout::Rect;
@@ -101,6 +117,8 @@ pub enum Reaction {
     Redraw,
     /// Handled; redraw and tell the app (`on_<name>` in Python).
     Emit(&'static str, Value),
+    /// Handled; put this text on the clipboard (and tell the app: `on_copy`).
+    Copy(String),
 }
 
 /// What every widget can do.
@@ -150,6 +168,28 @@ pub trait Widget {
         Reaction::Ignored
     }
     fn close_popup(&mut self) {}
+    /// Run a widget-specific method (`chat.add`, `log.append`, …) with JSON args.
+    fn call(&mut self, method: &str, _args: &Value) -> crate::Result<Value> {
+        Err(crate::Error::friendly(
+            format!("This widget has no method \"{method}\""),
+            "methods are specific to each kind of widget",
+            "see docs/reference.md for what each widget can do",
+        ))
+    }
+    /// Changed by something outside the app (a shell printed output).
+    fn poll_dirty(&self) -> bool {
+        false
+    }
+    /// Takes every key while focused (an embedded terminal); only the
+    /// prefix key reaches the app.
+    fn captures_keys(&self) -> bool {
+        false
+    }
+    /// A raw mouse event at `(x, y)` relative to the widget; return `Ignored`
+    /// to get the normal click / wheel handling.
+    fn mouse(&mut self, _m: crate::input::MouseKind, _x: u16, _y: u16, _area: Rect) -> Reaction {
+        Reaction::Ignored
+    }
 }
 
 pub(crate) fn object(v: Value) -> Map<String, Value> {

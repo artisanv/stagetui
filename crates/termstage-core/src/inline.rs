@@ -61,6 +61,8 @@ fn card_session(text: &str, opts: &ShowOptions) -> Result<Session> {
         dir: None,
         bindings: Vec::new(),
         reduce_motion: None,
+        prefix: None,
+        pane_types: Vec::new(),
         children: vec![NodeSpec {
             kind: "card".into(),
             content: serde_json::Value::String(text.to_string()),

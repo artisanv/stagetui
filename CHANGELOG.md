@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a1] — first alpha (not yet published)
+
+### Added — Milestone 4b: agent interface
+- `termstage drive app.py` (JSON-RPC 2.0 over stdio) and `termstage mcp app.py` (MCP tools: snapshot with optional PNG, press, type, click, scroll, resize, wait, query, list_panes, set_pane_type); app output is kept off the protocol channel.
+- `StageApp.drive()` → `Driver` for step-by-step headless control; `run_headless` is built on it.
+- `capture_text()`, `capture_tree()`, `capture_png()` on running apps.
+- pytest plugin (`stage_snapshot` fixture, `--stage-update`), golden text and PNG comparison with a tolerance (`_core.png_diff`).
+- Docs: Let AI agents see and use your app.
+
+### Added — Milestone 4a: harness kit and Blender-style panes
+- `StageChat` (user / assistant / system / tool messages, streaming via `msg.append`, follow mode, select + copy with OSC 52), `StageMarkdown` (streaming Markdown with a cache of finished blocks; headings, emphasis, lists, task lists, quotes, tables, syntax-highlighted code blocks; RTL paragraphs), `StagePrompt` (multi-line, history, `/` commands and `@` file completion, paste).
+- `StageCode` (syntect, 150+ languages, line numbers), `StageDiff` (similar; hunks with accept/reject, `result`), `StageToolCall` (collapsible, spinner/✓/✗), `StagePermission` and `await app.ask_permission(...)`, `StageLog` (ring buffer, level colors, filter).
+- `StageTerminal`: a real program in a pseudo-terminal (portable-pty, ConPTY on Windows) rendered with vt100; keys, paste, mouse and scrollback; tracked by the reaper.
+- Blender-style panes: `StagePane(type, **options)`, header with type menu and split/close buttons, stash-and-restore when switching, `@ts.pane_type`, `app.panes()`, prefix key (`Ctrl+Space`) for pane commands from anywhere.
+- Widget methods over one channel (`call`), outside wake-ups for shell output, clipboard (OSC 52).
+- Examples `07_harness.py` (pretend agent) and `08_workspace.py`; docs: Build an AI agent harness, Panes.
+- New dependencies: pulldown-cmark, syntect (pure-Rust regex), similar, portable-pty, vt100.
+
 ### Added — Milestone 3: layout, widgets, interaction, motion
 - `taffy` flex/grid layout: `Stage` (vertical, horizontal, grid), `width`/`height` in cells or `%`, `grow`; content centers when it fits and **scrolls** when it doesn't (scrollbars, wheel, PageUp/PageDown).
 - `StageSplit` with ratios and mouse-draggable dividers; `widget.split()` / `widget.remove()` at runtime (nested splits collapse back).

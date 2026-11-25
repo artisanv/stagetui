@@ -48,6 +48,15 @@ Files are saved in the folder you run the command from (or wherever the path
 points), and `render` tells you exactly where: `✓ saved /home/you/project/app.png`.
 With none of `--out`, `--text`, `--tree`, the screen text is printed instead.
 
+## `termstage mcp` and `termstage drive` — let agents use an app
+
+```bash
+termstage mcp my_app.py                  # MCP tools for coding agents (stdin/stdout)
+termstage drive my_app.py --size 120x40  # JSON-RPC 2.0, one message per line
+```
+
+See [Let AI agents see and use your app](agents.md).
+
 ## `termstage doctor` — what can my terminal do?
 
 ```bash

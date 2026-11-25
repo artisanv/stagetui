@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::{Error, Result};
 
 /// A 24-bit color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 impl Rgb {

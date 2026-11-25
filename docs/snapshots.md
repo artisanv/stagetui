@@ -114,6 +114,25 @@ assert "Hello, Sara!" in snap.text
 | `{"wait_idle": True}` | Let animations finish |
 | `{"resize": [100, 30]}` | Change the screen size |
 
+## Golden snapshot tests with pytest
+
+termstage comes with a pytest plugin. The `stage_snapshot` fixture saves a copy
+of the screen the first time a test runs, and checks against it afterwards:
+
+<!-- not-tested -->
+```python
+def test_home_screen(stage_snapshot):
+    snap = MyApp().run_headless((80, 24))
+    stage_snapshot.assert_match(snap)  # compares the text
+    stage_snapshot.assert_match(snap, "picture", png=True)  # also the picture
+```
+
+The copies live in `__snapshots__/` next to the test file — commit them. When
+the screen changes on purpose, refresh them with `pytest --stage-update` and
+look at the diff before committing. Picture comparisons allow a tiny difference
+(0.2 % of pixels by default, `tolerance=`) so font rendering on another machine
+doesn't fail the test.
+
 For byte-identical PNGs across different machines, use only termstage's bundled
 fonts: set the environment variable `TERMSTAGE_SYSTEM_FONTS=0`.
 
@@ -137,6 +156,5 @@ An agent can build an app, look at it, and fix it — in a loop, with no human:
 4. Look at the PNG if the agent can see images.
 5. Repeat.
 
-> *Coming soon (Milestone 4):* `termstage drive` and `termstage mcp`, so agents
-> can press keys and click in a running app from the command line too
-> (in Python, `steps=` already does it).
+AI agents can also operate apps themselves with `termstage mcp` and
+`termstage drive` — see [Let AI agents see and use your app](agents.md).

@@ -10,6 +10,7 @@ pub mod arabic;
 mod arabic_table;
 pub mod bidi;
 pub mod fonts;
+pub mod highlight;
 pub mod paragraph;
 pub mod raster;
 
