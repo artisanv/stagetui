@@ -1,12 +1,12 @@
 //! Built-in icon names → single-cell Unicode fallbacks.
 //!
 //! These glyphs are deliberately narrow, non-emoji code points so every terminal
-//! renders them in exactly one cell. Pixel (SVG) icons arrive in Milestone 3.
+//! renders them in exactly one cell, without needing a Nerd Font.
 
 use crate::{Error, Result};
 
 /// `(name, glyph)` pairs.
-pub const ICONS: [(&str, &str); 22] = [
+pub const ICONS: [(&str, &str); 30] = [
     ("sparkles", "✦"),
     ("check", "✓"),
     ("x", "✗"),
@@ -29,7 +29,27 @@ pub const ICONS: [(&str, &str); 22] = [
     ("code", "⌘"),
     ("gear", "⚙"),
     ("heart", "♥"),
+    ("send", "➤"),
+    ("arrow-right", "→"),
+    ("arrow-left", "←"),
+    ("plus", "+"),
+    ("minus", "−"),
+    ("dot", "•"),
+    ("circle", "○"),
+    ("home", "⌂"),
 ];
+
+/// The mirrored form of a directional glyph (for right-to-left layouts).
+pub fn mirror(glyph: &'static str) -> &'static str {
+    match glyph {
+        "▶" => "◀",
+        "»" => "«",
+        "❯" => "❮",
+        "→" => "←",
+        "←" => "→",
+        other => other,
+    }
+}
 
 /// Resolve an icon name.
 pub fn icon(name: &str) -> Result<&'static str> {

@@ -15,7 +15,9 @@ def stub_names() -> set[str]:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
             names.add(node.name)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
+            is_alias = isinstance(node.annotation, ast.Name) and node.annotation.id == "TypeAlias"
+            if not is_alias:  # type aliases exist only for type checkers
+                names.add(node.target.id)
     return names
 
 

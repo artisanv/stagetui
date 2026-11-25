@@ -73,6 +73,47 @@ def test_greeting_is_shown():
 test_greeting_is_shown()
 ```
 
+## Press keys and click — without a terminal
+
+`steps` drive your app like a person would. Handlers run, animations advance on
+a virtual clock, and you get the snapshot at the end:
+
+```python
+from termstage import StageApp, StageButton, StageCard, StageInput
+
+
+class Greeter(StageApp):
+    def compose(self):
+        return [
+            StageInput(placeholder="Name", id="name"),
+            StageButton("Greet", id="greet", on_click=self.greet),
+            StageCard("…", id="out"),
+        ]
+
+    def greet(self):
+        self.query("#out").update(f"Hello, {self.query('#name').value}!")
+
+
+snap = Greeter().run_headless(
+    (50, 14),
+    steps=[
+        {"type": "Sara"},  # type into the focused text box
+        {"click": "#greet"},  # click a widget by id (or {"click": [x, y]})
+    ],
+)
+assert "Hello, Sara!" in snap.text
+```
+
+| Step | What it does |
+|---|---|
+| `{"press": "tab"}` | Press a key (`"enter"`, `"ctrl+s"`, `"esc"`, `"f1"`…) |
+| `{"type": "hello"}` | Type text |
+| `{"click": "#id"}` | Click the middle of a widget (or `[x, y]`) |
+| `{"scroll": 5}` | Scroll down 5 rows (`{"scroll": {"target": "#list", "rows": -3}}` scrolls a widget up) |
+| `{"wait": 0.5}` | Let 0.5 seconds of (virtual) time pass |
+| `{"wait_idle": True}` | Let animations finish |
+| `{"resize": [100, 30]}` | Change the screen size |
+
 For byte-identical PNGs across different machines, use only termstage's bundled
 fonts: set the environment variable `TERMSTAGE_SYSTEM_FONTS=0`.
 
@@ -97,4 +138,5 @@ An agent can build an app, look at it, and fix it — in a loop, with no human:
 5. Repeat.
 
 > *Coming soon (Milestone 4):* `termstage drive` and `termstage mcp`, so agents
-> can also press keys and click in a running app.
+> can press keys and click in a running app from the command line too
+> (in Python, `steps=` already does it).

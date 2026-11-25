@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Milestone 3: layout, widgets, interaction, motion
+- `taffy` flex/grid layout: `Stage` (vertical, horizontal, grid), `width`/`height` in cells or `%`, `grow`; content centers when it fits and **scrolls** when it doesn't (scrollbars, wheel, PageUp/PageDown).
+- `StageSplit` with ratios and mouse-draggable dividers; `widget.split()` / `widget.remove()` at runtime (nested splits collapse back).
+- `StageTabs`, `StageModal` (dimmed backdrop, focus trap, Esc/click-outside, pictures underneath occluded), `StageBar` (status + shortcut hints), toasts via `app.notify()`.
+- Controls: `StageButton` (3 variants), `StageInput` (RTL-aware editing, paste, password), `StageCheckbox`, `StageSelect` (dropdown), `StageProgress` (smooth eighth blocks, indeterminate), `StageSpinner`, `StageTable`, `StageTree`.
+- Focus and input: Tab order, hover highlights, click-to-focus, mouse wheel, Kitty keyboard + legacy key normalization, `BINDINGS` with built-in actions, live theme switching.
+- Motion: `fade`, `slide-up`, `slide-left`, `pop`, `pulse` — deterministic under a virtual clock; `reduce_motion` / `TERMSTAGE_REDUCE_MOTION=1`.
+- Live `StageCanvas(on_frame=..., fps=...)` with back-pressure.
+- Threaded runtime (input + dirty-driven render threads, GIL released); Python handlers may be `async`; `await app.run_async()`.
+- Headless `run_headless(steps=[...])`: press, type, click, scroll, wait, resize; `settle=`.
+- Lifecycle verbs on every widget: `update`, `load`, `show`, `hide`, `focus`, `split`, `remove`, `value`.
+- `@ts.component` accepts functions returning a widget or a list; `Style` gains `shadow`, `width`, `height`, `grow`.
+- Sixel/iTerm2/Kitty-direct views re-send only pictures that changed (live canvases stay cheap).
+- Examples `05_ui_gallery.py`, `06_splits.py`; docs: Layouts, Making apps interactive, Motion.
+
+### Changed
+- Overflowing content now scrolls instead of being hidden behind a "more below" hint.
+- `_core.run_app` / `run_headless` / `render_png` replaced by the `_core.App` class.
+
 ### Added — Milestone 2: text, Arabic/RTL, fonts, pictures
 - Arabic/Persian/Urdu contextual shaping into presentation forms (tables generated from Unicode data), lam-alef ligatures, harakat kept on their letters.
 - UAX #9 BiDi reordering per line, by grapheme cluster, with bracket mirroring; layout measured on shaped widths.

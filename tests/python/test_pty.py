@@ -109,3 +109,84 @@ def test_vte_gets_presentation_forms_and_explicit_bidi():
     assert b"\x1b[8l" in out, "explicit BiDi mode not enabled"
     assert b"\x1b[8h" in restore_tail(out), "BiDi mode not restored"
     assert "\ufee3".encode() in out, "Arabic should be shaped into presentation forms"
+
+
+INTERACTIVE_APP = """
+import sys
+from termstage import Stage, StageApp, StageButton, StageCard
+
+class App(StageApp):
+    def __init__(self):
+        super().__init__()
+        self.clicks = 0
+
+    def compose(self):
+        return [
+            StageCard("waiting", id="status", title="Status"),
+            StageButton("Press me", id="btn", on_click=self.pressed),
+        ]
+
+    async def pressed(self):
+        self.clicks += 1
+        self.query("#status").update(["", "first-click", "second-press"][min(self.clicks, 2)])
+
+app = App()
+if len(sys.argv) > 1:  # print where the button is (headless, same size)
+    b = app.run_headless((100, 30)).query("btn")["bounds"]
+    print(b["x"] + b["w"] // 2, b["y"])
+else:
+    app.run()
+    print("RESULT", app.clicks)
+"""
+
+
+def test_mouse_and_keys_reach_python_handlers(tmp_path):
+    import fcntl
+    import pty
+    import struct
+    import subprocess
+    import termios
+
+    script = tmp_path / "interactive.py"
+    script.write_text(INTERACTIVE_APP, encoding="utf-8")
+    where = subprocess.run(
+        [sys.executable, str(script), "where"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TERMSTAGE_HEADLESS": "1"},
+        check=True,
+    )
+    bx, by = map(int, where.stdout.split())
+
+    env = {**os.environ, "TERM": "xterm-kitty", "TERMSTAGE_PROBE_TIMEOUT_MS": "2000"}
+    for key in ("TERMSTAGE_HEADLESS", "VTE_VERSION", "TMUX", "SSH_TTY", "SSH_CONNECTION"):
+        env.pop(key, None)
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(sys.executable, [sys.executable, str(script)], env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 1000, 600))
+    out = bytearray()
+    try:
+        assert read_until(fd, b"waiting", 15, out), out[-2000:]
+        # A real SGR mouse click (press + release) on the button.
+        os.write(fd, f"\x1b[<0;{bx + 1};{by + 1}M\x1b[<0;{bx + 1};{by + 1}m".encode())
+        assert read_until(fd, b"first-click", 10, out), out[-2000:]
+        # Keyboard: Tab to the button, Enter to press it.
+        os.write(fd, b"\t")
+        time.sleep(0.2)
+        os.write(fd, b"\r")
+        # Only changed cells are sent, so wait for a redraw rather than the whole word.
+        n = len(out)
+        assert read_until(fd, b"\x1b[?2026l", 10, out) and len(out) > n
+        time.sleep(0.3)
+        os.write(fd, b"\x1b[113u" if b"\x1b[>1u" in out else b"q")
+        assert read_until(fd, b"RESULT 2", 10, out), out[-2000:]
+        _, status = os.waitpid(pid, 0)
+    finally:
+        try:
+            os.kill(pid, 9)
+        except ProcessLookupError:
+            pass
+        os.close(fd)
+    assert os.waitstatus_to_exitcode(status) == 0
+    assert b"\x1b[?1049l" in restore_tail(bytes(out)) or b"\x1b[?1049l" in out

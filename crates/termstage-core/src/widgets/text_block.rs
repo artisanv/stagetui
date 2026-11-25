@@ -1,11 +1,10 @@
-//! `StageText`: plain wrapped text on the app background.
+//! `StageText`: plain wrapped text, a little softer than card text.
 
 use ratatui_core::layout::Rect;
 use serde_json::{Map, Value, json};
 
-use super::{Cx, Paint, object};
+use super::{Cx, PaintCx, Widget, object};
 use crate::frame::Frame;
-use crate::style::Theme;
 use crate::text::{self, Direction};
 
 #[derive(Debug, Clone)]
@@ -24,7 +23,7 @@ impl TextBlock {
     }
 }
 
-impl Paint for TextBlock {
+impl Widget for TextBlock {
     fn measure(&self, max_width: u16, _cx: &Cx) -> (u16, u16) {
         let natural = text::layout(&self.content, usize::MAX / 2, self.base_dir())
             .iter()
@@ -36,7 +35,8 @@ impl Paint for TextBlock {
         (w, h.min(usize::from(u16::MAX)) as u16)
     }
 
-    fn paint(&self, area: Rect, frame: &mut Frame, theme: &Theme, _cx: &Cx) {
+    fn paint(&self, area: Rect, frame: &mut Frame, p: &PaintCx) {
+        let theme = p.theme;
         let area = area.intersection(frame.area());
         for (y, line) in (area.top()..area.bottom()).zip(text::layout(
             &self.content,
@@ -49,7 +49,16 @@ impl Paint for TextBlock {
             } else {
                 area.left()
             };
-            frame.put_line(x, y, area.width, &line, theme.muted, theme.bg, false);
+            let bg = super::behind(frame, x, y, theme.bg);
+            frame.put_line(
+                x,
+                y,
+                area.width,
+                &line,
+                theme.fg.mix(theme.muted, 0.4),
+                bg,
+                false,
+            );
         }
     }
 

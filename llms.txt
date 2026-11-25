@@ -2,36 +2,43 @@
 
 > Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
 
-Status: Milestone 2 (text & pictures). APIs below exist today; everything else in the spec is planned.
+Status: Milestone 3 (layout, widgets, interaction, motion). APIs below exist today; the harness kit (Markdown, code, diff, prompt, chat, terminal), `termstage drive`/`mcp` (M4), detach/reattach (M5) and plugins (M6) are planned.
 
 ## Python API
 - `import termstage as ts`
 - `ts.show(content, *, title, icon, dir, theme, accent, width, height, fit)` — inline text card or picture (path, bytes, Canvas).
 - `ts.draw(fn=None, *, size=(640,360), background=None, out=None, show=True) -> Canvas` — draw with code.
-- `ts.inspect(*, headless=False, probe=True) -> dict` — terminal capabilities.
-- `ts.fonts() -> dict` — bundled fonts and script coverage.
-- `class StageApp` — set `theme`, `accent`; override `compose() -> list[widget]`.
-  - `.run()` — interactive; q / Esc / Ctrl+C quit.
-  - `.run_headless((cols, rows), *, cell=(10, 20)) -> Snapshot` — `.text` (reading order), `.tree` (JSON), `.png` (bytes), `.query("#id")`, `.save("x.png|.txt|.json")`.
-- Widgets: `StageCard(text)`, `StageText(text)`, `StageImage(path|bytes|Canvas, width=, height=, fit=)`, `StageCanvas(draw_fn, size=(w_px, h_px), width=, height=)`.
+- `ts.inspect(*, headless=False, probe=True) -> dict`; `ts.fonts() -> dict`.
+- `class StageApp` — class attrs `theme`, `accent`, `dir`, `BINDINGS=[(key, action[, description])]`, `reduce_motion`; override `compose() -> list[widget]`, optional `on_mount()`, `action_<name>()`.
+  - `.run()` / `await .run_async()` — interactive; q / Esc / Ctrl+C quit; handlers may be `async def`.
+  - `.run_headless((cols, rows), *, steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#id"}, {"scroll": 3}, {"wait": 0.5}, {"wait_idle": True}, {"resize": [w, h]}], cell=(16, 32), settle=True) -> Snapshot` — virtual clock, deterministic.
+  - Snapshot: `.text` (reading order), `.tree` (nested JSON: id, type, bounds, focused, on_screen, children; app `focus`, `dir`, `scroll`, `toasts`), `.png`, `.query("#id")`, `.save("x.png|.txt|.json")`.
+  - `.query("#id")`, `.focused`, `.focused_pane`, `.notify(text, icon=, accent=, timeout=)`, `.set_theme(name)`, `.mount(widget)`, `.exit()`.
+- Containers: `Stage(children, direction="vertical"|"horizontal", columns=, gap=, align=)`, `StageSplit(children, direction="horizontal", ratio=[...])` (draggable dividers), `StageTabs(children, active=, on_change=)` (page title/icon from children), `StageModal(children, title=, dismissable=, on_close=)` (hidden until `.show()`), `StageBar(text)` (status + BINDINGS hints).
+- Display: `StageCard(text, shadow=)`, `StageText(text)`, `StageImage(path|bytes|Canvas, width=, height=, fit=)`, `StageCanvas(draw_fn=None, size=(w_px, h_px), on_frame=fn(canvas, t), fps=30)`.
+- Controls: `StageButton(label, on_click=, icon=, variant="secondary"|"primary"|"danger")`, `StageInput(value, placeholder=, title=, password=, on_change=, on_submit=)`, `StageCheckbox(label, checked=, on_change=)`, `StageSelect(options, value=, on_change=)`, `StageProgress(0..1|None, label=)`, `StageSpinner(label)`, `StageTable(rows, headers=, height=, on_select=, on_submit=)`, `StageTree(dict|list, on_select=, on_submit=)`.
+- Every widget: `.update(content, **props)`, `.load(content)`, `.show()`, `.hide()`, `.focus()`, `.split(widget, direction=)`, `.remove()`, `.value`; containers `.add(widget)`.
 - `Canvas(width, height, background)`: clear, rect, rounded_rect, circle, line, polyline, gradient_rect, gradient_circle, text (shaped Arabic/Hindi), image, png, save.
-- `Style(padding=, rounded=, accent=)`, `@ts.component`, `ts.TermstageError` (`.what`, `.why`, `.fix`).
+- `Style(padding=, rounded=, accent=, shadow=, width=, height=, grow=)`, `@ts.component` (returns a widget or a list), `ts.TermstageError` (`.what`, `.why`, `.fix`).
 
-Universal props: id, theme ("aurora-dark" | "nordic-light" | "velvet-dusk" | "paper-soft" | "hacker-mint"), accent ("blue" | "mint" | "amber" | "rose" | "violet" | "#rrggbb"), rounded, padding ("compact" | "normal" | "spacious" | int), icon, dir ("auto" | "ltr" | "rtl"), animate (accepted; effect in Milestone 3).
+Universal props: id, theme ("aurora-dark" | "nordic-light" | "velvet-dusk" | "paper-soft" | "hacker-mint"), accent ("blue" | "mint" | "amber" | "rose" | "violet" | "#rrggbb"), rounded, padding ("compact" | "normal" | "spacious" | int), icon, dir ("auto" | "ltr" | "rtl"), animate ("none" | "fade" | "slide-up" | "slide-left" | "pulse" | "pop"), visible, width/height (cells or "50%"), grow.
+
+Built-in actions: quit, next_theme, focus_next, focus_previous, close_modal. Keys: "ctrl+s", "ctrl+shift+d", "alt+x", "f1", "enter", "esc", "tab", "pageup", "?", "ctrl+backslash".
 
 Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black", "gray", "red", "transparent".
 
-Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart.
+Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart, send, arrow-right, arrow-left, plus, minus, dot, circle, home.
 
 ## CLI
 - `termstage show <image|text> [--title --icon --dir --theme --accent --width --height --fit]`
-- `termstage render <app.py|image|text> [--out x.png] [--text x.txt] [--tree x.json] [--size 100x30] [--cell 10x20]`
+- `termstage render <app.py|image|text> [--out x.png] [--text x.txt] [--tree x.json] [--size 100x30] [--cell 16x32]`
 - `termstage inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
 - `termstage doctor` — plain-English report with fixes
 - `python -m termstage …` — same CLI
 
 ## Docs
 - [Docs index](docs/README.md)
+- [Layouts](docs/layout.md) · [Interaction](docs/events.md) · [Motion](docs/motion.md)
 - [Snapshots for agents](docs/snapshots.md)
 - [Reference](docs/reference.md)
 - [Spec](termstage-SPEC-v8.0.md)

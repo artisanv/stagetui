@@ -10,9 +10,9 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="termst
 ts.show("logo.png")
 ```
 
-> **Status: pre-alpha (Milestone 2 of 6).** Text cards, pictures, drawing,
-> Arabic/RTL and headless snapshots work today. Layouts, buttons, mouse,
-> animations and agent tools are on the way — see the [roadmap](#roadmap).
+> **Status: pre-alpha (Milestone 3 of 6).** Layouts, split panes, tabs, pop-ups,
+> buttons, text boxes, tables, the mouse, animations, live drawings, Arabic/RTL
+> and headless snapshots work today. Agent tools are next — see the [roadmap](#roadmap).
 
 ## Why termstage?
 
@@ -35,27 +35,38 @@ New to Python? Start with **[Getting started](docs/getting-started.md)** — it 
 ## A full-screen app
 
 ```python
-from termstage import StageApp, StageCard, StageCanvas
+from termstage import StageApp, StageBar, StageButton, StageCard, StageInput, StageSplit
 
 
-def chart(c):
-    c.polyline([(10, 90), (60, 40), (110, 60), (160, 20)], color="mint", width=4)
-
-
-class Hello(StageApp):
-    theme = "aurora-dark"
+class Chat(StageApp):
+    BINDINGS = [("ctrl+t", "next_theme", "Theme")]
 
     def compose(self):
         return [
-            StageCard("Welcome! Press q to quit.", title="Hello", icon="sparkles"),
-            StageCard("مرحبا بكم في termstage", title="عربي", accent="mint"),
-            StageCanvas(chart, size=(170, 100)),
+            StageSplit(
+                [
+                    StageCard("Welcome! Type below and press Enter.", title="Chat", id="log"),
+                    StageCard("مرحبا بكم في termstage", title="عربي", accent="mint"),
+                ],
+                ratio=[2, 1],  # drag the line between the panes with the mouse
+            ),
+            StageInput(placeholder="Say something…", on_submit=self.send),
+            StageButton("Celebrate", icon="sparkles", variant="primary", on_click=self.party),
+            StageBar("Ready"),
         ]
 
+    def send(self, text):
+        self.query("#log").update(f"You said: {text}")
 
-Hello().run()                                  # in your terminal
-Hello().run_headless((70, 24)).save("app.png")  # no terminal: text, tree or PNG
+    def party(self):
+        self.notify("Well done!", icon="check")
+
+
+Chat().run()  # in your terminal
+Chat().run_headless((80, 24)).save("app.png")  # no terminal: text, tree or PNG
 ```
+
+Try the tours: `python examples/05_ui_gallery.py` and `python examples/06_splits.py`.
 
 ## Command line
 
@@ -73,6 +84,9 @@ termstage doctor
 | [Getting started](docs/getting-started.md) | Install and write your first program |
 | [Show & draw](docs/show-and-draw.md) | Pictures and drawings in one line |
 | [Apps & widgets](docs/apps.md) | Cards, text, images, canvases, themes, icons |
+| [Layouts](docs/layout.md) | Rows, grids, split panes, tabs, pop-ups, scrolling |
+| [Making apps interactive](docs/events.md) | Buttons, inputs, lists, shortcuts, mouse, `async` |
+| [Motion](docs/motion.md) | Animations and live drawings |
 | [World languages](docs/world-languages.md) | Arabic, Persian, Hindi, CJK |
 | [Snapshots](docs/snapshots.md) | Tests, CI and AI agents |
 | [Command line](docs/command-line.md) | `show`, `render`, `doctor`, `inspect` |
@@ -83,7 +97,7 @@ termstage doctor
 
 1. ✅ Terminal core: capability detection, renderer, headless snapshots, zero-zombie cleanup
 2. ✅ Text & pictures: Arabic/RTL shaping, bundled fonts, Kitty/Sixel/iTerm2 images, Canvas, PNG export
-3. Layouts & interaction: split panes, buttons, inputs, mouse, themes, animations
+3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. Agent harness kit: streaming Markdown, code, diffs, prompt, tool cards, embedded shell, `drive`/`mcp`
 5. Sessions: pop a pane out into its own terminal window and back
 6. Optional plugins: video, web, 3D

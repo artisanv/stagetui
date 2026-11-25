@@ -3,10 +3,9 @@
 use ratatui_core::layout::Rect;
 use serde_json::{Map, Value, json};
 
-use super::{Cx, Paint, object};
+use super::{Cx, PaintCx, Widget, object};
 use crate::frame::Frame;
 use crate::gfx::{Fit, Image};
-use crate::style::Theme;
 
 #[derive(Debug, Clone)]
 pub struct ImageView {
@@ -19,7 +18,7 @@ pub struct ImageView {
     pub fit: Fit,
 }
 
-impl Paint for ImageView {
+impl Widget for ImageView {
     fn measure(&self, max_width: u16, cx: &Cx) -> (u16, u16) {
         match (self.width, self.height) {
             (Some(w), Some(h)) => (w.min(max_width), h),
@@ -44,8 +43,9 @@ impl Paint for ImageView {
         }
     }
 
-    fn paint(&self, area: Rect, frame: &mut Frame, theme: &Theme, _cx: &Cx) {
-        frame.put_image(area, self.image.clone(), self.fit, theme.bg);
+    fn paint(&self, area: Rect, frame: &mut Frame, p: &PaintCx) {
+        let bg = super::behind(frame, area.x, area.y, p.theme.bg);
+        frame.put_image(area, self.image.clone(), self.fit, bg);
     }
 
     fn describe(&self) -> Map<String, Value> {

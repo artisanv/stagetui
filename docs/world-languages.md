@@ -26,6 +26,38 @@ What termstage does for you:
   text is right-aligned. Brackets are mirrored, so `(مرحبا)` looks correct.
 - **Harakat (tashkeel)** such as َ ُ ِ ّ stay on top of the right letter.
 
+## Whole apps flip, too
+
+When an app's text starts in Arabic (or Persian, Hebrew, Urdu), the **layout**
+mirrors as well: rows start on the right, the first pane of a split sits on the
+right, scrollbars and pop-up messages move to the left, and arrows point the
+other way. Typing in a `StageInput` works right-to-left, and ← / → follow the
+text.
+
+```python
+from termstage import Stage, StageApp, StageButton, StageCard, StageInput
+
+
+class Arabic(StageApp):
+    def compose(self):
+        return [
+            StageCard(
+                "مَرْحَباً! هذا التطبيق كله من اليمين إلى اليسار.", title="أهلاً", icon="sparkles"
+            ),
+            StageInput(placeholder="اكتب رسالتك…", title="رسالة"),
+            Stage(
+                [StageButton("إرسال", variant="primary"), StageButton("إلغاء")],
+                direction="horizontal",
+            ),
+        ]
+
+
+Arabic().run()
+```
+
+Set `dir = "rtl"` or `dir = "ltr"` on the app to choose yourself, or `dir=` on a
+single container (for example, one tab page).
+
 ## Choosing the direction
 
 By default termstage looks at the first real letter: Arabic → right-to-left,

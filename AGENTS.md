@@ -6,11 +6,17 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
 - `crates/termstage-core` — the engine (pure Rust, no PyO3). All logic lives here.
   - `text/` shaping (Arabic presentation forms), BiDi, layout, fonts (bundled in `assets/fonts/`), pixel text
   - `gfx/` images, Canvas, Kitty/Sixel/iTerm2/half-block encoders, headless rasterizer
-  - `frame.rs` one painted screen: cells + reading-order text runs + image placements
+  - `tree.rs` app description → retained widget arena (ids, keys, update/split/remove)
+  - `layout.rs` taffy flex/grid → cell rects, scroll extents, split dividers, modals
+  - `session.rs` state machine: focus, keys, mouse, scroll, drag, modals, toasts, motion, events
+  - `input.rs` keys/mouse (crossterm + `"ctrl+s"` parsing); `motion.rs` effects on a clock
+  - `app.rs` terminal runtime: input thread + dirty-driven render thread + event queue
+  - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar
+  - `frame.rs` one painted screen: cells + reading-order text runs + image placements (blit/clip/occlude)
   - `view.rs` per-terminal graphics state; `inline.rs` `show`; `headless.rs` snapshots
 - `crates/termstage-cli` — `termstage` CLI (clap). Also used by Python's console script.
 - `crates/termstage-py` — PyO3 bindings → `termstage._core`. Glue only.
-- `python/termstage` — typed facade (`StageApp`, `StageCard`, …). Glue only.
+- `python/termstage` — typed facade (`StageApp`, `StageCard`, …), handler dispatch, asyncio bridge. Glue only.
 
 ## Rules
 1. **Rust-first.** New behaviour goes in `termstage-core`. Python files hold only typing, facades, decorators and asyncio glue.
@@ -38,9 +44,9 @@ TERMSTAGE_UPDATE_SNAPSHOTS=1 cargo test -p termstage-core headless   # refresh g
 
 ## Seeing what you built (headless)
 ```python
-snap = MyApp().run_headless((100, 30))
-print(snap.text)            # the screen as plain text
-snap.query("#chat")         # widget JSON: id, type, bounds, text, dir, theme…
+snap = MyApp().run_headless((100, 30), steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#send"}])
+print(snap.text)  # the screen as plain text
+snap.query("#chat")  # widget JSON: id, type, bounds, text, dir, theme, focused…
 ```
 `termstage inspect` prints capabilities as JSON; `termstage doctor` explains them.
 
@@ -53,4 +59,5 @@ snap.query("#chat")         # widget JSON: id, type, bounds, text, dir, theme…
 | `TERMSTAGE_PROBE_TIMEOUT_MS` | Probe timeout (default 250) |
 | `TERMSTAGE_TEXT_MODE=auto\|cells\|pixels` | How complex scripts are drawn |
 | `TERMSTAGE_SYSTEM_FONTS=0` | Bundled fonts only (deterministic PNGs) |
+| `TERMSTAGE_REDUCE_MOTION=1` | Disable animations |
 | `TERMSTAGE_UPDATE_SNAPSHOTS=1` | Rewrite golden snapshots in tests |

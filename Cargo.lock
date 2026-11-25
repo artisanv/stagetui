@@ -1337,6 +1337,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "taffy"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cae92eb1b204bfd239b5c463e1bd2c3ce4913d2d3abfb5c64f5cfee9d65e5c68"
+dependencies = [
+ "rustc-hash",
+ "serde",
+ "slotmap",
+ "smallvec",
+]
+
+[[package]]
 name = "target-lexicon"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1365,6 +1377,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook 0.4.6",
+ "taffy",
  "tiny-skia",
  "unicode-bidi",
  "unicode-segmentation",

@@ -49,3 +49,14 @@ addopts = "-ra"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# The specs are the owner's documents: never reformat them.
+extend-exclude = ["termstage-SPEC-*.md"]
+
+[tool.ruff.format]
+# Docs keep hand-aligned comments for beginners; their code is run by tests/python/test_docs.py.
+exclude = ["*.md"]
+
+[tool.ruff.lint.per-file-ignores]
+# Apps declare settings as class attributes (`BINDINGS = [...]`), like the docs teach.
+"examples/**" = ["RUF012"]
+"tests/**" = ["RUF012"]

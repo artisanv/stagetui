@@ -58,9 +58,12 @@ fn card_session(text: &str, opts: &ShowOptions) -> Result<Session> {
     let spec = AppSpec {
         theme: opts.theme.clone().unwrap_or_else(|| "aurora-dark".into()),
         accent: opts.accent.clone(),
+        dir: None,
+        bindings: Vec::new(),
+        reduce_motion: None,
         children: vec![NodeSpec {
             kind: "card".into(),
-            content: Some(text.to_string()),
+            content: serde_json::Value::String(text.to_string()),
             props: Props {
                 id: Some("show".into()),
                 title: opts.title.clone(),
@@ -68,6 +71,7 @@ fn card_session(text: &str, opts: &ShowOptions) -> Result<Session> {
                 dir: opts.dir.clone(),
                 ..Props::default()
             },
+            ..NodeSpec::default()
         }],
     };
     Session::from_spec(&spec)

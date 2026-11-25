@@ -141,17 +141,19 @@ mod tests {
     }
 
     #[test]
-    fn too_small_windows_hide_whole_widgets_with_a_hint() {
+    fn too_small_windows_scroll_instead_of_squashing() {
         let mut s = Session::from_json(HELLO).unwrap();
         let snap = snapshot(&mut s, 60, 9);
-        assert!(
-            snap.text.contains("↓ 2 more widgets below"),
-            "{}",
-            snap.text
-        );
+        assert_eq!(snap.tree["scroll"]["offset"], 0, "{}", snap.tree);
+        assert!(snap.tree["scroll"]["content_rows"].as_u64().unwrap() > 9);
         let kids = snap.tree["children"].as_array().unwrap();
         assert_eq!(kids[0]["on_screen"], true);
-        assert_eq!(kids[1]["on_screen"], false);
+        assert_eq!(kids[0]["bounds"]["h"], 6, "the first card is whole");
+        assert!(
+            snap.text.contains('┃'),
+            "a scrollbar shows there is more:\n{}",
+            snap.text
+        );
     }
 
     #[test]

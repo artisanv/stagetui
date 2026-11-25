@@ -9,13 +9,16 @@
 //! Unsafe code is denied crate-wide and only allowed inside [`os`], where each
 //! block documents why it is sound.
 
+pub mod app;
 pub mod caps;
 pub mod error;
 pub mod frame;
 pub mod gfx;
 pub mod headless;
 pub mod inline;
+pub mod input;
 pub mod layout;
+pub mod motion;
 pub mod os;
 pub mod reaper;
 pub mod render;

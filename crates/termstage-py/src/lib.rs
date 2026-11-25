@@ -3,6 +3,7 @@
 //! Every long-running call releases the GIL (`Python::detach`), so Python
 //! threads and asyncio keep running while Rust renders.
 
+mod app;
 mod canvas;
 
 use std::sync::{Mutex, OnceLock};
@@ -11,12 +12,11 @@ use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+use termstage_core::Error;
 use termstage_core::caps::{self, Capabilities, DetectOptions};
 use termstage_core::gfx::{self, load};
 use termstage_core::inline::{self, ShowOptions};
 use termstage_core::reaper::{self, TrackedChild};
-use termstage_core::session::Session;
-use termstage_core::{Error, headless, runtime};
 
 create_exception!(
     termstage._core,
@@ -62,64 +62,6 @@ fn inspect(py: Python<'_>, headless: bool, probe: bool) -> PyResult<String> {
 fn fonts(py: Python<'_>) -> PyResult<String> {
     let c = py.detach(termstage_core::text::fonts::coverage);
     serde_json::to_string(&c).map_err(|e| to_py(py, &e.into()))
-}
-
-/// Run an app (JSON description) in the current terminal until the user quits.
-#[pyfunction]
-fn run_app(py: Python<'_>, spec_json: &str) -> PyResult<()> {
-    let spec = spec_json.to_owned();
-    py.detach(move || {
-        let session = Session::from_json(&spec)?;
-        let caps = caps::detect(&DetectOptions::default());
-        runtime::run_terminal(session, &caps)
-    })
-    .map_err(|e| to_py(py, &e))
-}
-
-fn headless_session(spec: &str, cell: (u32, u32)) -> termstage_core::Result<Session> {
-    let mut session = Session::from_json(spec)?;
-    session.set_cell_px(cell);
-    Ok(session)
-}
-
-/// Render an app offscreen. Returns `(text, tree_json)`.
-#[pyfunction]
-#[pyo3(signature = (spec_json, cols, rows, cell = (10, 20)))]
-fn run_headless(
-    py: Python<'_>,
-    spec_json: &str,
-    cols: u16,
-    rows: u16,
-    cell: (u32, u32),
-) -> PyResult<(String, String)> {
-    let spec = spec_json.to_owned();
-    py.detach(move || {
-        let mut session = headless_session(&spec, cell)?;
-        let snap = headless::snapshot(&mut session, cols, rows);
-        let tree = serde_json::to_string(&snap.tree)?;
-        Ok::<_, Error>((snap.text, tree))
-    })
-    .map_err(|e| to_py(py, &e))
-}
-
-/// Render an app offscreen to PNG bytes.
-#[pyfunction]
-#[pyo3(signature = (spec_json, cols, rows, cell = (10, 20)))]
-fn render_png<'py>(
-    py: Python<'py>,
-    spec_json: &str,
-    cols: u16,
-    rows: u16,
-    cell: (u32, u32),
-) -> PyResult<Bound<'py, PyBytes>> {
-    let spec = spec_json.to_owned();
-    let png = py
-        .detach(move || {
-            let mut session = headless_session(&spec, cell)?;
-            headless::png(&mut session, cols, rows)
-        })
-        .map_err(|e| to_py(py, &e))?;
-    Ok(PyBytes::new(py, &png))
 }
 
 /// Keep image bytes in memory; returns a `mem:<id>` source for StageImage.
@@ -229,11 +171,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", termstage_core::VERSION)?;
     m.add("TermstageError", py.get_type::<TermstageError>())?;
     m.add_class::<canvas::PyCanvas>()?;
+    m.add_class::<app::PyApp>()?;
     m.add_function(wrap_pyfunction!(inspect, m)?)?;
     m.add_function(wrap_pyfunction!(fonts, m)?)?;
-    m.add_function(wrap_pyfunction!(run_app, m)?)?;
-    m.add_function(wrap_pyfunction!(run_headless, m)?)?;
-    m.add_function(wrap_pyfunction!(render_png, m)?)?;
     m.add_function(wrap_pyfunction!(register_image, m)?)?;
     m.add_function(wrap_pyfunction!(show, m)?)?;
     m.add_function(wrap_pyfunction!(cli_main, m)?)?;

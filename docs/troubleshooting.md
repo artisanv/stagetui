@@ -26,8 +26,24 @@ termstage doctor
 : Your program runs with a different Python than the one termstage was installed
   into. Activate your virtual environment (`source .venv/bin/activate`) and use `python`, not `python3` from the system.
 
-**The app says "↓ more below"**
-: The window is too short for everything. Make it taller (scrolling arrives in Milestone 3).
+**Part of the app is cut off at the bottom**
+: The window is too short, so the screen scrolls: use the mouse wheel, PageUp /
+  PageDown, or the arrow keys. A scrollbar on the right shows where you are.
+
+**Clicking does nothing inside tmux**
+: Turn on mouse support in tmux: add `set -g mouse on` to `~/.tmux.conf`.
+
+**A shortcut like Ctrl+\\ or Ctrl+Shift+D doesn't work**
+: Some terminals can't send every key combination. termstage uses the modern
+  "Kitty keyboard" mode where available (Kitty, Ghostty, WezTerm, foot) — elsewhere
+  prefer F-keys, letters, or Ctrl+letter shortcuts.
+
+**Typing "q" doesn't quit**
+: A text box has the focus, so "q" is typed into it. Press **Esc** to leave the
+  text box first, or press **Ctrl+C**.
+
+**Animations are distracting**
+: Set `TERMSTAGE_REDUCE_MOTION=1`, or `reduce_motion = True` on your app.
 
 **Pictures look like blurry blocks**
 : Your terminal has no picture support, so termstage uses colored blocks.
@@ -63,6 +79,7 @@ termstage doctor
 | `TERMSTAGE_PROBE_TIMEOUT_MS=250` | How long to wait for the terminal's answers |
 | `TERMSTAGE_TEXT_MODE=auto\|cells\|pixels` | How Arabic and other complex scripts are drawn |
 | `TERMSTAGE_SYSTEM_FONTS=0` | Use only termstage's bundled fonts (identical PNGs everywhere) |
+| `TERMSTAGE_REDUCE_MOTION=1` | Turn off animations |
 
 ## Your terminal is always restored
 

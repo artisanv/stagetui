@@ -87,8 +87,9 @@ fn draw_box(p: &mut Pixmap, sym: &str, x: f32, y: f32, cw: f32, ch: f32, fg: Rgb
     let mut paint = Paint::default();
     paint.set_color_rgba8(fg.0, fg.1, fg.2, 255);
     paint.anti_alias = true;
+    let heavy = matches!(sym, "━" | "┃");
     let stroke = Stroke {
-        width: t,
+        width: if heavy { t * 2.2 } else { t },
         ..Stroke::default()
     };
     let line = |p: &mut Pixmap, x1: f32, y1: f32, x2: f32, y2: f32| {
@@ -109,8 +110,8 @@ fn draw_box(p: &mut Pixmap, sym: &str, x: f32, y: f32, cw: f32, ch: f32, fg: Rgb
     };
     let (l, r, t0, b) = (x, x + cw, y, y + ch);
     match sym {
-        "─" => line(p, l, cy, r, cy),
-        "│" => line(p, cx, t0, cx, b),
+        "─" | "━" => line(p, l, cy, r, cy),
+        "│" | "┃" => line(p, cx, t0, cx, b),
         "┌" => {
             line(p, cx, cy, r, cy);
             line(p, cx, cy, cx, b)
@@ -134,6 +135,20 @@ fn draw_box(p: &mut Pixmap, sym: &str, x: f32, y: f32, cw: f32, ch: f32, fg: Rgb
         "▀" => fill(p, x, y, cw, (ch / 2.0).ceil(), fg),
         "▄" => fill(p, x, y + ch / 2.0, cw, ch / 2.0, fg),
         "█" => fill(p, x, y, cw, ch, fg),
+        "▌" => fill(p, x, y, (cw / 2.0).ceil(), ch, fg),
+        "▐" => fill(p, x + cw / 2.0, y, cw / 2.0, ch, fg),
+        // Left-aligned eighth blocks ▏▎▍▋▊▉ (▌ above).
+        "▏" | "▎" | "▍" | "▋" | "▊" | "▉" => {
+            let eighths = match sym {
+                "▏" => 1.0,
+                "▎" => 2.0,
+                "▍" => 3.0,
+                "▋" => 5.0,
+                "▊" => 6.0,
+                _ => 7.0,
+            };
+            fill(p, x, y, (cw * eighths / 8.0).round(), ch, fg)
+        }
         _ => return false,
     }
     true
@@ -161,7 +176,7 @@ pub fn render(frame: &Frame, cell_px: (u32, u32)) -> Pixmap {
             }
         }
     };
-    for run in frame.runs.iter().filter(|r| r.complex) {
+    for run in frame.runs.iter().filter(|r| r.complex && r.pixel) {
         cover(run.area);
     }
     for img in &frame.images {
@@ -218,7 +233,7 @@ pub fn render(frame: &Frame, cell_px: (u32, u32)) -> Pixmap {
     }
 
     // Complex-script runs as real shaped text.
-    for run in frame.runs.iter().filter(|r| r.complex) {
+    for run in frame.runs.iter().filter(|r| r.complex && r.pixel) {
         let (x, y) = (
             i32::from(run.area.x - area.x) * cw as i32,
             i32::from(run.area.y - area.y) * ch as i32,
@@ -239,11 +254,7 @@ pub fn render(frame: &Frame, cell_px: (u32, u32)) -> Pixmap {
             i32::from(img.area.x - area.x) * cw as i32,
             i32::from(img.area.y - area.y) * ch as i32,
         );
-        let pic = img.image.render(
-            u32::from(img.area.width) * cw,
-            u32::from(img.area.height) * ch,
-            img.fit,
-        );
+        let pic = img.pixels((cw, ch));
         p.draw_pixmap(
             x,
             y,

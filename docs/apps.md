@@ -1,7 +1,7 @@
 # Apps & widgets
 
 An **app** fills the terminal window and stays until you quit. You build one by
-listing **widgets** (cards, text, pictures) in a `compose` method.
+listing **widgets** (cards, buttons, pictures…) in a `compose` method.
 
 ## The shape of every app
 
@@ -27,8 +27,11 @@ MyApp().run()
 - `run()` shows the app. Quit with **q**, **Esc** or **Ctrl+C**.
 - `run_headless()` draws the app without a terminal — see [Snapshots](snapshots.md).
 
-> *Coming soon (Milestone 3):* side-by-side layouts, split panes, buttons,
-> tabs, mouse clicks and animations.
+Next steps:
+
+- [Layouts](layout.md) — rows, grids, split panes, tabs, pop-up windows, scrolling.
+- [Making apps interactive](events.md) — buttons, text boxes, lists, shortcuts, the mouse.
+- [Motion](motion.md) — animations and live drawings.
 
 ## The widgets
 
@@ -39,6 +42,12 @@ Widget(what_to_show, id=..., title=..., icon=..., theme=..., accent=..., ...)
 ```
 
 The first thing you pass is always **what to show**. Everything else is optional.
+
+Here are the widgets for showing things. The interactive ones — `StageButton`,
+`StageInput`, `StageCheckbox`, `StageSelect`, `StageTable`, `StageTree`,
+`StageProgress`, `StageSpinner` — are in [Making apps interactive](events.md); the
+containers — `Stage`, `StageSplit`, `StageTabs`, `StageModal`, `StageBar` — are in
+[Layouts](layout.md).
 
 ### `StageCard` — a box with a title
 
@@ -110,8 +119,13 @@ Art().run()
 | `rounded` | `True` / `False` | Rounded or square corners |
 | `padding` | `"compact"`, `"normal"`, `"spacious"`, or a number of cells | Space inside the card |
 | `dir` | `"auto"`, `"ltr"`, `"rtl"` | Text direction (auto-detected by default) |
-| `animate` | `"none"`, `"fade"`, `"slide-up"`, `"slide-left"`, `"pulse"`, `"pop"` | *Coming soon:* entrance animation (accepted today, no effect yet) |
+| `animate` | `"none"`, `"fade"`, `"slide-up"`, `"slide-left"`, `"pulse"`, `"pop"` | Entrance animation — see [Motion](motion.md) |
+| `width`, `height` | cells, or `"50%"` | Size — see [Layouts](layout.md) |
+| `grow` | a number | Take the leftover space |
+| `visible` | `True` / `False` | Start hidden (show it later with `.show()`) |
 | `style` | a `Style(...)` | Reusable settings, see below |
+
+Cards also take `shadow=True` for a soft drop shadow.
 
 ### Themes
 
@@ -121,14 +135,17 @@ Art().run()
 
 `sparkles` ✦ · `check` ✓ · `x` ✗ · `play` ▶ · `pause` ‖ · `stop` ■ · `globe` ◍ ·
 `book` ≡ · `cube` ◆ · `sun` ☼ · `moon` ☾ · `terminal` ❯ · `star` ★ · `bolt` ϟ ·
-`info` ℹ · `warning` ▲ · `folder` ▣ · `file` ▢ · `chat` » · `code` ⌘ · `gear` ⚙ · `heart` ♥
+`info` ℹ · `warning` ▲ · `folder` ▣ · `file` ▢ · `chat` » · `code` ⌘ · `gear` ⚙ · `heart` ♥ ·
+`send` ➤ · `arrow-right` → · `arrow-left` ← · `plus` + · `minus` − · `dot` • · `circle` ○ · `home` ⌂
+
+In right-to-left layouts, arrow-like icons (▶ » ❯ →) point the other way automatically.
 
 ### Reusing a look with `Style`
 
 ```python
 from termstage import StageCard, Style
 
-calm = Style(padding="spacious", rounded=True, accent="mint")
+calm = Style(padding="spacious", rounded=True, accent="mint", shadow=True)
 
 StageCard("One", style=calm)
 StageCard("Two", style=calm)
@@ -138,22 +155,28 @@ Options you pass directly win over the style: `StageCard("x", style=calm, accent
 
 ## Your own widgets with `@component`
 
-A component is a normal function that returns a widget. Decorate it with
-`@ts.component` so readers (and tools) know it is meant for reuse:
+A component is a normal function that builds widgets. Decorate it with
+`@ts.component` and use it like any other widget. It may return one widget, or a
+list of widgets (they are stacked for you).
 
 ```python
 import termstage as ts
-from termstage import StageApp, StageCard
+from termstage import Stage, StageApp, StageCard, StageText
 
 
 @ts.component
 def Metric(label, value, accent="mint"):
-    return StageCard(f"{value}\n{label}", accent=accent)
+    return [StageText(label), StageCard(value, accent=accent, animate="pop")]
 
 
 class Dashboard(StageApp):
     def compose(self):
-        return [Metric("Users", "1,204"), Metric("Errors", "3", accent="rose")]
+        return [
+            Stage(
+                [Metric("Users", "1,204"), Metric("Errors", "3", accent="rose")],
+                direction="horizontal",
+            )
+        ]
 
 
 Dashboard().run()

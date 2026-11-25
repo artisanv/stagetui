@@ -59,6 +59,8 @@ pub struct Gfx {
     next_id: u32,
     live: HashMap<Key, u32>,
     text_cache: HashMap<u64, Image>,
+    crop_cache: HashMap<u64, Image>,
+    text_used: HashSet<u64>,
     overlays: Vec<(Rect, Key)>,
 }
 
@@ -73,8 +75,11 @@ pub struct Prepared {
     pub cells: Buffer,
     /// Escapes to send before the cells (image uploads, deletions).
     pub pre: String,
-    /// Images to draw after the cells, or `None` if unchanged since last frame.
+    /// Images to draw after the cells — only the new or changed ones —
+    /// or `None` if nothing changed since the last frame.
     pub overlays: Option<Vec<Overlay>>,
+    /// Areas whose old picture must be wiped (cells re-sent) before drawing.
+    pub stale: Vec<Rect>,
 }
 
 impl Gfx {
@@ -92,6 +97,8 @@ impl Gfx {
             next_id: 1,
             live: HashMap::new(),
             text_cache: HashMap::new(),
+            crop_cache: HashMap::new(),
+            text_used: HashSet::new(),
             overlays: Vec::new(),
         }
     }
@@ -129,6 +136,7 @@ impl Gfx {
             .as_bytes(),
         );
         let cell_px = self.cell_px;
+        self.text_used.insert(key);
         self.text_cache
             .entry(key)
             .or_insert_with(|| {
@@ -140,23 +148,41 @@ impl Gfx {
     /// Turn a frame into cells + escapes for this terminal.
     pub fn prepare(&mut self, frame: &Frame, allow_overlays: bool) -> Prepared {
         let mut cells = frame.cells.clone();
-        let mut placements: Vec<Placement> = frame.images.clone();
+        // Cropped or darkened pictures become plain ones (cached, so ids stay stable).
+        let mut crops = std::mem::take(&mut self.crop_cache);
+        let mut used_crops = HashMap::new();
+        let mut placements: Vec<Placement> = frame
+            .images
+            .iter()
+            .map(|pl| {
+                let flat = pl.flattened(self.cell_px, &mut crops);
+                if !pl.is_plain() {
+                    used_crops.insert(flat.image.id, flat.image.clone());
+                }
+                flat
+            })
+            .collect();
+        // Keep only crops still on screen (bounded memory while scrolling).
+        self.crop_cache = crops
+            .into_iter()
+            .filter(|(_, img)| used_crops.contains_key(&img.id))
+            .collect();
         if self.text_mode == TextMode::Pixels {
             let last_row = frame.area().bottom().saturating_sub(1);
             let placeholders = self.protocol == GraphicsProtocol::Kitty && self.placeholders;
-            for run in frame.runs.iter().filter(|r| r.complex) {
+            for run in frame.runs.iter().filter(|r| r.complex && r.pixel) {
                 // An overlay image on the last row could scroll the screen: keep cells there.
                 if !placeholders && run.area.y >= last_row && frame.area().height > 1 {
                     continue;
                 }
                 let image = self.text_image(run);
-                placements.push(Placement {
-                    area: run.area,
-                    image,
-                    fit: Fit::Stretch,
-                    bg: run.bg,
-                });
+                placements.push(Placement::new(run.area, image, Fit::Stretch, run.bg));
             }
+        }
+        // Forget pictures of text that are no longer on screen (typing, scrolling).
+        let used = std::mem::take(&mut self.text_used);
+        if self.text_cache.len() > 256 {
+            self.text_cache.retain(|k, _| used.contains(k));
         }
         let mut pre = String::new();
         let kitty_placeholders = self.protocol == GraphicsProtocol::Kitty && self.placeholders;
@@ -225,6 +251,7 @@ impl Gfx {
                 cells,
                 pre,
                 overlays: None,
+                stale: Vec::new(),
             };
         }
 
@@ -242,6 +269,7 @@ impl Gfx {
                 cells,
                 pre,
                 overlays: None,
+                stale: Vec::new(),
             };
         }
 
@@ -266,17 +294,30 @@ impl Gfx {
                 cells,
                 pre,
                 overlays: None,
+                stale: Vec::new(),
             };
         }
-        if self.protocol == GraphicsProtocol::Kitty {
-            for (_, key) in &self.overlays {
-                if let Some(id) = self.live.remove(key) {
+        // Only pictures that are new or moved are sent again; the cells under
+        // pictures that went away (or changed) are re-sent to wipe them.
+        let old: HashSet<(Rect, Key)> = self.overlays.iter().copied().collect();
+        let fresh: HashSet<(Rect, Key)> = now.iter().copied().collect();
+        let mut stale = Vec::new();
+        for (area, key) in &self.overlays {
+            if !fresh.contains(&(*area, *key)) {
+                stale.push(*area);
+                if self.protocol == GraphicsProtocol::Kitty
+                    && let Some(id) = self.live.remove(key)
+                {
                     pre.push_str(&kitty::delete(id, self.tmux));
                 }
             }
         }
         let mut overlays = Vec::new();
         for (pl, (area, key)) in placements.iter().zip(&now) {
+            if old.contains(&(*area, *key)) {
+                continue;
+            }
+            stale.push(*area);
             let pic = pl.image.render(
                 u32::from(area.width) * self.cell_px.0,
                 u32::from(area.height) * self.cell_px.1,
@@ -307,6 +348,7 @@ impl Gfx {
             cells,
             pre,
             overlays: Some(overlays),
+            stale,
         }
     }
 }
@@ -358,11 +400,22 @@ impl<W: Write> View for TerminalView<W> {
 
     fn present(&mut self, frame: &Frame) -> io::Result<()> {
         let prepared = self.gfx.prepare(frame, true);
-        let full = prepared.overlays.is_some()
-            || self
-                .prev
-                .as_ref()
-                .is_none_or(|p| p.area != prepared.cells.area);
+        let full = self
+            .prev
+            .as_ref()
+            .is_none_or(|p| p.area != prepared.cells.area);
+        // Cells under pictures that changed are re-sent: forget what we sent there.
+        if let Some(prev) = self.prev.as_mut() {
+            for r in &prepared.stale {
+                for y in r.top()..r.bottom() {
+                    for x in r.left()..r.right() {
+                        if let Some(c) = prev.cell_mut((x, y)) {
+                            c.set_symbol("\u{1}");
+                        }
+                    }
+                }
+            }
+        }
         self.scratch.clear();
         if self.sync {
             self.scratch.push_str(SYNC_BEGIN);
