@@ -49,7 +49,10 @@ def wait_dead(pid: int, timeout: float = 5.0) -> bool:
 
 def test_children_die_with_sigkilled_parent():
     parent = subprocess.Popen(
-        [sys.executable, "-c", PARENT], stdout=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL
+        [sys.executable, "-c", PARENT],
+        stdout=subprocess.PIPE,
+        encoding="utf-8",
+        stdin=subprocess.DEVNULL,
     )
     try:
         assert parent.stdout is not None
@@ -69,7 +72,7 @@ def test_tracked_child_killed_on_normal_exit():
         [sys.executable, "-c", code],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=30,
         stdin=subprocess.DEVNULL,
     )

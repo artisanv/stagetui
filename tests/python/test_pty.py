@@ -152,7 +152,7 @@ def test_mouse_and_keys_reach_python_handlers(tmp_path):
     where = subprocess.run(
         [sys.executable, str(script), "where"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env={**os.environ, "STAGETUI_HEADLESS": "1"},
         check=True,
     )

@@ -107,6 +107,15 @@ fn size_arg(s: &str, what: &str, example: &str) -> Result<(u16, u16)> {
     })
 }
 
+/// Windows' canonical paths start with `\\?\` ("verbatim"); people expect `C:\...`.
+fn plain_path(p: &str) -> String {
+    if let Some(unc) = p.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        p.strip_prefix(r"\\?\").unwrap_or(p).to_string()
+    }
+}
+
 fn write(path: &str, bytes: &[u8]) -> Result<()> {
     std::fs::write(path, bytes).map_err(|e| {
         Error::friendly(
@@ -116,7 +125,7 @@ fn write(path: &str, bytes: &[u8]) -> Result<()> {
         )
     })?;
     let full = std::fs::canonicalize(path).unwrap_or_else(|_| path.into());
-    eprintln!("✓ saved {}", full.display());
+    eprintln!("✓ saved {}", plain_path(&full.to_string_lossy()));
     Ok(())
 }
 
@@ -278,5 +287,18 @@ pub fn agent(mode: &str, app: &str, size: &str) -> i32 {
             e.to_string(),
             "install stagetui in a Python environment (pip install stagetui) and run `stagetui` from it",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn plain_windows_paths() {
+        assert_eq!(super::plain_path(r"\\?\C:\Users\a.png"), r"C:\Users\a.png");
+        assert_eq!(
+            super::plain_path(r"\\?\UNC\server\share\a.png"),
+            r"\\server\share\a.png"
+        );
+        assert_eq!(super::plain_path("/home/a.png"), "/home/a.png");
     }
 }

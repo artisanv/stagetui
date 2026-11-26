@@ -377,6 +377,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("app")
     p.add_argument("--size", default="100x30")
     a = p.parse_args(argv)
+    # Windows pipes default to a legacy code page; stagetui always speaks UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     # The protocol owns stdout; anything else the app prints goes to stderr.
     proto = os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf-8", buffering=1)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())

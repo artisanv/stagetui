@@ -1,0 +1,4 @@
+# Always LF in the working tree, on every OS: golden snapshots compare exactly.
+* text=auto eol=lf
+*.ttf binary
+*.png binary

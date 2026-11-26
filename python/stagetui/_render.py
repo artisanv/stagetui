@@ -53,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--size", default="80x24")
     p.add_argument("--cell", default="16x32")
     a = p.parse_args(argv)
+    # Windows pipes default to a legacy code page; stagetui always speaks UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     try:
         app = find_app(Path(a.target))()
         snap = app.run_headless(_size(a.size, "--size"), cell=_size(a.cell, "--cell"))

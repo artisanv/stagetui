@@ -74,7 +74,7 @@ def rpc(mode, app_file, messages, size="80x24"):
         [sys.executable, "-m", "stagetui._agent", mode, str(app_file), "--size", size],
         input=lines,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=60,
         check=False,
     )
@@ -193,7 +193,7 @@ def test_cli_drive_hands_over_to_python(app_file):
         [sys.executable, "-m", "stagetui", "drive", str(app_file), "--size", "60x20"],
         input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "snapshot"}) + "\n",
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=60,
         check=False,
     )
@@ -202,7 +202,7 @@ def test_cli_drive_hands_over_to_python(app_file):
     missing = subprocess.run(
         [sys.executable, "-m", "stagetui", "mcp", "nope.py"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         check=False,
     )
     assert missing.returncode == 1 and "fix:" in missing.stderr

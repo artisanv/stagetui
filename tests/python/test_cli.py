@@ -13,7 +13,7 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
         args,
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=env,
         stdin=subprocess.DEVNULL,
         timeout=60,
