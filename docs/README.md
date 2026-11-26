@@ -8,7 +8,7 @@ Rust, so you never have to think about it.
 It is also made for **AI coding agents**: every screen can be captured as text,
 as a list of widgets, or as a PNG picture — no human needed.
 
-> stagetui is young (Milestone 4 of 6, first half). Everything on these pages works today.
+> stagetui is young (Milestone 5 of 6, first half). Everything on these pages works today.
 > Features that are planned but not built yet are clearly marked *coming soon*.
 
 ## Start here
@@ -24,6 +24,8 @@ as a list of widgets, or as a PNG picture — no human needed.
 | Animate things, or draw live graphics | [Motion](motion.md) |
 | Build a chat app for an AI coding agent | [Build an AI agent harness](harness.md) |
 | Let people switch what each pane shows, run a shell in a pane | [Panes](panes.md) |
+| Save and restore layouts, workspace tabs like Blender | [Panes → Workspaces](panes.md#workspaces-whole-layouts-like-blenders-tabs) |
+| Keep an app running in the background, attach to it later | [Sessions](sessions.md) |
 | Let an AI agent (Claude Code…) see and operate my app | [AI agents](agents.md) |
 | Use Arabic, Persian, Hindi, Chinese… | [World languages](world-languages.md) |
 | Test my app (press keys, click) or let an AI agent see it | [Snapshots](snapshots.md) |

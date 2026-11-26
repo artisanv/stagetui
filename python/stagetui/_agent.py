@@ -127,6 +127,25 @@ def set_pane_type(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
     return _screen(d)
 
 
+def workspace(d: Driver, args: dict[str, Any]) -> Any:
+    return d.app.workspace()
+
+
+def load_workspace(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
+    layout = args.get("layout")
+    if isinstance(layout, dict):
+        d.app.load_workspace(layout)
+    else:
+        d.app.load_workspace(str(args.get("name", "default")))
+    d.step({"wait": 0})  # builds app-defined pane types, lays out
+    return _screen(d)
+
+
+def save_workspace(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
+    file = d.app.save_workspace(str(args.get("name", "default")))
+    return {"saved": str(file)}
+
+
 ACTIONS: dict[str, Callable[[Driver, dict[str, Any]], Any]] = {
     "snapshot": snapshot,
     "press": press,
@@ -139,6 +158,9 @@ ACTIONS: dict[str, Callable[[Driver, dict[str, Any]], Any]] = {
     "query": query,
     "panes": panes,
     "set_pane_type": set_pane_type,
+    "workspace": workspace,
+    "load_workspace": load_workspace,
+    "save_workspace": save_workspace,
 }
 
 # ----- MCP tool descriptions ---------------------------------------------------------
@@ -213,6 +235,26 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {"pane": _S, "type": _S},
             "required": ["pane", "type"],
         },
+    },
+    {
+        "name": "workspace",
+        "description": "Get the layout of splits and panes as JSON: "
+        '{"split": "horizontal", "ratio": [...], "children": [{"pane": "chat", "id": "a"}, ...]}.',
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "load_workspace",
+        "description": "Arrange the panes: give layout= (JSON like the workspace tool returns) "
+        "or name= of a saved workspace. Panes with the same id keep their content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"layout": {"type": "object"}, "name": _S},
+        },
+    },
+    {
+        "name": "save_workspace",
+        "description": "Save the current layout under a name (to load it later).",
+        "inputSchema": {"type": "object", "properties": {"name": _S}, "required": ["name"]},
     },
 ]
 

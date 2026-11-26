@@ -68,6 +68,8 @@ Press the **prefix key**, **Ctrl+Space**, then:
 | **-** | Split top / bottom |
 | **x** | Close the pane |
 | **Tab** / arrows | Move to the next pane |
+| **1**-**9** | Switch workspace (with [workspace tabs](#workspaces-whole-layouts-like-blenders-tabs)) |
+| **d** | Detach (see [Sessions](sessions.md)) |
 | **q** | Quit |
 
 While the prefix is pressed, the status bar lists these keys. The prefix works
@@ -125,11 +127,94 @@ class Dashboard(StageApp):
 Dashboard().run()
 ```
 
+## Workspaces: whole layouts, like Blender's tabs
+
+Blender has *Layout*, *Modeling*, *Shading*… screens at the top. Each is a whole
+arrangement of areas. `StageWorkspaces` gives your app the same thing:
+
+```python
+from stagetui import StageApp, StagePane, StageSplit, StageWorkspaces
+
+
+class Studio(StageApp):
+    def compose(self):
+        return [
+            StageWorkspaces(
+                {
+                    "Code": StageSplit([StagePane("files"), StagePane("code", text="print(1)")]),
+                    "Agent": StageSplit([StagePane("chat"), StagePane("terminal")]),
+                }
+            )
+        ]
+
+
+Studio().run()
+```
+
+- The tabs across the top switch workspaces: click them, or press
+  **Ctrl+Space** then **1**, **2**, … (Ctrl+PageUp / Ctrl+PageDown work too).
+- Every workspace keeps running while another is on screen — a shell in *Agent*
+  keeps going while you read code in *Code*.
+- `StageWorkspaces(["Code", "Review"])` (just names) starts each with an empty pane.
+
+## Save a layout, bring it back
+
+People rearrange panes the way they like. Save it, and restore it next time:
+
+```python
+from stagetui import StageApp, StageError, StagePane, StageSplit
+
+
+class Desk(StageApp):
+    BINDINGS = [("ctrl+s", "save", "Save layout")]
+
+    def compose(self):
+        return [StageSplit([StagePane("files", id="files"), StagePane("chat", id="chat")])]
+
+    def on_mount(self):
+        try:
+            self.load_workspace()  # the layout saved last time, if any
+        except StageError:
+            pass  # nothing saved yet
+
+    def save(self):
+        self.save_workspace()
+        self.notify("Layout saved")
+
+
+Desk().run()
+```
+
+| | |
+|---|---|
+| `app.save_workspace(name=None)` | Save the layout. The name is the open workspace tab (or `"default"`). Returns the file |
+| `app.load_workspace(name=None)` | Bring a saved layout back |
+| `app.workspaces()` | The names you saved |
+| `app.workspace()` | The current layout as a dict |
+| `app.load_workspace({...})` | Arrange the panes like a dict you give |
+
+Layouts are saved in `~/.config/stagetui/workspaces/<YourApp>.json`
+(on Windows in `%APPDATA%\stagetui\workspaces`). Pass `path=` to use another file.
+
+A layout is plain JSON, easy to read and to write by hand:
+
+```json
+{"split": "horizontal", "ratio": [0.3, 0.7], "children": [
+    {"pane": "files", "id": "files"},
+    {"pane": "terminal", "id": "shell", "args": {"command": "htop"}}
+]}
+```
+
+**Loading never throws work away.** A pane whose `id` is still there is moved,
+not rebuilt: its shell keeps running, its chat keeps its messages. Panes that are
+not in the layout are closed; new ones are created with their `args`.
+
 ## Good to know
 
 - "Any application" means **terminal programs**: shells, editors (`vim`, `nano`),
   `htop`, `git`, Python, AI command-line tools. Windowed apps such as a browser
   will come later as optional plug-ins.
 - Pictures that a program *inside* a terminal pane draws are not shown yet (text only).
-- Saving and restoring whole layouts ("workspaces") and popping a pane out into
-  its own window are *coming in Milestone 5*.
+- Apps can keep running in the background and be opened again from any
+  terminal: see [Sessions](sessions.md).
+- Popping a single pane out into its own window is *coming soon* (Milestone 5b).

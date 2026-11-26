@@ -21,6 +21,11 @@ What the current terminal can do (same as `stagetui inspect`).
 ### `ts.fonts() -> dict`
 Bundled fonts and which writing systems have fonts available.
 
+
+### `ts.sessions() -> list[dict]`
+The apps running right now that a terminal can attach to: `name`, `pid`, `app`, `cwd`, `started`.
+Same as `stagetui sessions --json` ([Sessions](sessions.md)).
+
 ## Apps
 
 ### `class StageApp`
@@ -48,9 +53,15 @@ Bundled fonts and which writing systems have fonts available.
 | `capture_text()`, `capture_tree()`, `capture_png()` | The live screen while the app runs |
 | `await ask_permission(question, *, tool=None, args=None)` | Pop-up: returns `"allow"`, `"always"` or `"deny"` |
 | `PREFIX = "ctrl+space"` | Class attribute: the key that reaches the app from a terminal pane |
+| `background(work)` | Run `async` work (an agent loop…) alongside the app; cancelled when it quits |
+| `session` | While running: `{"name", "pid", "app", …}` — other terminals open it with `stagetui attach <name>` ([Sessions](sessions.md)) |
+| `workspace()` | The layout of splits and panes, as a dict |
+| `save_workspace(name=None, *, path=None) -> Path` | Save the layout (name: the open workspace tab, or `"default"`) |
+| `load_workspace(name_or_layout=None, *, path=None)` | Bring a saved layout back, or apply a layout dict ([Workspaces](panes.md#save-a-layout-bring-it-back)) |
+| `workspaces(*, path=None) -> list[str]` | Names of the saved layouts |
 
 Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`,
-`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`.
+`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`, `detach`.
 
 ### `class Driver`
 Made by `app.drive()`; use it in a `with` block.
@@ -112,11 +123,12 @@ All widgets accept `id`, `theme`, `accent` and (most) `animate`, `visible`,
 | `StageTerminal(command)` | command (`""` = your shell) or list | `cwd`, `title`, `height` | — |
 | `StageLog(text)` | starting text | `max_lines`, `filter`, `height` | — |
 | `StagePane(type, **options)` | a pane type | the type's options | `on_change(type)` |
+| `StageWorkspaces(workspaces)` | `{"name": layout, …}` or a list of names | `active` | `on_change(index)` |
 
 ### Methods on every widget
 `update(content=None, **options)` · `load(content)` · `show()` · `hide()` ·
 `focus()` · `split(widget, direction="horizontal")` · `remove()` · `value` ·
-`detach()` / `attach()` (*coming in Milestone 5*). Containers also have `add(widget)`.
+`detach()` / `attach()` (*coming in Milestone 5b*). Containers also have `add(widget)`.
 
 ### Extra methods
 | Widget | Methods |

@@ -34,6 +34,11 @@ def sandbox(tmp_path, monkeypatch):
     Canvas(64, 64, "violet").save("logo.png")
     (tmp_path / "chart.svg").write_text(SVG)
     monkeypatch.setattr(StageApp, "run", lambda self: self.run_headless())
+    # Saved workspaces and sessions go to the sandbox, never the real home folder.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "run"))
     return tmp_path
 
 

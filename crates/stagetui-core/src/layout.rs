@@ -257,10 +257,18 @@ impl<'a> Builder<'a> {
                     .copied();
                 // Below the tab row; cards fill the page, other pages get breathing room.
                 let card = active.is_some_and(|c| matches!(self.tree.nodes[c].kind, Kind::Card(_)));
+                // Workspace tabs: one slim strip, the page fills the rest.
+                let side = if card || t.workspaces { 0 } else { 2 };
                 style.padding = taffy::Rect {
-                    left: len(if card { 0 } else { 2 }),
-                    right: len(if card { 0 } else { 2 }),
-                    top: len(if card { 2 } else { 3 }),
+                    left: len(side),
+                    right: len(side),
+                    top: len(if t.workspaces {
+                        1
+                    } else if card {
+                        2
+                    } else {
+                        3
+                    }),
                     bottom: len(0),
                 };
                 let kids: Vec<NodeId> = active

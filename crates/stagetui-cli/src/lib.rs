@@ -2,6 +2,7 @@
 //! (`stagetui._core.cli_main`), so both behave identically.
 
 mod doctor;
+mod sessions;
 mod verbs;
 
 use std::ffi::OsString;
@@ -99,7 +100,7 @@ enum Command {
     /// one message per line on stdin/stdout.
     ///
     /// Methods: snapshot, press, type, click, scroll, resize, wait, wait_idle, query,
-    /// panes, set_pane_type, shutdown.
+    /// panes, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
     ///
     /// Example:
     ///   echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | stagetui drive my_app.py
@@ -121,6 +122,45 @@ enum Command {
         /// Screen size in cells.
         #[arg(long, default_value = "100x30")]
         size: String,
+    },
+    /// List the apps running in the background that you can attach to.
+    Sessions {
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a running app in this terminal. Press Ctrl+Space then d to detach again.
+    ///
+    /// Examples:
+    ///   stagetui attach            # the only running app
+    ///   stagetui attach harness    # one by name (see `stagetui sessions`)
+    Attach {
+        /// The session name (optional when only one app is running).
+        name: Option<String>,
+    },
+    /// Start an app that keeps running when you detach or close the terminal.
+    ///
+    /// Examples:
+    ///   stagetui start examples/07_harness.py
+    ///   stagetui start agent.py --name review --detached
+    ///   stagetui start agent.py -- --model fast     # arguments for the app
+    Start {
+        /// A `.py` file that calls `MyApp().run()`.
+        app: String,
+        /// Session name (default: from the app's class name).
+        #[arg(long)]
+        name: Option<String>,
+        /// Start in the background without opening it here.
+        #[arg(long, short)]
+        detached: bool,
+        /// Arguments passed on to the app.
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
+    /// Stop a running app, as if someone pressed q in it.
+    Stop {
+        /// The session name (optional when only one app is running).
+        name: Option<String>,
     },
     /// Reaper sidecar (internal).
     #[command(name = "__reaper", hide = true)]
@@ -220,6 +260,15 @@ where
         }),
         Command::Drive { app, size } => verbs::agent("drive", &app, &size),
         Command::Mcp { app, size } => verbs::agent("mcp", &app, &size),
+        Command::Sessions { json } => sessions::list(json),
+        Command::Attach { name } => sessions::attach(name.as_deref()),
+        Command::Start {
+            app,
+            name,
+            detached,
+            args,
+        } => sessions::start(&app, name.as_deref(), detached, &args),
+        Command::Stop { name } => sessions::stop(name.as_deref()),
         Command::Reaper => stagetui_core::reaper::sidecar_main(),
         Command::ReaperSelftest { shm } => reaper_selftest(shm.as_deref()),
     }

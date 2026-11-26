@@ -17,6 +17,7 @@ pub mod gfx;
 pub mod headless;
 pub mod inline;
 pub mod input;
+pub mod ipc;
 pub mod layout;
 pub mod motion;
 pub mod os;
@@ -31,6 +32,7 @@ pub mod text;
 pub mod tree;
 pub mod view;
 pub mod widgets;
+pub mod workspace;
 
 pub use error::{Error, Result};
 

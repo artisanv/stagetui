@@ -5,6 +5,7 @@
 //! runs (virtual clock) and real terminals behave the same.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::Duration;
 
 use ratatui_core::layout::Rect;
@@ -21,6 +22,7 @@ use crate::style::{self, Rgb};
 use crate::text::{self, Direction};
 use crate::tree::{AppSpec, IRect, Kind, NodeSpec, Tree};
 use crate::widgets::{Card, Cx, PaintCx, Reaction, Widget, draw_box, fill, scrollbar};
+use crate::workspace::Layout;
 use crate::{Error, Result};
 
 /// Something the app should know about (`on_click`, `on_change`, actions…).
@@ -88,6 +90,8 @@ pub struct Session {
     dirty: bool,
     size: (u16, u16),
     quit: bool,
+    /// A window asked to detach (prefix + d); the runtime decides what that means.
+    detach: bool,
     frames: HashMap<usize, FrameClock>,
     modal_return: Vec<(usize, Option<usize>)>,
     autofocused: bool,
@@ -135,6 +139,7 @@ impl Session {
             dirty: true,
             size: (0, 0),
             quit: false,
+            detach: false,
             frames: HashMap::new(),
             modal_return: Vec::new(),
             autofocused: false,
@@ -309,6 +314,11 @@ impl Session {
     /// The user asked to quit (q, Esc, Ctrl+C or a `quit` action).
     pub fn quit_requested(&self) -> bool {
         self.quit
+    }
+
+    /// Whether a window asked to detach since the last call (prefix + d).
+    pub fn take_detach(&mut self) -> bool {
+        std::mem::take(&mut self.detach)
     }
 
     /// Ask the app to quit.
@@ -808,6 +818,123 @@ impl Session {
         self.dirty = true;
     }
 
+    // ----- workspaces -----------------------------------------------------
+
+    /// The workspace tabs (`StageWorkspaces`), if the app has them.
+    fn workspace_tabs(&self) -> Option<usize> {
+        self.tree
+            .preorder()
+            .into_iter()
+            .find(|i| matches!(&self.tree.nodes[*i].kind, Kind::Tabs(t) if t.workspaces))
+    }
+
+    /// Where a workspace lives: `target`, the open workspace tab, or the
+    /// app's main split / pane.
+    fn workspace_root(&self, target: Option<&str>) -> Result<usize> {
+        if let Some(t) = target {
+            return self.target(t);
+        }
+        if let Some(tabs) = self.workspace_tabs()
+            && let Kind::Tabs(t) = &self.tree.nodes[tabs].kind
+        {
+            let pages: Vec<usize> = self.tree.nodes[tabs]
+                .children
+                .iter()
+                .copied()
+                .filter(|c| self.tree.nodes[*c].alive && self.tree.nodes[*c].visible)
+                .collect();
+            if let Some(p) = pages.get(t.active.min(pages.len().saturating_sub(1))) {
+                return Ok(*p);
+            }
+        }
+        self.tree
+            .preorder()
+            .into_iter()
+            .find(|i| matches!(self.tree.nodes[*i].kind, Kind::Split(_) | Kind::Pane(_)))
+            .ok_or_else(|| {
+                Error::friendly(
+                    "This app has no panes to save",
+                    "a workspace is a layout of StageSplit and StagePane widgets",
+                    "put StagePane(...) widgets in a StageSplit",
+                )
+            })
+    }
+
+    /// The current layout of splits and panes (the open workspace, or `target`).
+    pub fn workspace(&self, target: Option<&str>) -> Result<Layout> {
+        Ok(self.tree.layout(self.workspace_root(target)?))
+    }
+
+    /// Arrange the splits and panes like `layout`. Panes that still exist (same
+    /// id) are moved, not rebuilt: shells and chats keep running.
+    pub fn load_workspace(&mut self, target: Option<&str>, layout: &Layout) -> Result<()> {
+        let root = self.workspace_root(target)?;
+        let applied = self.tree.apply_layout(root, layout)?;
+        for (pane, kind) in &applied.switch {
+            self.switch_pane(*pane, kind);
+        }
+        for (pane, kind, args) in &applied.fresh {
+            let custom = self
+                .tree
+                .pane_types
+                .iter()
+                .any(|t| t.name == *kind && t.custom);
+            let plain = args.is_null() || args.as_object().is_some_and(|o| o.is_empty());
+            match crate::panes::builtin_content(kind).filter(|_| !custom && plain) {
+                Some(spec) => {
+                    self.pane_add(*pane, kind, &spec)?;
+                }
+                // Options or a custom type: the app builds it (like the pane menu).
+                None => self.emit(
+                    *pane,
+                    "pane",
+                    json!({ "type": kind, "built": false, "restored": false, "args": args }),
+                ),
+            }
+        }
+        if self.focus.is_none_or(|f| !self.tree.nodes[f].alive) {
+            self.focus = None;
+            if let Some(first) = applied.first {
+                self.focus_into(first);
+            }
+        }
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// The name the open workspace is saved under: its tab's title, or `default`.
+    pub fn workspace_name(&self) -> String {
+        self.workspace_tabs()
+            .and_then(|_| self.workspace_root(None).ok())
+            .and_then(|r| self.tree.nodes[r].spec.props.title.clone())
+            .unwrap_or_else(|| "default".into())
+    }
+
+    /// Save the current layout as `name` in a workspaces file.
+    pub fn save_workspace(&self, target: Option<&str>, name: &str, path: &Path) -> Result<()> {
+        crate::workspace::save(path, name, &self.workspace(target)?)
+    }
+
+    /// Load the layout saved as `name` from a workspaces file.
+    pub fn open_workspace(&mut self, target: Option<&str>, name: &str, path: &Path) -> Result<()> {
+        let layout = crate::workspace::load(path, name)?;
+        self.load_workspace(target, &layout)
+    }
+
+    /// Show workspace tab `k` (0-based), if there are workspace tabs.
+    fn select_workspace(&mut self, k: usize) {
+        if let Some(tabs) = self.workspace_tabs() {
+            let count = self.tree.nodes[tabs]
+                .children
+                .iter()
+                .filter(|c| self.tree.nodes[**c].alive && self.tree.nodes[**c].visible)
+                .count();
+            if k < count {
+                self.select_tab(tabs, k);
+            }
+        }
+    }
+
     /// Put `spec` into `pane` as the content for type `name` and show it.
     fn pane_add(&mut self, pane: usize, name: &str, spec: &NodeSpec) -> Result<usize> {
         let c = self.tree.insert(spec, Some(pane))?;
@@ -948,9 +1075,12 @@ impl Session {
                 ("-", "Split ↓"),
                 ("x", "Close pane"),
                 ("Space", "Pane type"),
+                ("d", "Detach"),
+                ("1-9", "Workspace"),
                 ("q", "Quit"),
             ]
             .iter()
+            .filter(|(k, _)| *k != "1-9" || self.workspace_tabs().is_some())
             .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
             .collect();
         }
@@ -1114,8 +1244,18 @@ impl Session {
                     .filter(|c| self.tree.nodes[*c].alive && self.tree.nodes[*c].visible)
                     .collect();
                 let active = t.active.min(visible.len().saturating_sub(1));
-                let bg = crate::widgets::behind(target, area.x, area.y, theme.bg);
-                if area.height > 1 {
+                let bg = if t.workspaces {
+                    fill(
+                        target,
+                        Rect::new(area.x, y, area.width, 1),
+                        theme.fg,
+                        theme.surface,
+                    );
+                    theme.surface
+                } else {
+                    crate::widgets::behind(target, area.x, area.y, theme.bg)
+                };
+                if area.height > 1 && !t.workspaces {
                     let rule = Style::new().fg(theme.border.color()).bg(bg.color());
                     for x in area.left()..area.right() {
                         target.cells[(x, y + 1)].set_symbol("─").set_style(rule);
@@ -1146,7 +1286,7 @@ impl Session {
                         tbg,
                         on,
                     );
-                    if on && area.height > 1 {
+                    if on && area.height > 1 && !t.workspaces {
                         let under = Style::new().fg(theme.accent.color()).bg(bg.color());
                         for ux in x..(x + rect.width).min(area.right()) {
                             target.cells[(ux, y + 1)].set_symbol("━").set_style(under);
@@ -1768,6 +1908,8 @@ impl Session {
             Code::Char('|') | Code::Char('\\') => self.action("split_pane_right"),
             Code::Char('-') => self.action("split_pane_down"),
             Code::Char('x') => self.action("close_pane"),
+            Code::Char('d') => self.action("detach"),
+            Code::Char(c @ '1'..='9') => self.select_workspace(c as usize - '1' as usize),
             Code::Char(' ') | Code::Enter => self.action("pane_menu"),
             Code::Char('q') => self.request_quit(),
             _ => {}
@@ -1783,6 +1925,7 @@ impl Session {
     pub fn action(&mut self, name: &str) {
         match name {
             "quit" => self.request_quit(),
+            "detach" => self.detach = true,
             "focus_next" => self.move_focus(true),
             "focus_previous" => self.move_focus(false),
             "next_theme" => {

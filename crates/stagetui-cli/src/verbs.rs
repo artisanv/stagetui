@@ -19,7 +19,7 @@ pub fn set_python(exe: String) {
     let _ = PYTHON.set(exe);
 }
 
-fn python() -> String {
+pub(crate) fn python() -> String {
     PYTHON.get().cloned().unwrap_or_else(|| {
         if cfg!(windows) {
             "python".into()

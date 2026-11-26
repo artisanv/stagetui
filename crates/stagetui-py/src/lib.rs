@@ -57,6 +57,29 @@ fn inspect(py: Python<'_>, headless: bool, probe: bool) -> PyResult<String> {
     serde_json::to_string(&caps).map_err(|e| to_py(py, &e.into()))
 }
 
+/// Running sessions (JSON list), like `stagetui sessions --json`.
+#[pyfunction]
+fn sessions(py: Python<'_>) -> PyResult<String> {
+    let list = py.detach(stagetui_core::ipc::list);
+    serde_json::to_string(&list).map_err(|e| to_py(py, &e.into()))
+}
+
+/// The default workspaces file of an app (by its class name).
+#[pyfunction]
+fn workspace_file(app: &str) -> String {
+    stagetui_core::workspace::default_file(app)
+        .display()
+        .to_string()
+}
+
+/// Names saved in a workspaces file (JSON list).
+#[pyfunction]
+fn workspace_names(py: Python<'_>, path: &str) -> PyResult<String> {
+    let names =
+        stagetui_core::workspace::names(std::path::Path::new(path)).map_err(|e| to_py(py, &e))?;
+    serde_json::to_string(&names).map_err(|e| to_py(py, &e.into()))
+}
+
 /// Font coverage report (JSON).
 #[pyfunction]
 fn fonts(py: Python<'_>) -> PyResult<String> {
@@ -181,6 +204,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<app::PyApp>()?;
     m.add_function(wrap_pyfunction!(inspect, m)?)?;
     m.add_function(wrap_pyfunction!(fonts, m)?)?;
+    m.add_function(wrap_pyfunction!(sessions, m)?)?;
+    m.add_function(wrap_pyfunction!(workspace_file, m)?)?;
+    m.add_function(wrap_pyfunction!(workspace_names, m)?)?;
     m.add_function(wrap_pyfunction!(register_image, m)?)?;
     m.add_function(wrap_pyfunction!(png_diff, m)?)?;
     m.add_function(wrap_pyfunction!(show, m)?)?;

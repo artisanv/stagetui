@@ -7,7 +7,6 @@ use std::time::Duration;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use stagetui_core::app::App;
-use stagetui_core::caps::{self, DetectOptions};
 use stagetui_core::session::{AppEvent, Session};
 use stagetui_core::tree::NodeSpec;
 use stagetui_core::{Error, headless};
@@ -30,6 +29,19 @@ fn spec(py: Python<'_>, json: &str) -> PyResult<NodeSpec> {
                 "That widget description has a mistake",
                 e.to_string(),
                 "check widget names and property spellings (see docs/reference.md)",
+            ),
+        )
+    })
+}
+
+fn layout(py: Python<'_>, json: &str) -> PyResult<stagetui_core::workspace::Layout> {
+    serde_json::from_str(json).map_err(|e| {
+        to_py(
+            py,
+            &Error::friendly(
+                "That workspace layout has a mistake",
+                format!("{e} — each part needs \"split\" + \"children\", \"pane\", or \"keep\""),
+                "start from app.workspace() and change it",
             ),
         )
     })
@@ -67,13 +79,19 @@ impl PyApp {
     }
 
     /// Take over the terminal and start drawing (returns immediately).
-    fn start(&self, py: Python<'_>) -> PyResult<()> {
+    #[pyo3(signature = (name = "app", path = ""))]
+    fn start(&self, py: Python<'_>, name: &str, path: &str) -> PyResult<()> {
         let app = Arc::clone(&self.app);
-        py.detach(move || {
-            let caps = caps::detect(&DetectOptions::default());
-            app.start(caps)
-        })
-        .map_err(|e| to_py(py, &e))
+        let (name, path) = (name.to_string(), path.to_string());
+        py.detach(move || app.launch(&name, &path))
+            .map_err(|e| to_py(py, &e))
+    }
+
+    /// The session other windows can attach to (JSON), or None.
+    fn session(&self) -> Option<String> {
+        self.app
+            .session_info()
+            .and_then(|i| serde_json::to_string(&i).ok())
     }
 
     /// Give the terminal back and wait for the drawing threads.
@@ -177,6 +195,57 @@ impl PyApp {
             let i = s.tree().require(target)?;
             s.switch_pane(i, pane_type);
             Ok(())
+        })
+    }
+
+    /// The layout of splits and panes (JSON).
+    #[pyo3(signature = (target = None))]
+    fn workspace(&self, py: Python<'_>, target: Option<&str>) -> PyResult<String> {
+        self.run(py, |s| Ok(serde_json::to_string(&s.workspace(target)?)?))
+    }
+
+    /// Arrange splits and panes like a layout (JSON).
+    #[pyo3(signature = (target, layout_json))]
+    fn load_workspace(
+        &self,
+        py: Python<'_>,
+        target: Option<&str>,
+        layout_json: &str,
+    ) -> PyResult<()> {
+        let layout = layout(py, layout_json)?;
+        self.run(py, |s| s.load_workspace(target, &layout))
+    }
+
+    /// The name the open workspace is saved under (its tab title, or "default").
+    fn workspace_name(&self) -> String {
+        self.app.session().workspace_name()
+    }
+
+    /// Save the layout as `name` in a workspaces file.
+    #[pyo3(signature = (target, name, path))]
+    fn save_workspace(
+        &self,
+        py: Python<'_>,
+        target: Option<&str>,
+        name: &str,
+        path: &str,
+    ) -> PyResult<()> {
+        self.run(py, |s| {
+            s.save_workspace(target, name, std::path::Path::new(path))
+        })
+    }
+
+    /// Load the layout saved as `name` from a workspaces file.
+    #[pyo3(signature = (target, name, path))]
+    fn open_workspace(
+        &self,
+        py: Python<'_>,
+        target: Option<&str>,
+        name: &str,
+        path: &str,
+    ) -> PyResult<()> {
+        self.run(py, |s| {
+            s.open_workspace(target, name, std::path::Path::new(path))
         })
     }
 

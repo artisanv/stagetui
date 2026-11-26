@@ -5,13 +5,23 @@ Try:   click a pane's title (▾) to switch what it shows — Terminal, Files, C
        the ⊞ ⊟ × buttons on the right of each title split side by side, split top/bottom, close
        keyboard: Ctrl+Space, then Space (menu) · | (split →) · - (split ↓) · x (close) · Tab (next)
        switch a pane to Terminal, run `htop`, switch away and back: it is still running
+       the tabs at the top are workspaces: click them, or Ctrl+Space then 1 / 2
+       Ctrl+S saves the open workspace's layout; it comes back next time you start
 """
 
 import math
 import time
 
 import stagetui as ts
-from stagetui import StageApp, StageBar, StageCanvas, StagePane, StageSplit
+from stagetui import (
+    StageApp,
+    StageBar,
+    StageCanvas,
+    StageError,
+    StagePane,
+    StageSplit,
+    StageWorkspaces,
+)
 
 
 # Your own pane type: it appears in every pane's menu.
@@ -67,6 +77,10 @@ From the keyboard, press **Ctrl+Space**, then:
 | - | split top / bottom |
 | x | close the pane |
 | Tab | next pane |
+| 1, 2 | switch workspace (the tabs at the top) |
+
+Arrange things the way you like and press **Ctrl+S**: the layout is
+saved and comes back the next time you start this app.
 
 Switch a pane to *Terminal*, start `htop`, switch to *Notes* and back —
 it is still running. There is also a custom **Clock** pane type.
@@ -75,20 +89,41 @@ it is still running. There is also a custom **Clock** pane type.
 
 class Workspace(StageApp):
     theme = "aurora-dark"
-    BINDINGS = [("ctrl+t", "next_theme", "Theme")]
+    BINDINGS = [
+        ("ctrl+s", "save", "Save layout"),
+        ("ctrl+t", "next_theme", "Theme"),
+    ]
 
     def compose(self):
         return [
-            StageSplit(
-                [
-                    StagePane("files"),
-                    StagePane("markdown", text=WELCOME),
-                    StagePane("clock"),
-                ],
-                ratio=[1, 2, 1.2],
+            StageWorkspaces(
+                {
+                    "Layout": StageSplit(
+                        [
+                            StagePane("files", id="files"),
+                            StagePane("markdown", id="notes", text=WELCOME),
+                            StagePane("clock", id="clock"),
+                        ],
+                        ratio=[1, 2, 1.2],
+                    ),
+                    "Agent": StageSplit(
+                        [StagePane("chat", id="chat"), StagePane("terminal", id="shell")],
+                    ),
+                }
             ),
-            StageBar("Workspace · click a pane title to change it"),
+            StageBar("Workspace · click a pane title to change it · Ctrl+S saves the layout"),
         ]
+
+    def on_mount(self):
+        # Bring back the layout saved last time, if there is one.
+        try:
+            self.load_workspace()
+        except StageError:
+            pass
+
+    def save(self):
+        file = self.save_workspace()
+        self.notify(f"Layout saved to {file.name}", icon="check")
 
 
 if __name__ == "__main__":

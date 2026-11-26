@@ -24,10 +24,11 @@ use crate::widgets::{
 use crate::{Error, Result};
 
 /// Widget types, as written in app descriptions (`"type": "card"`).
-pub const WIDGET_TYPES: [&str; 26] = [
+pub const WIDGET_TYPES: [&str; 27] = [
     "stage",
     "split",
     "tabs",
+    "workspaces",
     "modal",
     "pane",
     "bar",
@@ -339,6 +340,8 @@ pub struct SplitBox {
 #[derive(Debug, Clone)]
 pub struct TabsBox {
     pub active: usize,
+    /// Workspace tabs (Blender-style screens): a slim strip, pages fill the window.
+    pub workspaces: bool,
 }
 
 /// A Blender-style pane: shows one of several contents, chosen by type.
@@ -452,6 +455,7 @@ impl Kind {
         match self {
             Self::Stage(_) => "stage",
             Self::Split(_) => "split",
+            Self::Tabs(t) if t.workspaces => "workspaces",
             Self::Tabs(_) => "tabs",
             Self::Modal(_) => "modal",
             Self::Pane(_) => "pane",
@@ -1123,7 +1127,7 @@ impl Tree {
     }
 
     /// Cards directly inside a split or tabs are panes: they take focus.
-    fn refresh_panes(&mut self) {
+    pub(crate) fn refresh_panes(&mut self) {
         for i in 0..self.nodes.len() {
             let pane = self.is_pane(i);
             if let Kind::Card(c) = &mut self.nodes[i].kind {
@@ -1254,7 +1258,7 @@ fn bad_update() -> Error {
     )
 }
 
-fn normalize_ratios(given: Option<&[f32]>, n: usize) -> Result<Vec<f32>> {
+pub(crate) fn normalize_ratios(given: Option<&[f32]>, n: usize) -> Result<Vec<f32>> {
     if n == 0 {
         return Ok(Vec::new());
     }
@@ -1367,8 +1371,9 @@ fn build_kind(kind: &str, spec: &NodeSpec) -> Result<Kind> {
             horizontal: direction(p, true)?,
             ratios: Vec::new(),
         }),
-        "tabs" => Kind::Tabs(TabsBox {
+        "tabs" | "workspaces" => Kind::Tabs(TabsBox {
             active: p.active.unwrap_or(0),
+            workspaces: kind == "workspaces",
         }),
         "modal" => Kind::Modal(ModalBox {
             title: p.title.clone(),

@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0a1] — first alpha (not yet published)
+### Added — Milestone 5a: sessions and workspaces
+- **Sessions**: every interactive app is a session other terminals can attach to, over a private
+  local socket (user-only folder, `0600`; named pipes on Windows) with a per-session secret token.
+- `stagetui start app.py [--name] [--detached] [-- args]` runs an app in the background (output to a
+  private log; a crash shows its last lines), `stagetui attach [name]`, `stagetui sessions [--json]`,
+  `stagetui stop [name]`. **Ctrl+Space then d** detaches; the app keeps running.
+- Several windows can show one app at the same time, each drawn with its own terminal's graphics
+  (Kitty pictures in one, half blocks in another); the app takes the size of the window used last.
+- `ts.sessions()`, `app.session`, and `app.background(coro)` for long-running async work.
+- **Workspaces**: `StageWorkspaces` (Blender-style tabs; Ctrl+Space then 1–9),
+  `app.workspace()`, `app.save_workspace()`, `app.load_workspace()`, `app.workspaces()`.
+  Layouts are plain JSON; loading re-uses panes by id, so shells and chats keep running.
+  Panes remember their options so saved layouts can rebuild them.
+- Agent tools (MCP and `drive`): `workspace`, `load_workspace`, `save_workspace`.
+- Example `09_detach.py` (a pretend agent that keeps working), workspace tabs and saved layouts in
+  `08_workspace.py`; docs: Sessions, Panes → Workspaces.
+- New dependency: `interprocess` (local sockets / named pipes).
+
+### Fixed
+- `pane.content` found nothing in an app that had not been drawn yet (background sessions).
+
+## [0.1.0a1] — first alpha
 
 ### Changed
 - **Renamed to `stagetui`** (the name `termstage` was already taken on PyPI and crates.io):

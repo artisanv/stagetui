@@ -10,7 +10,10 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
   - `layout.rs` taffy flex/grid → cell rects, scroll extents, split dividers, modals
   - `session.rs` state machine: focus, keys, mouse, scroll, drag, modals, toasts, motion, events
   - `input.rs` keys/mouse (crossterm + `"ctrl+s"` parsing); `motion.rs` effects on a clock
-  - `app.rs` terminal runtime: input thread + dirty-driven render thread + event queue
+  - `app.rs` terminal runtime: input thread + dirty-driven render thread + event queue;
+    local and remote windows (each its own `TerminalView`), accept loop for attaching windows
+  - `ipc.rs` sessions: private runtime folder, token, framing, registry, `attach` client
+  - `workspace.rs` layouts of splits/panes: capture, apply (re-using nodes by id), JSON files
   - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
     markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
   - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect
@@ -48,6 +51,11 @@ STAGETUI_UPDATE_SNAPSHOTS=1 cargo test -p stagetui-core headless   # refresh gol
 `stagetui mcp my_app.py` exposes the app as MCP tools (snapshot, press, type, click, …);
 `stagetui drive my_app.py` is the same over plain JSON-RPC. In Python: `with App().drive((100, 30)) as d: ...`.
 
+## Sessions
+`stagetui start app.py -d` runs an app in the background (`STAGETUI_SERVE=1`); `stagetui sessions`,
+`stagetui attach <name>`, `stagetui stop <name>`. Tests use a private `XDG_RUNTIME_DIR`
+(see `tests/python/test_sessions.py`) and `ipc::Registry::at(dir)` in Rust.
+
 ## Seeing what you built (headless)
 ```python
 snap = MyApp().run_headless((100, 30), steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#send"}])
@@ -67,3 +75,7 @@ snap.query("#chat")  # widget JSON: id, type, bounds, text, dir, theme, focused�
 | `STAGETUI_SYSTEM_FONTS=0` | Bundled fonts only (deterministic PNGs) |
 | `STAGETUI_REDUCE_MOTION=1` | Disable animations |
 | `STAGETUI_UPDATE_SNAPSHOTS=1` | Rewrite golden snapshots in tests |
+| `STAGETUI_SERVE=1` | Run in the background with no terminal of its own (set by `stagetui start`) |
+| `STAGETUI_SESSION=name` | Session name |
+| `STAGETUI_NO_SESSION=1` | Interactive apps don't accept attaching windows |
+| `STAGETUI_LOG=path` | Log file shown by `stagetui sessions --json` (set by `stagetui start`) |

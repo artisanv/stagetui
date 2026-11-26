@@ -69,6 +69,19 @@ stagetui doctor
 : There is no terminal (for example inside a test or a pipe). Use
   `run_headless()` or `stagetui render` instead — see [Snapshots](snapshots.md).
 
+**`stagetui attach` says "No session named …"**
+: The app isn't running anymore, or has another name. `stagetui sessions` lists
+  what is running. Apps started with `python app.py` end when their terminal
+  closes; use `stagetui start app.py` for apps that must keep going ([Sessions](sessions.md)).
+
+**Ctrl+Space then d says "To detach, start it in the background"**
+: The app was started with `python app.py`, so it lives in this terminal.
+  Quit it and start it with `stagetui start app.py` instead.
+
+**"The session folder … is not yours"**
+: Someone else (another user) created stagetui's session folder. Remove that
+  folder, or set `XDG_RUNTIME_DIR` to a folder only you can open.
+
 ## Environment variables
 
 | Variable | Effect |
@@ -80,6 +93,8 @@ stagetui doctor
 | `STAGETUI_TEXT_MODE=auto\|cells\|pixels` | How Arabic and other complex scripts are drawn |
 | `STAGETUI_SYSTEM_FONTS=0` | Use only stagetui's bundled fonts (identical PNGs everywhere) |
 | `STAGETUI_REDUCE_MOTION=1` | Turn off animations |
+| `STAGETUI_NO_SESSION=1` | Don't let other terminals attach to apps run with `python app.py` |
+| `STAGETUI_SESSION=name` | The session name to use ([Sessions](sessions.md)) |
 
 ## Your terminal is always restored
 

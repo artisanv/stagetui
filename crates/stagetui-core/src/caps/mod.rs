@@ -11,12 +11,12 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub use parse::Replies;
 
 /// Image protocol used to draw pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GraphicsProtocol {
     Kitty,
@@ -26,7 +26,7 @@ pub enum GraphicsProtocol {
 }
 
 /// Terminal families we recognise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Family {
     Kitty,
@@ -47,13 +47,13 @@ pub enum Family {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Platform {
-    pub os: &'static str,
-    pub arch: &'static str,
+    pub os: String,
+    pub arch: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalId {
     pub family: Family,
     pub name: Option<String>,
@@ -64,13 +64,13 @@ pub struct TerminalId {
     pub program: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TtyInfo {
     pub stdin: bool,
     pub stdout: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CellSizeSource {
     Ioctl,
@@ -79,7 +79,7 @@ pub enum CellSizeSource {
     Default,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SizeInfo {
     pub cols: u16,
     pub rows: u16,
@@ -88,7 +88,7 @@ pub struct SizeInfo {
     pub cell_size_source: CellSizeSource,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Graphics {
     pub best: GraphicsProtocol,
     pub kitty: bool,
@@ -98,33 +98,33 @@ pub struct Graphics {
     pub iterm2: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keyboard {
     pub kitty_protocol: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bidi {
     /// The terminal itself reorders RTL text (VTE, mlterm, mintty). stagetui switches it
     /// to explicit mode (BDSM, `CSI 8 l`) before emitting pre-shaped visual-order text.
     pub terminal_reorders: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Remote {
     pub ssh: bool,
     pub tmux: bool,
     pub screen: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     pub slow: bool,
     pub max_fps: u32,
     pub compress: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProbeInfo {
     pub performed: bool,
     pub rtt_ms: Option<f64>,
@@ -133,7 +133,7 @@ pub struct ProbeInfo {
 }
 
 /// Everything stagetui knows about where it is running.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capabilities {
     pub version: String,
     pub platform: Platform,
@@ -453,8 +453,8 @@ pub fn resolve(
     Capabilities {
         version: crate::version(),
         platform: Platform {
-            os: std::env::consts::OS,
-            arch: std::env::consts::ARCH,
+            os: std::env::consts::OS.into(),
+            arch: std::env::consts::ARCH.into(),
         },
         terminal: TerminalId {
             family,

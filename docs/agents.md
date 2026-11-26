@@ -43,6 +43,7 @@ The agent then has these tools:
 | `wait` | Let time pass (animations, live drawings) |
 | `query` | One widget's details by id |
 | `list_panes` / `set_pane_type` | See and switch [panes](panes.md) |
+| `workspace` / `load_workspace` / `save_workspace` | Read the layout of splits and panes, rearrange it (`layout: {...}` or `name`), save it ([workspaces](panes.md#save-a-layout-bring-it-back)) |
 
 Every action answers with the new screen, so the agent always sees the effect.
 

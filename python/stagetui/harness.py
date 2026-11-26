@@ -672,6 +672,18 @@ def _pane_types_spec() -> list[dict[str, Any]]:
     ]
 
 
+def _plain(args: Mapping[str, Any]) -> dict[str, Any]:
+    """The options that can be written to a file (text, numbers, lists…)."""
+    out: dict[str, Any] = {}
+    for k, v in args.items():
+        try:
+            json.dumps(v)
+        except (TypeError, ValueError):
+            continue
+        out[k] = v
+    return out
+
+
 def _build_pane_content(name: str, args: Mapping[str, Any]) -> _Widget:
     t = _PANE_TYPES.get(name)
     if t is None:
@@ -725,6 +737,8 @@ class StagePane(_Widget):
             grow=grow,
             children=[content],
             handlers={"pane": on_change},
+            # Remembered so a saved workspace can build the pane again.
+            args=_plain(args) or None,
         )
 
     @property
@@ -748,7 +762,7 @@ class StagePane(_Widget):
             return None
         info = json.loads(node)
         for child in info.get("children", []):
-            if child.get("on_screen"):
+            if child.get("visible"):
                 return app._remote(child["id"])
         return None
 
@@ -765,3 +779,52 @@ class StagePane(_Widget):
     def switch(self, type: str) -> None:
         """Switch type, restoring the stashed content if there is one."""
         self._require_running("switch()").switch_pane(self._key, type)
+
+
+class StageWorkspaces(_Widget):
+    """Workspace tabs across the top, like Blender's *Layout* / *Modeling* screens.
+
+    Each workspace is a whole layout (usually a :class:`StageSplit` of panes)::
+
+        StageWorkspaces({
+            "Code": StageSplit([StagePane("files"), StagePane("code")]),
+            "Agent": StageSplit([StagePane("chat"), StagePane("terminal")]),
+        })
+
+    A list of names gives each one an empty pane to fill in. Switch with a click,
+    **Ctrl+Space** then **1**-**9**, or Ctrl+PageUp / Ctrl+PageDown. Every
+    workspace keeps running while another is on screen.
+    """
+
+    _type = "workspaces"
+
+    def __init__(
+        self,
+        workspaces: Mapping[str, _Widget] | Sequence[str],
+        *,
+        active: int = 0,
+        on_change: Handler | None = None,
+        id: str | None = None,
+        theme: Theme | None = None,
+        accent: str | None = None,
+        grow: float | None = 1,
+    ) -> None:
+        pages: list[_Widget] = []
+        items = (
+            list(workspaces.items())
+            if isinstance(workspaces, Mapping)
+            else [(name, StagePane("empty")) for name in workspaces]
+        )
+        for name, page in items:
+            page.props["title"] = str(name)
+            pages.append(page)
+        super().__init__(
+            None,
+            id=id,
+            theme=theme,
+            accent=accent,
+            grow=grow,
+            active=active,
+            children=pages,
+            handlers={"change": on_change},
+        )

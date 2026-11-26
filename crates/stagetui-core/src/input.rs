@@ -8,10 +8,12 @@ use crossterm::event::{
     MouseEventKind,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{Error, Result};
 
 /// A key without modifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Code {
     Char(char),
     Enter,
@@ -32,7 +34,7 @@ pub enum Code {
 }
 
 /// Modifier keys held with a key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Mods {
     pub ctrl: bool,
     pub alt: bool,
@@ -43,7 +45,7 @@ pub struct Mods {
 /// One key press, normalized so that bindings compare reliably:
 /// letters are lowercase (with `shift` set for capitals), and symbols such as
 /// `?` never carry `shift` (the symbol already says it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Key {
     pub code: Code,
     pub mods: Mods,
@@ -221,7 +223,7 @@ impl Key {
 }
 
 /// Mouse buttons.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Button {
     Left,
     Right,
@@ -229,7 +231,7 @@ pub enum Button {
 }
 
 /// What the mouse did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MouseKind {
     Down(Button),
     Up(Button),
@@ -240,7 +242,7 @@ pub enum MouseKind {
 }
 
 /// A mouse event at a cell position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mouse {
     pub kind: MouseKind,
     pub x: u16,
@@ -248,7 +250,7 @@ pub struct Mouse {
 }
 
 /// Everything an app can receive.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
     Key(Key),
     Mouse(Mouse),

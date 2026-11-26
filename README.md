@@ -2,8 +2,8 @@
 
 > [!WARNING]
 > **Work in progress — not finished yet.** stagetui is under active development
-> (Milestone 4 of 6). APIs will change, it has only been tested by hand on Linux,
-> and nothing is released on PyPI yet. Please don't use it for real work today.
+> (Milestone 5 of 6). APIs will change, it has only been tested by hand on Linux,
+> and the PyPI release is an early alpha. Please don't use it for real work today.
 > Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
 
 **Beautiful terminal programs in plain Python — with pictures, drawings and every world language.**
@@ -16,10 +16,12 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="staget
 ts.show("logo.png")
 ```
 
-> **Status: first alpha (Milestone 4 of 6).** The agent harness kit (chat, streaming
+> **Status: alpha (Milestone 5 of 6).** The agent harness kit (chat, streaming
 > Markdown, prompt, diff, tool calls, permission prompts, a real shell in a pane),
-> Blender-style panes, agent access (`stagetui mcp` / `drive`), layouts, the mouse,
-> animations, Arabic/RTL and headless snapshots work today — see the [roadmap](#roadmap).
+> Blender-style panes and workspaces, background sessions you can detach from and
+> attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
+> layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
+> see the [roadmap](#roadmap).
 
 ## Why stagetui?
 
@@ -27,6 +29,7 @@ ts.show("logo.png")
 - **Pictures that look right everywhere.** Kitty, Ghostty, WezTerm, iTerm2, Windows Terminal, foot… stagetui picks the best method your terminal supports, and falls back gracefully.
 - **Every language.** Arabic and Persian letters join and flow right-to-left, Hindi conjuncts form, Chinese and Japanese line up — in every terminal, with fonts built in.
 - **Made for AI agents.** Any app can be captured as plain text, a widget tree, or a PNG — no terminal needed.
+- **Keeps running.** Start an app in the background, close the terminal, attach again later — from any terminal, even two at once.
 - **Fast and safe.** The engine is Rust. The Python package has zero dependencies. Nothing is left running when your program exits — even after a crash.
 - **Linux, macOS and Windows.**
 
@@ -111,7 +114,7 @@ stagetui mcp my_app.py      # let a coding agent (Claude Code…) see and operat
 2. ✅ Text & pictures: Arabic/RTL shaping, bundled fonts, Kitty/Sixel/iTerm2 images, Canvas, PNG export
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
-5. Sessions & workspaces: pop a pane out into its own terminal window and back, save/restore layouts
+5. 🚧 Sessions & workspaces: ✅ background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts · next: pop a pane out into its own terminal window and back
 6. Optional plugins: video, web, 3D
 
 ## Develop

@@ -2,7 +2,7 @@
 
 > Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
 
-Status: Milestone 4 (harness kit, Blender-style panes, agent interface). APIs below exist today; workspaces and detach/reattach (M5) and media plugins (M6) are planned.
+Status: Milestone 5a (harness kit, Blender-style panes, workspaces, background sessions, agent interface). APIs below exist today; single-pane pop-out windows (M5b) and media plugins (M6) are planned.
 
 ## Python API
 - `import stagetui as ts`
@@ -18,7 +18,9 @@ Status: Milestone 4 (harness kit, Blender-style panes, agent interface). APIs be
 - Display: `StageCard(text, shadow=)`, `StageText(text)`, `StageImage(path|bytes|Canvas, width=, height=, fit=)`, `StageCanvas(draw_fn=None, size=(w_px, h_px), on_frame=fn(canvas, t), fps=30)`.
 - Controls: `StageButton(label, on_click=, icon=, variant="secondary"|"primary"|"danger")`, `StageInput(value, placeholder=, title=, password=, on_change=, on_submit=)`, `StageCheckbox(label, checked=, on_change=)`, `StageSelect(options, value=, on_change=)`, `StageProgress(0..1|None, label=)`, `StageSpinner(label)`, `StageTable(rows, headers=, height=, on_select=, on_submit=)`, `StageTree(dict|list, on_select=, on_submit=)`.
 - Harness: `StageChat(messages)` → `.add(role, text) -> msg` (`msg.append(chunk)`, `msg.update(text)`), `.add_tool(name, args) -> msg` (`msg.finish(output, ok=True)`), `.clear()`; `StageMarkdown(text)` `.append()`; `StagePrompt(text, placeholder=, commands=[(name, desc)], mentions=[files], on_submit=)` (Enter sends, Shift/Alt+Enter or Ctrl+J newline, ↑/↓ history, / and @ completion); `StageCode(source, language=, path=)`, `StageCode.from_file(p)`; `StageDiff((old, new), path=, on_decide=)` (a/r/A keys, `.accept_all()`, `.result`); `StageToolCall(name, args=)` `.finish()`; `StagePermission(question, tool=, args=, on_decide=)`; `await app.ask_permission(q, tool=, args=) -> "allow"|"always"|"deny"`; `StageTerminal(command="", cwd=)` `.send(text)`, `.screen`; `StageLog(text, max_lines=)` `.append()`, `.filter()`.
-- Panes: `StagePane(type, **options)` types chat, terminal(command, cwd), files(root), diff(old, new, path), code(path|text, language), markdown(text), log, empty; header menu (click title / prefix+Space), ⊞ ⊟ × buttons; `.set_type(type, **o)`, `.switch(type)` (restores stashed), `.type`, `.content`; `app.panes()`; `@ts.pane_type(name, title=, icon=)`; prefix key `PREFIX="ctrl+space"` then Space | - x Tab q.
+- Panes: `StagePane(type, **options)` types chat, terminal(command, cwd), files(root), diff(old, new, path), code(path|text, language), markdown(text), log, empty; header menu (click title / prefix+Space), ⊞ ⊟ × buttons; `.set_type(type, **o)`, `.switch(type)` (restores stashed), `.type`, `.content`; `app.panes()`; `@ts.pane_type(name, title=, icon=)`; prefix key `PREFIX="ctrl+space"` then Space | - x Tab q, d (detach), 1-9 (workspace).
+- Workspaces: `StageWorkspaces({"Code": layout, ...})` tabs; `app.workspace()` → layout dict `{"split": "horizontal", "ratio": [..], "children": [{"pane": type, "id": id, "args": {...}} | {"keep": id} | split]}`; `app.save_workspace(name=None, path=None)`, `app.load_workspace(name_or_layout=None, path=None)` (re-uses panes by id), `app.workspaces()`; files in ~/.config/stagetui/workspaces/<app>.json.
+- Sessions: `app.session`, `ts.sessions()`, `app.background(coro)`.
 - Every widget: `.update(content, **props)`, `.load(content)`, `.show()`, `.hide()`, `.focus()`, `.split(widget, direction=)`, `.remove()`, `.value`; containers `.add(widget)`.
 - `Canvas(width, height, background)`: clear, rect, rounded_rect, circle, line, polyline, gradient_rect, gradient_circle, text (shaped Arabic/Hindi), image, png, save.
 - `Style(padding=, rounded=, accent=, shadow=, width=, height=, grow=)`, `@ts.component` (returns a widget or a list), `ts.StageError` (`.what`, `.why`, `.fix`).
@@ -32,8 +34,8 @@ Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black",
 Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart, send, arrow-right, arrow-left, plus, minus, dot, circle, home.
 
 ## Agent interface
-- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
-- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, scroll, resize, wait, wait_idle, query, panes, set_pane_type, shutdown.
+- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type), workspace, load_workspace(layout|name), save_workspace(name). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
+- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, scroll, resize, wait, wait_idle, query, panes, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
 - Python: `with App().drive((cols, rows)) as d: d.type(..); d.click("#id"); d.snapshot(png=True)`; live apps: `app.capture_text()`, `capture_tree()`, `capture_png()`.
 - pytest: fixture `stage_snapshot.assert_match(snap, name=None, png=False)`, refresh with `pytest --stage-update`.
 
@@ -43,11 +45,12 @@ Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, term
 - `stagetui inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
 - `stagetui doctor` — plain-English report with fixes
 - `stagetui drive app.py` / `stagetui mcp app.py` — agent interface (above)
+- `stagetui start app.py [--name N] [-d] [-- args]`, `stagetui sessions [--json]`, `stagetui attach [name]`, `stagetui stop [name]` — background sessions; Ctrl+Space d detaches
 - `python -m stagetui …` — same CLI
 
 ## Docs
 - [Docs index](docs/README.md)
-- [Layouts](docs/layout.md) · [Interaction](docs/events.md) · [Motion](docs/motion.md) · [Harness](docs/harness.md) · [Panes](docs/panes.md) · [Agents](docs/agents.md)
+- [Layouts](docs/layout.md) · [Interaction](docs/events.md) · [Motion](docs/motion.md) · [Harness](docs/harness.md) · [Panes](docs/panes.md) · [Sessions](docs/sessions.md) · [Agents](docs/agents.md)
 - [Snapshots for agents](docs/snapshots.md)
 - [Reference](docs/reference.md)
 - [Spec](termstage-SPEC-v8.0.md)

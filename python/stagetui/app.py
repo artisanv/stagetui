@@ -11,7 +11,8 @@ import asyncio
 import inspect
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+import sys
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar, Self
 
@@ -186,6 +187,62 @@ class StageApp:
         """The split pane that holds the focus (or the focused widget)."""
         return self._lookup(self._core.focused_pane() if self._core else None)
 
+    @property
+    def session(self) -> dict[str, Any] | None:
+        """While the app runs: its session (``name``, ``pid``…), which other
+        terminals can open with ``stagetui attach <name>``. ``None`` otherwise."""
+        info = self._core.session() if self._core else None
+        return json.loads(info) if info else None
+
+    # ----- workspaces ------------------------------------------------------
+
+    def workspace(self) -> dict[str, Any]:
+        """The current layout of splits and panes, as a dict (see :meth:`load_workspace`)."""
+        return json.loads(self._require_core("workspace()").workspace(None))
+
+    def save_workspace(
+        self, name: str | None = None, *, path: str | os.PathLike[str] | None = None
+    ) -> Path:
+        """Save the current layout of splits and panes.
+
+        ``name`` defaults to the open workspace tab's name (or ``"default"``).
+        It goes to ``~/.config/stagetui/workspaces/<YourApp>.json`` (or ``path``).
+        Returns the file it was saved in.
+        """
+        core = self._require_core("save_workspace()")
+        file = self._workspace_file(path)
+        core.save_workspace(None, name or core.workspace_name(), str(file))
+        return file
+
+    def load_workspace(
+        self,
+        name: str | Mapping[str, Any] | None = None,
+        *,
+        path: str | os.PathLike[str] | None = None,
+    ) -> None:
+        """Bring back a saved layout by name — or arrange the panes like a layout dict.
+
+        ``name`` defaults to the open workspace tab's name (or ``"default"``).
+        Panes that still exist (same id) are moved, not rebuilt: a running shell
+        or a chat keeps everything.
+        """
+        core = self._require_core("load_workspace()")
+        if isinstance(name, Mapping):
+            core.load_workspace(None, json.dumps(name, ensure_ascii=False))
+        else:
+            core.open_workspace(
+                None, name or core.workspace_name(), str(self._workspace_file(path))
+            )
+
+    def workspaces(self, *, path: str | os.PathLike[str] | None = None) -> list[str]:
+        """The names of the saved workspaces."""
+        return list(json.loads(_core.workspace_names(str(self._workspace_file(path)))))
+
+    def _workspace_file(self, path: str | os.PathLike[str] | None) -> Path:
+        if path is not None:
+            return Path(path)
+        return Path(_core.workspace_file(type(self).__name__))
+
     def _lookup(self, found: tuple[str | None, str] | None) -> _Widget | None:
         if found is None:
             return None
@@ -297,6 +354,21 @@ class StageApp:
             if self._core is not None:
                 modal.remove()
 
+    def background(self, work: Awaitable[Any]) -> None:
+        """Run ``async`` work alongside the app — say, an agent loop — without
+        blocking the screen. It is cancelled when the app stops::
+
+            def on_mount(self):
+                self.background(self.watch_files())
+        """
+        if self._loop is None:
+            raise _error(
+                "background() needs a running app",
+                "the app is not on screen yet",
+                "call it from on_mount() or an event handler",
+            )
+        self._handle(work)
+
     def notify(
         self, text: str, *, icon: str | None = None, accent: str | None = None, timeout: float = 3.0
     ) -> None:
@@ -342,7 +414,7 @@ class StageApp:
         core = self._create(cell=(16, 32))
         self._loop = asyncio.get_running_loop()
         self._failure = None
-        core.start()
+        core.start(type(self).__name__, sys.argv[0] if sys.argv else "")
         try:
             await self._await(self.on_mount())
             while True:
@@ -536,7 +608,7 @@ class StageApp:
         kind = str(value.get("type", ""))
         core = self._core
         if not value.get("built") and core is not None:
-            content = _build_pane_content(kind, {})
+            content = _build_pane_content(kind, dict(value.get("args") or {}))
             self._bind(content)
             core.pane_set(target, kind, json.dumps(content._spec(), ensure_ascii=False), False)
         if widget is not None:

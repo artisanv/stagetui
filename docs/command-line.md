@@ -57,6 +57,18 @@ stagetui drive my_app.py --size 120x40  # JSON-RPC 2.0, one message per line
 
 See [Let AI agents see and use your app](agents.md).
 
+## `stagetui start`, `attach`, `sessions`, `stop` — apps that keep running
+
+```bash
+stagetui start my_app.py               # start it in the background and open it here
+stagetui start my_app.py -d            # start it in the background only
+stagetui sessions                      # what is running
+stagetui attach my-app                 # open it (again) in this terminal
+stagetui stop my-app                   # quit it
+```
+
+While attached, **Ctrl+Space** then **d** detaches. See [Sessions](sessions.md).
+
 ## `stagetui doctor` — what can my terminal do?
 
 ```bash
