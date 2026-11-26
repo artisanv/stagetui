@@ -1,5 +1,11 @@
 # stagetui
 
+> [!WARNING]
+> **Work in progress — not finished yet.** stagetui is under active development
+> (Milestone 4 of 6). APIs will change, it has only been tested by hand on Linux,
+> and nothing is released on PyPI yet. Please don't use it for real work today.
+> Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
+
 **Beautiful terminal programs in plain Python — with pictures, drawings and every world language.**
 A fast Rust engine does the hard work. Built for humans *and* for AI coding agents.
 
