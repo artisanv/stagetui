@@ -6,7 +6,7 @@ listing **widgets** (cards, buttons, pictures…) in a `compose` method.
 ## The shape of every app
 
 ```python
-from termstage import StageApp, StageCard, StageText
+from stagetui import StageApp, StageCard, StageText
 
 
 class MyApp(StageApp):
@@ -52,7 +52,7 @@ containers — `Stage`, `StageSplit`, `StageTabs`, `StageModal`, `StageBar` — 
 ### `StageCard` — a box with a title
 
 ```python
-from termstage import StageCard
+from stagetui import StageCard
 
 StageCard("Deploy finished.", title="Status", icon="check", accent="mint")
 ```
@@ -60,7 +60,7 @@ StageCard("Deploy finished.", title="Status", icon="check", accent="mint")
 ### `StageText` — plain text
 
 ```python
-from termstage import StageText
+from stagetui import StageText
 
 StageText("Last updated 2 minutes ago.")
 ```
@@ -71,7 +71,7 @@ From a file, from bytes, or from a Canvas. `width` and `height` are in **cells**
 leave them out to use the picture's own size.
 
 ```python
-from termstage import StageApp, StageImage
+from stagetui import StageApp, StageImage
 
 
 class Photo(StageApp):
@@ -91,7 +91,7 @@ Give it a function that draws on a [Canvas](show-and-draw.md#drawing-with-a-canv
 `size` is the canvas size in **pixels**.
 
 ```python
-from termstage import StageApp, StageCanvas
+from stagetui import StageApp, StageCanvas
 
 
 def sunrise(c):
@@ -143,7 +143,7 @@ In right-to-left layouts, arrow-like icons (▶ » ❯ →) point the other way 
 ### Reusing a look with `Style`
 
 ```python
-from termstage import StageCard, Style
+from stagetui import StageCard, Style
 
 calm = Style(padding="spacious", rounded=True, accent="mint", shadow=True)
 
@@ -160,8 +160,8 @@ A component is a normal function that builds widgets. Decorate it with
 list of widgets (they are stacked for you).
 
 ```python
-import termstage as ts
-from termstage import Stage, StageApp, StageCard, StageText
+import stagetui as ts
+from stagetui import Stage, StageApp, StageCard, StageText
 
 
 @ts.component
@@ -184,12 +184,12 @@ Dashboard().run()
 
 ## When something is wrong
 
-termstage never shows a cryptic error. Every problem raises a `TermstageError`
+stagetui never shows a cryptic error. Every problem raises a `StageError`
 with three parts: **what** happened, **why**, and how to **fix** it.
 
 ```python
-import termstage as ts
-from termstage import StageApp, StageCard
+import stagetui as ts
+from stagetui import StageApp, StageCard
 
 
 class Oops(StageApp):
@@ -199,7 +199,7 @@ class Oops(StageApp):
 
 try:
     Oops().run_headless()
-except ts.TermstageError as e:
+except ts.StageError as e:
     print(e.what)  # Unknown icon "unicorn"
     print(e.fix)  # use one of: sparkles, check, x, ...
 ```

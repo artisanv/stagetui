@@ -3,7 +3,7 @@ requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
-name = "termstage"
+name = "stagetui"
 dynamic = ["version"]
 description = "Rust-first TUI engine for agent harnesses and humans: rich terminal apps, headless snapshots, flawless Arabic/RTL."
 readme = "README.md"
@@ -30,18 +30,18 @@ classifiers = [
 ]
 
 [project.scripts]
-termstage = "termstage._core:cli_main"
+stagetui = "stagetui._core:cli_main"
 
 [project.entry-points.pytest11]
-termstage = "termstage.testing"
+stagetui = "stagetui.testing"
 
 [dependency-groups]
 dev = ["maturin>=1.9,<2", "pytest>=8"]
 
 [tool.maturin]
-manifest-path = "crates/termstage-py/Cargo.toml"
+manifest-path = "crates/stagetui-py/Cargo.toml"
 python-source = "python"
-module-name = "termstage._core"
+module-name = "stagetui._core"
 features = ["pyo3/extension-module"]
 include = [{ path = "LICENSE-MIT", format = "sdist" }, { path = "LICENSE-APACHE", format = "sdist" }]
 

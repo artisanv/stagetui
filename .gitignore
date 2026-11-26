@@ -12,5 +12,5 @@ dist/
 *.egg-info/
 .DS_Store
 
-# Render outputs made while trying termstage in the repo root
+# Render outputs made while trying stagetui in the repo root
 /*.png

@@ -8,8 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0a1] — first alpha (not yet published)
 
+### Changed
+- **Renamed to `stagetui`** (the name `termstage` was already taken on PyPI and crates.io):
+  `pip install stagetui`, `import stagetui`, the `stagetui` command, crates `stagetui-core` /
+  `stagetui-cli`, environment variables `STAGETUI_*`, and the error class `StageError`.
+
 ### Added — Milestone 4b: agent interface
-- `termstage drive app.py` (JSON-RPC 2.0 over stdio) and `termstage mcp app.py` (MCP tools: snapshot with optional PNG, press, type, click, scroll, resize, wait, query, list_panes, set_pane_type); app output is kept off the protocol channel.
+- `stagetui drive app.py` (JSON-RPC 2.0 over stdio) and `stagetui mcp app.py` (MCP tools: snapshot with optional PNG, press, type, click, scroll, resize, wait, query, list_panes, set_pane_type); app output is kept off the protocol channel.
 - `StageApp.drive()` → `Driver` for step-by-step headless control; `run_headless` is built on it.
 - `capture_text()`, `capture_tree()`, `capture_png()` on running apps.
 - pytest plugin (`stage_snapshot` fixture, `--stage-update`), golden text and PNG comparison with a tolerance (`_core.png_diff`).
@@ -30,7 +35,7 @@ All notable changes to this project are documented here. The format follows
 - `StageTabs`, `StageModal` (dimmed backdrop, focus trap, Esc/click-outside, pictures underneath occluded), `StageBar` (status + shortcut hints), toasts via `app.notify()`.
 - Controls: `StageButton` (3 variants), `StageInput` (RTL-aware editing, paste, password), `StageCheckbox`, `StageSelect` (dropdown), `StageProgress` (smooth eighth blocks, indeterminate), `StageSpinner`, `StageTable`, `StageTree`.
 - Focus and input: Tab order, hover highlights, click-to-focus, mouse wheel, Kitty keyboard + legacy key normalization, `BINDINGS` with built-in actions, live theme switching.
-- Motion: `fade`, `slide-up`, `slide-left`, `pop`, `pulse` — deterministic under a virtual clock; `reduce_motion` / `TERMSTAGE_REDUCE_MOTION=1`.
+- Motion: `fade`, `slide-up`, `slide-left`, `pop`, `pulse` — deterministic under a virtual clock; `reduce_motion` / `STAGETUI_REDUCE_MOTION=1`.
 - Live `StageCanvas(on_frame=..., fps=...)` with back-pressure.
 - Threaded runtime (input + dirty-driven render threads, GIL released); Python handlers may be `async`; `await app.run_async()`.
 - Headless `run_headless(steps=[...])`: press, type, click, scroll, wait, resize; `settle=`.
@@ -48,22 +53,22 @@ All notable changes to this project are documented here. The format follows
 - UAX #9 BiDi reordering per line, by grapheme cluster, with bracket mirroring; layout measured on shaped widths.
 - BiDi-aware terminals (VTE) are switched to explicit mode (`CSI 8 l`) so text is never reversed twice.
 - Bundled fonts: Noto Sans, Noto Sans Arabic, Noto Sans Devanagari, DejaVu Sans Mono; system fonts as fallback; `ts.fonts()` coverage report.
-- Pixel text via cosmic-text: complex-script runs drawn as images on Kitty/Ghostty (`TERMSTAGE_TEXT_MODE`).
+- Pixel text via cosmic-text: complex-script runs drawn as images on Kitty/Ghostty (`STAGETUI_TEXT_MODE`).
 - Images: PNG, JPEG, GIF, WebP, BMP, SVG (crisp at any size). Encoders: Kitty (Unicode placeholders + direct), Sixel (exact palette or NeuQuant), iTerm2, half-blocks.
 - `Canvas`: rectangles, rounded rectangles, circles, lines, polylines, linear/radial gradients, shaped text, images, PNG export.
 - Widgets `StageImage` and `StageCanvas`; frames now carry reading-order text runs and image placements.
 - Headless PNG rasterizer with geometric box drawing; `Snapshot.png`, `Snapshot.save()`; snapshot text in reading order.
-- Verbs `ts.show`, `ts.draw`; CLI `termstage show`, `termstage render` (text, images, `.py` apps).
+- Verbs `ts.show`, `ts.draw`; CLI `stagetui show`, `stagetui render` (text, images, `.py` apps).
 - Beginner-friendly documentation in `docs/`, with every example executed by the test suite.
 
 ### Added — Milestone 1: terminal core
-- Cargo workspace: `termstage-core` (engine), `termstage-cli` (CLI), `termstage-py` (PyO3 bindings); maturin `abi3-py311` packaging with zero Python runtime dependencies.
+- Cargo workspace: `stagetui-core` (engine), `stagetui-cli` (CLI), `stagetui-py` (PyO3 bindings); maturin `abi3-py311` packaging with zero Python runtime dependencies.
 - Capability probing by querying the terminal (XTVERSION, Kitty graphics, Kitty keyboard, DECRQM 2026, cell/window pixel size, DA1 end marker), with tmux passthrough, Windows console support, and a pure, unit-tested resolver.
 - Graphics protocol choice: Kitty (+ Unicode placeholders) → iTerm2 (WezTerm/iTerm2) → Sixel (Windows Terminal, foot, xterm) → half-blocks.
 - RAII terminal guard with panic hook and SIGTERM/SIGHUP restore; Windows VT output + UTF-8 code pages.
 - Session/View split; cell diff renderer with synchronized output and truecolor/256-color modes.
 - Headless view: screen as plain text + JSON widget tree with stable ids; golden snapshot test.
 - Zero-zombie reaper: process groups, Linux `PDEATHSIG`, Windows kill-on-close Job Object, and a detached sidecar that kills tracked processes and unlinks shared memory even after `kill -9`.
-- `StageApp`, `StageCard`, `StageText`, `Style`, `@component`; 5 themes, friendly accents, 22 built-in icons; three-part `TermstageError` (`what` / `why` / `fix`).
-- CLI: `termstage inspect`, `termstage doctor`.
+- `StageApp`, `StageCard`, `StageText`, `Style`, `@component`; 5 themes, friendly accents, 22 built-in icons; three-part `StageError` (`what` / `why` / `fix`).
+- CLI: `stagetui inspect`, `stagetui doctor`.
 - CI (Linux/macOS/Windows × Python 3.11/3.13/3.15/3.15t), release workflow with PyPI trusted publishing, `cargo deny`.

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/termstage-core", "crates/termstage-cli", "crates/termstage-py"]
+members = ["crates/stagetui-core", "crates/stagetui-cli", "crates/stagetui-py"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -10,8 +10,8 @@ keywords = ["tui", "terminal", "kitty", "rtl", "agents"]
 categories = ["command-line-interface"]
 
 [workspace.dependencies]
-termstage-core = { path = "crates/termstage-core", version = "0.1.0-alpha.1" }
-termstage-cli = { path = "crates/termstage-cli", version = "0.1.0-alpha.1" }
+stagetui-core = { path = "crates/stagetui-core", version = "0.1.0-alpha.1" }
+stagetui-cli = { path = "crates/stagetui-cli", version = "0.1.0-alpha.1" }
 clap = { version = "4.6", features = ["derive"] }
 crossterm = "0.29"
 ratatui-core = { version = "0.1", default-features = false, features = ["std"] }
@@ -33,7 +33,7 @@ vt100 = "0.18"
 taffy = { version = "0.16", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "content_size"] }
 
 [workspace.lints.rust]
-# Unsafe code is only allowed in `termstage_core::os::*` (documented FFI).
+# Unsafe code is only allowed in `stagetui_core::os::*` (documented FFI).
 unsafe_code = "deny"
 
 [workspace.lints.clippy]

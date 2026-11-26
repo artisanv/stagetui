@@ -9,8 +9,8 @@ import re
 from pathlib import Path
 
 import pytest
-import termstage as ts
-from termstage import Canvas, StageApp
+import stagetui as ts
+from stagetui import Canvas, StageApp
 
 ROOT = Path(__file__).parents[2]
 DOCS = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]

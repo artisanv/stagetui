@@ -1,4 +1,4 @@
-"""A tour of termstage's widgets: buttons, inputs, lists, tables, a live canvas,
+"""A tour of stagetui's widgets: buttons, inputs, lists, tables, a live canvas,
 a pop-up window, notifications, themes and Arabic right-to-left layout.
 
 Run:   python examples/05_ui_gallery.py
@@ -10,7 +10,7 @@ Keys:  Tab / Shift+Tab move between controls · Enter or Space presses
 import asyncio
 import math
 
-from termstage import (
+from stagetui import (
     Stage,
     StageApp,
     StageBar,
@@ -161,9 +161,9 @@ class Gallery(StageApp):
         )
         return [
             StageCard(
-                "Everything here is drawn by termstage's Rust engine.\n"
+                "Everything here is drawn by stagetui's Rust engine.\n"
                 "Use the mouse or the keyboard — both work everywhere.",
-                title="termstage gallery",
+                title="stagetui gallery",
                 icon="sparkles",
                 animate="slide-up",
             ),
@@ -186,7 +186,7 @@ class Gallery(StageApp):
             StageModal(
                 [
                     StageText(
-                        "termstage: a Rust-first TUI engine for humans and AI agents.\n"
+                        "stagetui: a Rust-first TUI engine for humans and AI agents.\n"
                         "Press Esc or click outside to close."
                     ),
                 ],

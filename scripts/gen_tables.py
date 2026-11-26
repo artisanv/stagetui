@@ -1,10 +1,10 @@
-"""Generate Unicode tables used by termstage-core.
+"""Generate Unicode tables used by stagetui-core.
 
 Run from the repo root:  python scripts/gen_tables.py
 
 Outputs:
-  crates/termstage-core/src/text/arabic_table.rs   Arabic presentation forms (from Python's unicodedata)
-  crates/termstage-core/src/gfx/diacritics.rs      Kitty Unicode-placeholder row/column diacritics
+  crates/stagetui-core/src/text/arabic_table.rs   Arabic presentation forms (from Python's unicodedata)
+  crates/stagetui-core/src/gfx/diacritics.rs      Kitty Unicode-placeholder row/column diacritics
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def diacritics() -> str:
 
 
 if __name__ == "__main__":
-    out = ROOT / "crates/termstage-core/src"
+    out = ROOT / "crates/stagetui-core/src"
     (out / "text").mkdir(exist_ok=True)
     (out / "gfx").mkdir(exist_ok=True)
     (out / "text/arabic_table.rs").write_text(arabic())

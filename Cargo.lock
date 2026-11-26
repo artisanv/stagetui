@@ -1439,6 +1439,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "stagetui-cli"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "clap",
+ "serde_json",
+ "stagetui-core",
+]
+
+[[package]]
+name = "stagetui-core"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "color_quant 2.0.0",
+ "cosmic-text",
+ "crossterm",
+ "image",
+ "portable-pty",
+ "pulldown-cmark",
+ "ratatui-core",
+ "resvg",
+ "rustix",
+ "serde",
+ "serde_json",
+ "signal-hook 0.4.6",
+ "similar",
+ "syntect",
+ "taffy",
+ "tiny-skia",
+ "unicode-bidi",
+ "unicode-segmentation",
+ "unicode-width",
+ "vt100",
+ "windows-sys",
+]
+
+[[package]]
+name = "stagetui-py"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "pyo3",
+ "serde_json",
+ "stagetui-cli",
+ "stagetui-core",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1578,52 +1624,6 @@ name = "target-lexicon"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c447be3a2abfa84b2d91680c56600bd6b2873866de27b36ec911be705e291da"
-
-[[package]]
-name = "termstage-cli"
-version = "0.1.0-alpha.1"
-dependencies = [
- "clap",
- "serde_json",
- "termstage-core",
-]
-
-[[package]]
-name = "termstage-core"
-version = "0.1.0-alpha.1"
-dependencies = [
- "color_quant 2.0.0",
- "cosmic-text",
- "crossterm",
- "image",
- "portable-pty",
- "pulldown-cmark",
- "ratatui-core",
- "resvg",
- "rustix",
- "serde",
- "serde_json",
- "signal-hook 0.4.6",
- "similar",
- "syntect",
- "taffy",
- "tiny-skia",
- "unicode-bidi",
- "unicode-segmentation",
- "unicode-width",
- "vt100",
- "windows-sys",
-]
-
-[[package]]
-name = "termstage-py"
-version = "0.1.0-alpha.1"
-dependencies = [
- "pyo3",
- "serde_json",
- "termstage-cli",
- "termstage-core",
-]
 
 [[package]]
 name = "thiserror"

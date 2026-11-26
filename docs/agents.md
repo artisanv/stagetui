@@ -1,6 +1,6 @@
 # Let AI agents see and use your app
 
-termstage apps can be operated by programs, not only by people. An AI coding
+stagetui apps can be operated by programs, not only by people. An AI coding
 agent can start your app, read the screen, click, type, and check the result —
 without a terminal window. This makes "build it, look at it, fix it" loops work.
 
@@ -8,8 +8,8 @@ There are three ways in, from simplest to most flexible:
 
 | Way | For |
 |---|---|
-| `termstage mcp my_app.py` | AI agents that speak **MCP** (Claude Code and many others) |
-| `termstage drive my_app.py` | Any program: JSON messages on stdin/stdout |
+| `stagetui mcp my_app.py` | AI agents that speak **MCP** (Claude Code and many others) |
+| `stagetui drive my_app.py` | Any program: JSON messages on stdin/stdout |
 | `app.drive()` in Python | Tests and scripts |
 
 ## MCP: plug your app into a coding agent
@@ -18,17 +18,17 @@ MCP (Model Context Protocol) is how AI agents get new tools. One command turns
 your app into tools the agent can call:
 
 ```bash
-termstage mcp my_app.py              # serves the app's tools on stdin/stdout
+stagetui mcp my_app.py              # serves the app's tools on stdin/stdout
 ```
 
 To add it to **Claude Code**:
 
 ```bash
-claude mcp add my-app -- termstage mcp /full/path/to/my_app.py
+claude mcp add my-app -- stagetui mcp /full/path/to/my_app.py
 ```
 
 Other agents have a similar "add MCP server" setting: the command is
-`termstage`, the arguments are `mcp /full/path/to/my_app.py`.
+`stagetui`, the arguments are `mcp /full/path/to/my_app.py`.
 
 The agent then has these tools:
 
@@ -48,11 +48,11 @@ Every action answers with the new screen, so the agent always sees the effect.
 
 ## drive: JSON messages for any program
 
-`termstage drive my_app.py` reads one JSON-RPC 2.0 message per line and answers
+`stagetui drive my_app.py` reads one JSON-RPC 2.0 message per line and answers
 each one on its own line:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | termstage drive my_app.py
+echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | stagetui drive my_app.py
 ```
 
 Methods: `snapshot`, `press`, `type`, `click`, `scroll`, `resize`, `wait`,
@@ -64,7 +64,7 @@ Anything your app prints goes to stderr, so it never mixes with the answers.
 ## In Python: `app.drive()`
 
 ```python
-from termstage import StageApp, StageButton, StageCard, StageInput
+from stagetui import StageApp, StageButton, StageCard, StageInput
 
 
 class Greeter(StageApp):
@@ -96,7 +96,7 @@ While your app runs in a real terminal, your own code can capture what it shows 
 handy for bug reports or for an agent inside your harness:
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Report(StageApp):

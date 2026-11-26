@@ -6,7 +6,7 @@ Keys:  |  split the focused pane side by side     -  split it top/bottom
        drag a divider with the mouse to resize      q  quit
 """
 
-from termstage import StageApp, StageBar, StageCard, StageSplit
+from stagetui import StageApp, StageBar, StageCard, StageSplit
 
 TIPS = [
     "Drag the line between two panes to resize them.",

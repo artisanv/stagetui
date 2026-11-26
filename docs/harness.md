@@ -1,9 +1,9 @@
 # Build an AI agent harness
 
 A **harness** is the app you use to talk to an AI coding agent: a chat, a box to
-type in, the changes the agent proposes, the commands it runs. termstage has a
+type in, the changes the agent proposes, the commands it runs. stagetui has a
 widget for each part. You connect your own AI (any library, any provider);
-termstage does the screen.
+stagetui does the screen.
 
 `examples/07_harness.py` is a complete harness with a pretend agent — run it to
 see everything on this page working together.
@@ -13,7 +13,7 @@ see everything on this page working together.
 ```python
 import asyncio
 
-from termstage import StageApp, StageChat, StagePrompt
+from stagetui import StageApp, StageChat, StagePrompt
 
 
 class MiniAgent(StageApp):
@@ -60,7 +60,7 @@ async def ask(self, text):
 ## The prompt box: `StagePrompt`
 
 ```python
-from termstage import StagePrompt
+from stagetui import StagePrompt
 
 StagePrompt(
     placeholder="Ask anything…",
@@ -83,7 +83,7 @@ StagePrompt(
 When the agent uses a tool, show it. It spins while running, then shows ✓ or ✗:
 
 ```python
-from termstage import StageApp, StageChat
+from stagetui import StageApp, StageChat
 
 
 class Tools(StageApp):
@@ -107,7 +107,7 @@ Before the agent does something risky, ask. A pop-up appears; the user answers
 with **y** (allow), **a** (always allow) or **n** (deny):
 
 ```python
-from termstage import StageApp, StagePrompt
+from stagetui import StageApp, StagePrompt
 
 
 class Careful(StageApp):
@@ -133,7 +133,7 @@ Show what the agent wants to change. Each **hunk** (a group of changed lines) ca
 be accepted or rejected:
 
 ```python
-from termstage import StageApp, StageDiff
+from stagetui import StageApp, StageDiff
 
 OLD = "def greet(name):\n    print('hello ' + name)\n"
 NEW = "def greet(name: str) -> None:\n    print(f'Hello, {name}!')\n"
@@ -158,7 +158,7 @@ Keys while the diff has focus: **a** accept, **r** reject, **A** accept all,
 ## Code and logs
 
 ```python
-from termstage import StageApp, StageCode, StageLog
+from stagetui import StageApp, StageCode, StageLog
 
 
 class Viewer(StageApp):
@@ -194,7 +194,7 @@ inside it. To reach the app, press **Ctrl+Space** first, then **Tab** to move on
 
 <!-- not-tested -->
 ```python
-from termstage import StageTerminal
+from stagetui import StageTerminal
 
 shell = StageTerminal(id="shell")
 shell.send("pytest -q\n")  # type into it from code
@@ -211,7 +211,7 @@ switched to something else while the app runs:
 
 <!-- not-tested -->
 ```python
-from termstage import StageApp, StageBar, StagePane, StagePrompt, StageSplit
+from stagetui import StageApp, StageBar, StagePane, StagePrompt, StageSplit
 
 
 class Harness(StageApp):

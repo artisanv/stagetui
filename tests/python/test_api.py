@@ -1,5 +1,5 @@
-import termstage as ts
-from termstage import StageApp, StageCard, StageText, Style, TermstageError
+import stagetui as ts
+from stagetui import StageApp, StageCard, StageError, StageText, Style
 
 ARABIC = "مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج"
 MIXED = "Hello مرحبا world"
@@ -12,7 +12,7 @@ class Hello(StageApp):
 
     def compose(self):
         return [
-            StageCard("Welcome to termstage.", id="hello", title="Hello", icon="sparkles"),
+            StageCard("Welcome to stagetui.", id="hello", title="Hello", icon="sparkles"),
             StageCard(ARABIC, id="arabic", title="عربي", accent="mint"),
             StageText(f"{JAPANESE} · {HINDI} · {MIXED}"),
         ]
@@ -21,7 +21,7 @@ class Hello(StageApp):
 def test_version_and_exports():
     from importlib.metadata import version
 
-    assert ts.__version__ == version("termstage"), "matches what pip shows"
+    assert ts.__version__ == version("stagetui"), "matches what pip shows"
     assert ts.__version__.count(".") == 2
     for name in ts.__all__:
         assert hasattr(ts, name), name
@@ -30,7 +30,7 @@ def test_version_and_exports():
 def test_inspect_headless():
     caps = ts.inspect()
     assert caps["headless"] is True
-    assert caps["headless_reason"] == "TERMSTAGE_HEADLESS=1"
+    assert caps["headless_reason"] == "STAGETUI_HEADLESS=1"
     assert caps["graphics"]["best"] == "halfblocks"
     assert caps["platform"]["os"] in {"linux", "macos", "windows"}
     assert caps["probe"]["performed"] is False
@@ -39,7 +39,7 @@ def test_inspect_headless():
 def test_headless_snapshot_text_and_tree():
     snap = Hello().run_headless((60, 20))
     assert (snap.cols, snap.rows) == (60, 20)
-    assert "Hello" in snap.text and "Welcome to termstage." in snap.text
+    assert "Hello" in snap.text and "Welcome to stagetui." in snap.text
     assert len(snap.text.splitlines()) <= 20
     hello = snap.query("#hello")
     assert hello is not None and hello["type"] == "card" and hello["icon"] == "✦"
@@ -82,12 +82,12 @@ def test_friendly_errors_have_three_parts():
 
     try:
         Bad().run_headless()
-    except TermstageError as e:
+    except StageError as e:
         assert "Unknown theme" in e.what
         assert e.why and "aurora-dark" in e.fix
         assert "fix:" in str(e)
     else:
-        raise AssertionError("expected TermstageError")
+        raise AssertionError("expected StageError")
 
 
 def test_bad_icon_lists_alternatives():
@@ -97,10 +97,10 @@ def test_bad_icon_lists_alternatives():
 
     try:
         Bad().run_headless()
-    except TermstageError as e:
+    except StageError as e:
         assert "sparkles" in e.fix
     else:
-        raise AssertionError("expected TermstageError")
+        raise AssertionError("expected StageError")
 
 
 def test_compose_type_errors():
@@ -111,7 +111,7 @@ def test_compose_type_errors():
     try:
         NotWidgets().run_headless()
     except TypeError as e:
-        assert "not a termstage widget" in str(e)
+        assert "not a stagetui widget" in str(e)
     else:
         raise AssertionError("expected TypeError")
 
@@ -119,10 +119,10 @@ def test_compose_type_errors():
 def test_interactive_run_refuses_headless():
     try:
         Hello().run()
-    except TermstageError as e:
+    except StageError as e:
         assert "headless" in e.why
     else:
-        raise AssertionError("expected TermstageError")
+        raise AssertionError("expected StageError")
 
 
 def test_component_decorator():
@@ -130,5 +130,5 @@ def test_component_decorator():
     def Tile(label: str, value: str):
         return StageCard(f"{value}\n{label}", accent="mint", animate="pop")
 
-    assert Tile.__termstage_component__ is True
+    assert Tile.__stagetui_component__ is True
     assert Tile("Users", "42").props["animate"] == "pop"

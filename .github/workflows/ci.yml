@@ -31,8 +31,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -p termstage-core -p termstage-cli --all-targets -- -D warnings
-      - run: cargo test -p termstage-core -p termstage-cli
+      - run: cargo clippy -p stagetui-core -p stagetui-cli --all-targets -- -D warnings
+      - run: cargo test -p stagetui-core -p stagetui-cli
 
   python:
     name: Python ${{ matrix.python }} · ${{ matrix.os }}
@@ -51,7 +51,7 @@ jobs:
       - run: uv pip install maturin pytest
       - run: uv run --no-sync maturin develop --release
       - run: uv run --no-sync python -m pytest
-      - run: uv run --no-sync termstage inspect --headless
+      - run: uv run --no-sync stagetui inspect --headless
 
   extension-lint:
     name: PyO3 crate · clippy
@@ -62,7 +62,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p termstage-py -- -D warnings
+      - run: cargo clippy -p stagetui-py -- -D warnings
 
   supply-chain:
     name: cargo deny

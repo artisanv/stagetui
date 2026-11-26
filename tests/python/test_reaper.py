@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 PARENT = """
 import sys, time
-import termstage._core as c
+import stagetui._core as c
 pid = c._spawn_tracked(["sleep", "600"])
 print(pid, flush=True)
 time.sleep(600)

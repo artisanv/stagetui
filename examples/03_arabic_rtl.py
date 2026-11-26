@@ -4,10 +4,10 @@ Run:   python examples/03_arabic_rtl.py
 Quit:  q or Esc
 
 Try it in different terminals (Kitty, Ghostty, GNOME Terminal, Windows Terminal…).
-Also try:  termstage render examples/03_arabic_rtl.py --out world.png
+Also try:  stagetui render examples/03_arabic_rtl.py --out world.png
 """
 
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class WorldScripts(StageApp):

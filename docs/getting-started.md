@@ -1,6 +1,6 @@
 # Getting started
 
-This page takes you from nothing to your first termstage program. No previous
+This page takes you from nothing to your first stagetui program. No previous
 terminal experience needed.
 
 ## What you need
@@ -20,10 +20,10 @@ folder of packages for one project, so projects don't disturb each other.
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install termstage
+pip install stagetui
 ```
 
-> **"ModuleNotFoundError: No module named 'termstage'"?** You are probably using
+> **"ModuleNotFoundError: No module named 'stagetui'"?** You are probably using
 > a different Python than the one you installed into. Activate the virtual
 > environment again (the `source` line above), then run your program with `python`.
 
@@ -32,7 +32,7 @@ pip install termstage
 You need [Rust](https://rustup.rs) and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-git clone <the termstage repository> && cd termstage
+git clone <the stagetui repository> && cd stagetui
 uv venv && source .venv/bin/activate
 uv pip install maturin
 maturin develop --release
@@ -41,7 +41,7 @@ maturin develop --release
 ## Check that it works
 
 ```bash
-termstage doctor
+stagetui doctor
 ```
 
 `doctor` looks at your terminal and explains, in plain English, what it can do:
@@ -53,9 +53,9 @@ better, it tells you how to fix it.
 Make a file called `hello.py`:
 
 ```python
-import termstage as ts
+import stagetui as ts
 
-ts.show("Hello from termstage!", title="My first card", icon="sparkles")
+ts.show("Hello from stagetui!", title="My first card", icon="sparkles")
 ```
 
 Run it:
@@ -73,7 +73,7 @@ An *app* takes over the whole terminal window until you quit — like a game or
 a text editor. Here is the smallest one:
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Hello(StageApp):
@@ -91,7 +91,7 @@ Hello().run()
 
 What's going on:
 
-1. `class Hello(StageApp)` makes your own app, based on termstage's `StageApp`.
+1. `class Hello(StageApp)` makes your own app, based on stagetui's `StageApp`.
 2. `theme = "aurora-dark"` picks a color scheme (there are 5).
 3. `compose` returns a **list of widgets** — the things to show on screen.
 4. `StageCard(...)` is a widget: a box with a title and some text.
@@ -105,7 +105,7 @@ What's going on:
 | **Cell** | One character box in the terminal grid. Sizes like `width=20` are in cells. |
 | **Pixel** | One dot of a picture. Canvas sizes like `size=(640, 360)` are in pixels. |
 | **Widget** | One thing on screen: a card, some text, an image. |
-| **Headless** | Running without a terminal (in tests, CI or AI agents). termstage then draws offscreen. |
+| **Headless** | Running without a terminal (in tests, CI or AI agents). stagetui then draws offscreen. |
 | **RTL** | Right-to-left: languages like Arabic, Persian and Hebrew. |
 | **Theme / accent** | The color scheme / the highlight color. |
 

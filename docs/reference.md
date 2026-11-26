@@ -1,7 +1,7 @@
 # Reference
 
-Every public name in `termstage`, in one place. Import with `import termstage as ts`
-or `from termstage import ...`.
+Every public name in `stagetui`, in one place. Import with `import stagetui as ts`
+or `from stagetui import ...`.
 
 Sizes: **cells** for things on screen (`width=20`), **pixels** for canvases (`size=(640, 360)`).
 
@@ -16,7 +16,7 @@ Create a `Canvas`, call `fn(canvas)`, then save it to `out` (if given) or show i
 (unless `show=False`). Returns the `Canvas`.
 
 ### `ts.inspect(*, headless=False, probe=True) -> dict`
-What the current terminal can do (same as `termstage inspect`).
+What the current terminal can do (same as `stagetui inspect`).
 
 ### `ts.fonts() -> dict`
 Bundled fonts and which writing systems have fonts available.
@@ -166,8 +166,8 @@ Turns a function that returns a widget (or a list of widgets) into a reusable wi
 
 ## Errors
 
-### `TermstageError`
-Raised for every problem termstage can explain. Attributes: `what`, `why`, `fix`.
+### `StageError`
+Raised for every problem stagetui can explain. Attributes: `what`, `why`, `fix`.
 `str(error)` contains all three.
 
 ## Values

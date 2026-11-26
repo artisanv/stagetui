@@ -3,7 +3,7 @@
 
                 ╭─ ✦ Hello ─────────────────╮
                 │                           │
-                │  Welcome to termstage.    │
+                │  Welcome to stagetui.     │
                 │  Press q or Esc to quit.  │
                 │                           │
                 ╰───────────────────────────╯

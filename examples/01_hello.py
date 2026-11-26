@@ -7,7 +7,7 @@ python examples/01_hello.py --headless # print the headless snapshot (what an ag
 import json
 import sys
 
-from termstage import StageApp, StageCard, StageText
+from stagetui import StageApp, StageCard, StageText
 
 
 class Hello(StageApp):
@@ -17,7 +17,7 @@ class Hello(StageApp):
     def compose(self):
         return [
             StageCard(
-                "Welcome to termstage — a Rust-first TUI engine.\nPress q or Esc to quit.",
+                "Welcome to stagetui — a Rust-first TUI engine.\nPress q or Esc to quit.",
                 id="hello",
                 title="Hello",
                 icon="sparkles",

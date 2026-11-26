@@ -4,8 +4,8 @@ import json
 import struct
 
 import pytest
-import termstage as ts
-from termstage import Canvas, StageApp, StageCanvas, StageCard, StageImage, TermstageError
+import stagetui as ts
+from stagetui import Canvas, StageApp, StageCanvas, StageCard, StageError, StageImage
 
 ARABIC = "مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج"
 PERSIAN = "سلام دنیا، گل‌های زیبا"
@@ -48,7 +48,7 @@ def test_show_image_path_bytes_and_canvas(tmp_path, capsys):
 
 
 def test_show_missing_image_is_friendly():
-    with pytest.raises(TermstageError) as e:
+    with pytest.raises(StageError) as e:
         ts.show("nope/cat.png")
     assert "was not found" in e.value.what
 
@@ -87,16 +87,16 @@ def test_canvas_shapes():
 
 def test_canvas_friendly_errors():
     c = Canvas(10, 10)
-    with pytest.raises(TermstageError) as e:
+    with pytest.raises(StageError) as e:
         c.rect(0, 0, 5, 5, fill="plaid")
     assert "Unknown color" in e.value.what and "#7aa2f7" in e.value.fix
-    with pytest.raises(TermstageError):
+    with pytest.raises(StageError):
         c.text("x", 0, 0, align="middle")
-    with pytest.raises(TermstageError):
+    with pytest.raises(StageError):
         c.gradient_rect(0, 0, 5, 5, colors=[])
-    with pytest.raises(TermstageError):
+    with pytest.raises(StageError):
         Canvas(0, 10)
-    with pytest.raises(TermstageError):
+    with pytest.raises(StageError):
         c.image("missing.png", 0, 0, 5, 5)
 
 
@@ -145,7 +145,7 @@ def test_stage_image_errors(tmp_path):
         def compose(self):
             return [StageImage(str(tmp_path / "ghost.png"))]
 
-    with pytest.raises(TermstageError) as e:
+    with pytest.raises(StageError) as e:
         Missing().run_headless()
     assert "Could not open image" in e.value.what
 
@@ -158,7 +158,7 @@ def test_stage_image_errors(tmp_path):
         def compose(self):
             return [StageImage(SVG, fit="squash")]  # type: ignore[arg-type]
 
-    with pytest.raises(TermstageError) as e:
+    with pytest.raises(StageError) as e:
         BadFit().run_headless()
     assert "contain" in e.value.fix
 

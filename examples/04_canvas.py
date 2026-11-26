@@ -6,7 +6,7 @@ Quit:  q or Esc
 
 import math
 
-from termstage import StageApp, StageCanvas, StageCard
+from stagetui import StageApp, StageCanvas, StageCard
 
 DATA = [3, 5, 4, 7, 6, 9, 8, 11, 10, 13]
 

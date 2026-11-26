@@ -10,8 +10,8 @@ Try:   click a pane's title (▾) to switch what it shows — Terminal, Files, C
 import math
 import time
 
-import termstage as ts
-from termstage import StageApp, StageBar, StageCanvas, StagePane, StageSplit
+import stagetui as ts
+from stagetui import StageApp, StageBar, StageCanvas, StagePane, StageSplit
 
 
 # Your own pane type: it appears in every pane's menu.

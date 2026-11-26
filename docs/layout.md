@@ -8,7 +8,7 @@ In `compose()` you return a list of widgets. To arrange them, put widgets
 `Stage` holds other widgets. Its first argument is a **list of widgets**.
 
 ```python
-from termstage import Stage, StageApp, StageButton, StageCard
+from stagetui import Stage, StageApp, StageButton, StageCard
 
 
 class Layouts(StageApp):
@@ -44,7 +44,7 @@ Every widget accepts these:
   share it 1 : 2.
 
 ```python
-from termstage import Stage, StageApp, StageCard
+from stagetui import Stage, StageApp, StageCard
 
 
 class Sidebar(StageApp):
@@ -77,7 +77,7 @@ A split shares its space between **panes**, with a line between them that you
 can **drag with the mouse** to resize. A split fills all the space it gets.
 
 ```python
-from termstage import StageApp, StageCard, StageSplit
+from stagetui import StageApp, StageCard, StageSplit
 
 
 class Editor(StageApp):
@@ -109,7 +109,7 @@ Editor().run()
 Every widget has `.split()` and `.remove()`:
 
 ```python
-from termstage import StageApp, StageCard, StageSplit
+from stagetui import StageApp, StageCard, StageSplit
 
 
 class Panes(StageApp):
@@ -137,7 +137,7 @@ Panes().run()
 Each child is one page. Its `title` (and `icon`) name the tab.
 
 ```python
-from termstage import Stage, StageApp, StageCard, StageTabs, StageText
+from stagetui import Stage, StageApp, StageCard, StageTabs, StageText
 
 
 class Settings(StageApp):
@@ -167,7 +167,7 @@ hidden: call `.show()` to open it and `.hide()` to close it. **Esc** or a click
 outside also closes it, unless you pass `dismissable=False`.
 
 ```python
-from termstage import Stage, StageApp, StageButton, StageModal, StageText
+from stagetui import Stage, StageApp, StageButton, StageModal, StageText
 
 
 class Confirm(StageApp):
@@ -213,7 +213,7 @@ comes first in your list). It shows your text and your keyboard shortcuts from
 
 ## Right-to-left layouts
 
-When your app's text starts in Arabic, Persian, Hebrew or Urdu, termstage
+When your app's text starts in Arabic, Persian, Hebrew or Urdu, stagetui
 **mirrors the layout**: rows start on the right, the first pane of a split is on
 the right, scrollbars move to the left, tree arrows flip. You can also choose:
 

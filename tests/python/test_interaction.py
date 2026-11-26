@@ -4,8 +4,8 @@ import asyncio
 import inspect
 
 import pytest
-import termstage as ts
-from termstage import (
+import stagetui as ts
+from stagetui import (
     Stage,
     StageApp,
     StageBar,
@@ -13,6 +13,7 @@ from termstage import (
     StageCanvas,
     StageCard,
     StageCheckbox,
+    StageError,
     StageInput,
     StageModal,
     StageProgress,
@@ -23,7 +24,6 @@ from termstage import (
     StageTabs,
     StageText,
     StageTree,
-    TermstageError,
 )
 
 ARABIC = "مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج"
@@ -329,21 +329,21 @@ def test_friendly_errors():
         def compose(self):
             return [StageSplit([StageCard("a"), StageCard("b")], ratio=[1])]
 
-    with pytest.raises(TermstageError) as e:
+    with pytest.raises(StageError) as e:
         Bad().run_headless()
     assert "ratio" in e.value.what and e.value.fix
 
-    with pytest.raises(TermstageError, match="Unknown key"):
+    with pytest.raises(StageError, match="Unknown key"):
 
         class Keys(StageApp):
             BINDINGS = [("hyper+x", "go")]
 
         Keys().run_headless()
 
-    with pytest.raises(TermstageError, match="needs a running app"):
+    with pytest.raises(StageError, match="needs a running app"):
         StageCard("x").split(StageCard("y"))
 
-    with pytest.raises(TermstageError, match="Milestone 5"):
+    with pytest.raises(StageError, match="Milestone 5"):
         StageCard("x").detach()
 
     class NoAction(StageApp):
@@ -352,10 +352,10 @@ def test_friendly_errors():
         def compose(self):
             return [StageCard("x")]
 
-    with pytest.raises(TermstageError, match="action_missing"):
+    with pytest.raises(StageError, match="action_missing"):
         NoAction().run_headless(steps=[{"press": "ctrl+g"}])
 
-    with pytest.raises(TermstageError, match="Unknown step"):
+    with pytest.raises(StageError, match="Unknown step"):
         Form().run_headless(steps=[{"dance": True}])
 
 

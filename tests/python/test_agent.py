@@ -1,4 +1,4 @@
-"""Milestone 4b: driving apps (Driver, termstage drive / mcp), live capture, snapshot tests."""
+"""Milestone 4b: driving apps (Driver, stagetui drive / mcp), live capture, snapshot tests."""
 
 import json
 import subprocess
@@ -6,14 +6,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from termstage import Driver, StageApp, StageButton, StageCard, StageInput
-from termstage.testing import StageSnapshot
+from stagetui import Driver, StageApp, StageButton, StageCard, StageInput
+from stagetui.testing import StageSnapshot
 
 ROOT = Path(__file__).parents[2]
 ARABIC = "مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج"
 
 APP = """
-from termstage import StageApp, StageButton, StageCard, StageInput, StagePane, StageSplit
+from stagetui import StageApp, StageButton, StageCard, StageInput, StagePane, StageSplit
 
 class Demo(StageApp):
     def compose(self):
@@ -71,7 +71,7 @@ def test_driver_steps_and_capture():
 def rpc(mode, app_file, messages, size="80x24"):
     lines = "".join((m if isinstance(m, str) else json.dumps(m)) + "\n" for m in messages)
     proc = subprocess.run(
-        [sys.executable, "-m", "termstage._agent", mode, str(app_file), "--size", size],
+        [sys.executable, "-m", "stagetui._agent", mode, str(app_file), "--size", size],
         input=lines,
         capture_output=True,
         text=True,
@@ -174,7 +174,7 @@ def test_mcp_protocol(app_file):
     )
     by_id = {r["id"]: r for r in replies}
     init = by_id[1]["result"]
-    assert init["serverInfo"]["name"] == "termstage" and "tools" in init["capabilities"]
+    assert init["serverInfo"]["name"] == "stagetui" and "tools" in init["capabilities"]
     names = {t["name"] for t in by_id[2]["result"]["tools"]}
     assert {"snapshot", "press", "type", "click", "list_panes", "set_pane_type"} <= names
     for t in by_id[2]["result"]["tools"]:
@@ -190,7 +190,7 @@ def test_mcp_protocol(app_file):
 
 def test_cli_drive_hands_over_to_python(app_file):
     proc = subprocess.run(
-        [sys.executable, "-m", "termstage", "drive", str(app_file), "--size", "60x20"],
+        [sys.executable, "-m", "stagetui", "drive", str(app_file), "--size", "60x20"],
         input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "snapshot"}) + "\n",
         capture_output=True,
         text=True,
@@ -200,7 +200,7 @@ def test_cli_drive_hands_over_to_python(app_file):
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["result"]["tree"]["size"] == {"cols": 60, "rows": 20}
     missing = subprocess.run(
-        [sys.executable, "-m", "termstage", "mcp", "nope.py"],
+        [sys.executable, "-m", "stagetui", "mcp", "nope.py"],
         capture_output=True,
         text=True,
         check=False,
@@ -229,7 +229,7 @@ def test_stage_snapshot_fixture(stage_snapshot):
 
 
 def test_png_diff():
-    from termstage import _core
+    from stagetui import _core
 
     a = Form().run_headless((30, 8)).png
     b = Form().run_headless((30, 8), steps=[{"type": "x"}]).png

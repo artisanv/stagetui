@@ -16,6 +16,7 @@
 | Arabic/RTL | cosmic-text pixels only | **Dual path**: Rust-shaped presentation forms in cells + pixel runs where graphics exist | Works on every terminal, not just graphics ones |
 | Shared memory | Reusable ring buffer | Per-frame named segments (terminal unlinks after read) | Matches the actual Kitty `t=s` contract |
 | Sessions | Single process/terminal | **Session/View split** → pane detach/reattach to another terminal window | New feature (§7) |
+| Name | `termstage` | **`stagetui`** (package, import, CLI command, crates; env vars `STAGETUI_*`; error class `StageError`) | `termstage` was already taken on PyPI and crates.io (renamed 2026-11-26). This document still says *termstage* — read it as *stagetui*. |
 | Panes | Fixed widgets per split | **Blender-style pane types + workspaces**: any pane can be switched to chat, shell, diff, files, … and layouts saved/restored | Owner's idea (added after Milestone 3): one workspace model for humans and harnesses (§7.1–7.2) |
 | CLI alias | `ts` | **Removed** (`ts` collides with moreutils) | Avoid clobbering a common tool |
 

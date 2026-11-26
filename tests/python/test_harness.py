@@ -5,12 +5,13 @@ import sys
 import time
 
 import pytest
-import termstage as ts
-from termstage import (
+import stagetui as ts
+from stagetui import (
     StageApp,
     StageChat,
     StageCode,
     StageDiff,
+    StageError,
     StageLog,
     StageMarkdown,
     StagePane,
@@ -19,7 +20,6 @@ from termstage import (
     StageSplit,
     StageTerminal,
     StageToolCall,
-    TermstageError,
 )
 
 ARABIC = "مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج"
@@ -232,7 +232,7 @@ def test_pane_api_set_type_panes_and_custom_types():
     types = {p["id"]: p["type"] for p in app.found}
     assert types == {"g": "greeting", "e": "code"}
     assert snap.query("g")["stashed"] == ["markdown"]
-    with pytest.raises(TermstageError, match="Unknown pane type"):
+    with pytest.raises(StageError, match="Unknown pane type"):
         StagePane("does-not-exist")
 
 
@@ -283,7 +283,7 @@ def test_offline_helpers_before_the_app_runs():
     md = StageMarkdown("a")
     md.append("b")
     assert md._content == "ab"
-    with pytest.raises(TermstageError, match="needs a running app"):
+    with pytest.raises(StageError, match="needs a running app"):
         StageDiff(("a", "b")).accept_all()
     code = StageCode.from_file(__file__)
     assert code.props["path"].endswith("test_harness.py")

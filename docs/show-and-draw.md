@@ -10,7 +10,7 @@ Two one-line helpers for scripts:
 ### Text
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 ts.show("Build finished in 3.2 seconds.")
 ts.show("All tests passed.", title="Tests", icon="check", accent="mint")
@@ -25,13 +25,13 @@ Give `ts.show` the path of an image file. PNG, JPEG, GIF (first frame),
 WebP, BMP and SVG are supported.
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 ts.show("logo.png")
 ts.show("chart.svg", width=40)  # 40 cells wide; the height follows automatically
 ```
 
-termstage picks the best way your terminal can draw pictures:
+stagetui picks the best way your terminal can draw pictures:
 
 | Your terminal | What you get |
 |---|---|
@@ -69,7 +69,7 @@ The quickest way is `ts.draw`. You write a small function that receives the
 canvas (usually called `c`) and draws on it:
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 
 def smiley(c):
@@ -85,7 +85,7 @@ ts.draw(smiley, size=(200, 200))
 Save it instead of showing it with `out=`:
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 ts.draw(lambda c: c.circle(50, 50, 40, fill="mint"), size=(100, 100), out="dot.png")
 ```
@@ -93,7 +93,7 @@ ts.draw(lambda c: c.circle(50, 50, 40, fill="mint"), size=(100, 100), out="dot.p
 You can also make a canvas yourself:
 
 ```python
-from termstage import Canvas
+from stagetui import Canvas
 
 c = Canvas(300, 100, background="#1a1b26")
 c.text("Hello, canvas!", 20, 30, size=28, bold=True)
@@ -123,7 +123,7 @@ If you give neither `fill` nor `stroke` to `rect` or `circle`, it is filled whit
 Write colors in any of these ways:
 
 - Hex codes: `"#7aa2f7"`, short `"#fff"`, or with transparency `"#7aa2f780"` (the last two digits: `00` invisible … `ff` solid)
-- termstage accent names: `"blue"`, `"mint"`, `"amber"`, `"rose"`, `"violet"`
+- stagetui accent names: `"blue"`, `"mint"`, `"amber"`, `"rose"`, `"violet"`
 - Basic names: `"white"`, `"black"`, `"gray"`, `"red"`, `"transparent"`
 
 A misspelled color raises a friendly error that lists what you can use.
@@ -134,7 +134,7 @@ A misspelled color raises a friendly error that lists what you can use.
 letters combine correctly. `align` decides which side of `x` the text grows from:
 
 ```python
-from termstage import Canvas
+from stagetui import Canvas
 
 c = Canvas(400, 120, background="#1a1b26")
 c.text("Left", 10, 10)                                # starts at x=10

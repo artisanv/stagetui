@@ -1,11 +1,11 @@
-# termstage
+# stagetui
 
 > Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
 
 Status: Milestone 4 (harness kit, Blender-style panes, agent interface). APIs below exist today; workspaces and detach/reattach (M5) and media plugins (M6) are planned.
 
 ## Python API
-- `import termstage as ts`
+- `import stagetui as ts`
 - `ts.show(content, *, title, icon, dir, theme, accent, width, height, fit)` — inline text card or picture (path, bytes, Canvas).
 - `ts.draw(fn=None, *, size=(640,360), background=None, out=None, show=True) -> Canvas` — draw with code.
 - `ts.inspect(*, headless=False, probe=True) -> dict`; `ts.fonts() -> dict`.
@@ -21,7 +21,7 @@ Status: Milestone 4 (harness kit, Blender-style panes, agent interface). APIs be
 - Panes: `StagePane(type, **options)` types chat, terminal(command, cwd), files(root), diff(old, new, path), code(path|text, language), markdown(text), log, empty; header menu (click title / prefix+Space), ⊞ ⊟ × buttons; `.set_type(type, **o)`, `.switch(type)` (restores stashed), `.type`, `.content`; `app.panes()`; `@ts.pane_type(name, title=, icon=)`; prefix key `PREFIX="ctrl+space"` then Space | - x Tab q.
 - Every widget: `.update(content, **props)`, `.load(content)`, `.show()`, `.hide()`, `.focus()`, `.split(widget, direction=)`, `.remove()`, `.value`; containers `.add(widget)`.
 - `Canvas(width, height, background)`: clear, rect, rounded_rect, circle, line, polyline, gradient_rect, gradient_circle, text (shaped Arabic/Hindi), image, png, save.
-- `Style(padding=, rounded=, accent=, shadow=, width=, height=, grow=)`, `@ts.component` (returns a widget or a list), `ts.TermstageError` (`.what`, `.why`, `.fix`).
+- `Style(padding=, rounded=, accent=, shadow=, width=, height=, grow=)`, `@ts.component` (returns a widget or a list), `ts.StageError` (`.what`, `.why`, `.fix`).
 
 Universal props: id, theme ("aurora-dark" | "nordic-light" | "velvet-dusk" | "paper-soft" | "hacker-mint"), accent ("blue" | "mint" | "amber" | "rose" | "violet" | "#rrggbb"), rounded, padding ("compact" | "normal" | "spacious" | int), icon, dir ("auto" | "ltr" | "rtl"), animate ("none" | "fade" | "slide-up" | "slide-left" | "pulse" | "pop"), visible, width/height (cells or "50%"), grow.
 
@@ -32,18 +32,18 @@ Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black",
 Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart, send, arrow-right, arrow-left, plus, minus, dot, circle, home.
 
 ## Agent interface
-- `termstage mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- termstage mcp /path/app.py`.
-- `termstage drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, scroll, resize, wait, wait_idle, query, panes, set_pane_type, shutdown.
+- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
+- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, scroll, resize, wait, wait_idle, query, panes, set_pane_type, shutdown.
 - Python: `with App().drive((cols, rows)) as d: d.type(..); d.click("#id"); d.snapshot(png=True)`; live apps: `app.capture_text()`, `capture_tree()`, `capture_png()`.
 - pytest: fixture `stage_snapshot.assert_match(snap, name=None, png=False)`, refresh with `pytest --stage-update`.
 
 ## CLI
-- `termstage show <image|text> [--title --icon --dir --theme --accent --width --height --fit]`
-- `termstage render <app.py|image|text> [--out x.png] [--text x.txt] [--tree x.json] [--size 100x30] [--cell 16x32]`
-- `termstage inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
-- `termstage doctor` — plain-English report with fixes
-- `termstage drive app.py` / `termstage mcp app.py` — agent interface (above)
-- `python -m termstage …` — same CLI
+- `stagetui show <image|text> [--title --icon --dir --theme --accent --width --height --fit]`
+- `stagetui render <app.py|image|text> [--out x.png] [--text x.txt] [--tree x.json] [--size 100x30] [--cell 16x32]`
+- `stagetui inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
+- `stagetui doctor` — plain-English report with fixes
+- `stagetui drive app.py` / `stagetui mcp app.py` — agent interface (above)
+- `python -m stagetui …` — same CLI
 
 ## Docs
 - [Docs index](docs/README.md)

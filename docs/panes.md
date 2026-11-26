@@ -9,7 +9,7 @@ screen the way they like — and so can your code, or an AI agent.
 ## Make panes
 
 ```python
-from termstage import StageApp, StageBar, StagePane, StageSplit
+from stagetui import StageApp, StageBar, StagePane, StageSplit
 
 
 class Workspace(StageApp):
@@ -77,7 +77,7 @@ Change it with `PREFIX = "ctrl+a"` on your app.
 ## Control panes from code
 
 ```python
-from termstage import StageApp, StagePane, StageSplit
+from stagetui import StageApp, StagePane, StageSplit
 
 
 class Agent(StageApp):
@@ -108,8 +108,8 @@ Agent().run()
 Register a function that returns a widget; it appears in every pane's menu:
 
 ```python
-import termstage as ts
-from termstage import StageApp, StageCard, StagePane
+import stagetui as ts
+from stagetui import StageApp, StageCard, StagePane
 
 
 @ts.pane_type("weather", title="Weather", icon="sun")

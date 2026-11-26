@@ -1,17 +1,17 @@
 # Command line
 
-Installing termstage also installs a `termstage` command. It does the same
+Installing stagetui also installs a `stagetui` command. It does the same
 things as the Python library — handy in shell scripts, CI and AI agents.
 
-`python -m termstage …` works too, and is useful when `termstage` isn't on your PATH.
+`python -m stagetui …` works too, and is useful when `stagetui` isn't on your PATH.
 
-## `termstage show` — show something now
+## `stagetui show` — show something now
 
 ```bash
-termstage show logo.png
-termstage show chart.svg --width 40
-termstage show "Build finished" --title CI --icon check --accent mint
-termstage show "مرحبا بكم" --title "عربي"
+stagetui show logo.png
+stagetui show chart.svg --width 40
+stagetui show "Build finished" --title CI --icon check --accent mint
+stagetui show "مرحبا بكم" --title "عربي"
 ```
 
 | Flag | Meaning |
@@ -20,19 +20,19 @@ termstage show "مرحبا بكم" --title "عربي"
 | `--width`, `--height` | Size in cells |
 | `--fit contain\|cover\|stretch` | How a picture fills its box |
 
-## `termstage render` — make files, no terminal needed
+## `stagetui render` — make files, no terminal needed
 
 `render` accepts three kinds of things:
 
 ```bash
 # 1. Text → a card
-termstage render "مرحبا بكم" --dir rtl --out card.png
+stagetui render "مرحبا بكم" --dir rtl --out card.png
 
 # 2. An app file → its screen
-termstage render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
+stagetui render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
 
 # 3. An image → PNG (great for converting SVG)
-termstage render logo.svg --out logo.png
+stagetui render logo.svg --out logo.png
 ```
 
 | Flag | Meaning |
@@ -48,29 +48,29 @@ Files are saved in the folder you run the command from (or wherever the path
 points), and `render` tells you exactly where: `✓ saved /home/you/project/app.png`.
 With none of `--out`, `--text`, `--tree`, the screen text is printed instead.
 
-## `termstage mcp` and `termstage drive` — let agents use an app
+## `stagetui mcp` and `stagetui drive` — let agents use an app
 
 ```bash
-termstage mcp my_app.py                  # MCP tools for coding agents (stdin/stdout)
-termstage drive my_app.py --size 120x40  # JSON-RPC 2.0, one message per line
+stagetui mcp my_app.py                  # MCP tools for coding agents (stdin/stdout)
+stagetui drive my_app.py --size 120x40  # JSON-RPC 2.0, one message per line
 ```
 
 See [Let AI agents see and use your app](agents.md).
 
-## `termstage doctor` — what can my terminal do?
+## `stagetui doctor` — what can my terminal do?
 
 ```bash
-termstage doctor
+stagetui doctor
 ```
 
 A plain-English report: pictures, colors, keyboard, Arabic support, SSH, and
 suggestions to make things better.
 
-## `termstage inspect` — the same, as JSON
+## `stagetui inspect` — the same, as JSON
 
 ```bash
-termstage inspect             # pretty JSON
-termstage inspect --compact   # one line
+stagetui inspect             # pretty JSON
+stagetui inspect --compact   # one line
 ```
 
 Useful for bug reports and for programs that need to know about the terminal.

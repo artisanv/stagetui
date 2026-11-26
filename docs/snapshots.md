@@ -1,6 +1,6 @@
 # Snapshots — for tests, CI and AI agents
 
-A **snapshot** is a picture of your app taken *without* a terminal. termstage
+A **snapshot** is a picture of your app taken *without* a terminal. stagetui
 draws everything offscreen and gives you three views of the result:
 
 | View | What it is | Best for |
@@ -12,7 +12,7 @@ draws everything offscreen and gives you three views of the result:
 ## Take a snapshot
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Status(StageApp):
@@ -33,7 +33,7 @@ is in the PNG; bigger numbers make bigger pictures.
 ## What's in the tree
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Status(StageApp):
@@ -56,7 +56,7 @@ Snapshots are **deterministic**: the same app always gives the same result.
 That makes them perfect for `pytest`:
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Greeting(StageApp):
@@ -79,7 +79,7 @@ test_greeting_is_shown()
 a virtual clock, and you get the snapshot at the end:
 
 ```python
-from termstage import StageApp, StageButton, StageCard, StageInput
+from stagetui import StageApp, StageButton, StageCard, StageInput
 
 
 class Greeter(StageApp):
@@ -116,7 +116,7 @@ assert "Hello, Sara!" in snap.text
 
 ## Golden snapshot tests with pytest
 
-termstage comes with a pytest plugin. The `stage_snapshot` fixture saves a copy
+stagetui comes with a pytest plugin. The `stage_snapshot` fixture saves a copy
 of the screen the first time a test runs, and checks against it afterwards:
 
 <!-- not-tested -->
@@ -133,13 +133,13 @@ look at the diff before committing. Picture comparisons allow a tiny difference
 (0.2 % of pixels by default, `tolerance=`) so font rendering on another machine
 doesn't fail the test.
 
-For byte-identical PNGs across different machines, use only termstage's bundled
-fonts: set the environment variable `TERMSTAGE_SYSTEM_FONTS=0`.
+For byte-identical PNGs across different machines, use only stagetui's bundled
+fonts: set the environment variable `STAGETUI_SYSTEM_FONTS=0`.
 
 ## From the command line
 
 ```bash
-termstage render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
+stagetui render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
 ```
 
 This loads `my_app.py`, finds the `StageApp` in it (without running its
@@ -151,10 +151,10 @@ This loads `my_app.py`, finds the `StageApp` in it (without running its
 An agent can build an app, look at it, and fix it — in a loop, with no human:
 
 1. Write or edit the app.
-2. Run `termstage render app.py --text screen.txt --tree tree.json` (or `run_headless` in Python).
+2. Run `stagetui render app.py --text screen.txt --tree tree.json` (or `run_headless` in Python).
 3. Read `screen.txt` to see the layout; read `tree.json` for exact positions and ids.
 4. Look at the PNG if the agent can see images.
 5. Repeat.
 
-AI agents can also operate apps themselves with `termstage mcp` and
-`termstage drive` — see [Let AI agents see and use your app](agents.md).
+AI agents can also operate apps themselves with `stagetui mcp` and
+`stagetui drive` — see [Let AI agents see and use your app](agents.md).

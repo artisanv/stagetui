@@ -4,11 +4,11 @@ import shutil
 import subprocess
 import sys
 
-import termstage
+import stagetui
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "TERMSTAGE_HEADLESS": "1"}
+    env = {**os.environ, "STAGETUI_HEADLESS": "1"}
     return subprocess.run(
         args,
         check=False,
@@ -21,30 +21,30 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_console_script_inspect_json():
-    exe = shutil.which("termstage")
-    assert exe, "the `termstage` console script is not installed"
+    exe = shutil.which("stagetui")
+    assert exe, "the `stagetui` console script is not installed"
     out = run(exe, "inspect", "--json")
     assert out.returncode == 0, out.stderr
     caps = json.loads(out.stdout)
-    assert caps["version"] == termstage.__version__
+    assert caps["version"] == stagetui.__version__
     assert caps["headless"] is True
 
 
 def test_python_dash_m_doctor():
-    out = run(sys.executable, "-m", "termstage", "doctor")
+    out = run(sys.executable, "-m", "stagetui", "doctor")
     assert out.returncode == 0, out.stderr
-    assert "termstage doctor" in out.stdout and "headless" in out.stdout
+    assert "stagetui doctor" in out.stdout and "headless" in out.stdout
 
 
 def test_cli_library_parity():
-    lib = termstage.inspect()
-    cli = json.loads(run(sys.executable, "-m", "termstage", "inspect", "--compact").stdout)
+    lib = stagetui.inspect()
+    cli = json.loads(run(sys.executable, "-m", "stagetui", "inspect", "--compact").stdout)
     for key in ("headless", "graphics", "keyboard", "truecolor", "platform", "version"):
         assert lib[key] == cli[key], key
 
 
 def test_bad_usage_exit_code():
-    out = run(sys.executable, "-m", "termstage", "frobnicate")
+    out = run(sys.executable, "-m", "stagetui", "frobnicate")
     assert out.returncode == 2
     assert "frobnicate" in out.stderr
 
@@ -54,7 +54,7 @@ def test_render_text_card(tmp_path):
     out = run(
         sys.executable,
         "-m",
-        "termstage",
+        "stagetui",
         "render",
         "مرحبا بكم",
         "--dir",
@@ -81,7 +81,7 @@ def test_render_app_file(tmp_path):
     out = run(
         sys.executable,
         "-m",
-        "termstage",
+        "stagetui",
         "render",
         str(root / "examples" / "01_hello.py"),
         "--size",
@@ -92,9 +92,9 @@ def test_render_app_file(tmp_path):
     assert out.returncode == 0, out.stderr
     assert png.read_bytes().startswith(b"\x89PNG")
     printed = run(
-        sys.executable, "-m", "termstage", "render", str(root / "examples" / "01_hello.py")
+        sys.executable, "-m", "stagetui", "render", str(root / "examples" / "01_hello.py")
     )
-    assert "Welcome to termstage" in printed.stdout
+    assert "Welcome to stagetui" in printed.stdout
 
 
 def test_render_svg_to_png(tmp_path):
@@ -103,22 +103,22 @@ def test_render_svg_to_png(tmp_path):
         '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10"/></svg>'
     )
     out = run(
-        sys.executable, "-m", "termstage", "render", str(svg), "--out", str(tmp_path / "s.png")
+        sys.executable, "-m", "stagetui", "render", str(svg), "--out", str(tmp_path / "s.png")
     )
     assert out.returncode == 0, out.stderr
     assert (tmp_path / "s.png").read_bytes().startswith(b"\x89PNG")
 
 
 def test_render_errors_are_friendly(tmp_path):
-    missing = run(sys.executable, "-m", "termstage", "render", str(tmp_path / "nope.py"))
+    missing = run(sys.executable, "-m", "stagetui", "render", str(tmp_path / "nope.py"))
     assert missing.returncode == 1 and "fix:" in missing.stderr
     no_app = tmp_path / "plain.py"
     no_app.write_text("x = 1\n")
-    out = run(sys.executable, "-m", "termstage", "render", str(no_app))
+    out = run(sys.executable, "-m", "stagetui", "render", str(no_app))
     assert out.returncode != 0 and "StageApp" in out.stderr
 
 
 def test_show_text_cli():
-    out = run(sys.executable, "-m", "termstage", "show", "Hello مرحبا", "--title", "Hi")
+    out = run(sys.executable, "-m", "stagetui", "show", "Hello مرحبا", "--title", "Hi")
     assert out.returncode == 0, out.stderr
     assert "Hello مرحبا" in out.stdout and "Hi" in out.stdout

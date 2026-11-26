@@ -5,7 +5,7 @@
 Any widget can arrive with a short, smooth effect:
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Welcome(StageApp):
@@ -33,12 +33,12 @@ Welcome().run()
 Effects play when the widget first appears, and again each time you `.show()` it.
 They take about a third of a second. Pop-up windows (`StageModal`) use `"pop"` by default.
 
-termstage only redraws while something moves, so an idle app uses no CPU.
+stagetui only redraws while something moves, so an idle app uses no CPU.
 
 ### Turning motion off
 
 Some people find motion distracting. Either set `reduce_motion = True` on your
-app, or set the environment variable `TERMSTAGE_REDUCE_MOTION=1` — every effect
+app, or set the environment variable `STAGETUI_REDUCE_MOTION=1` — every effect
 then shows its final state immediately.
 
 ## Spinners and progress bars
@@ -55,7 +55,7 @@ function: it receives the canvas and the time in seconds since the app started.
 ```python
 import math
 
-from termstage import StageApp, StageCanvas
+from stagetui import StageApp, StageCanvas
 
 
 def clock(canvas, t):
@@ -78,7 +78,7 @@ Clock().run()
 
 - `fps` (frames per second, up to 60) sets how often `on_frame` is called.
   It is only called while the canvas is on screen.
-- If drawing a frame takes longer, termstage simply waits for it — frames never pile up.
+- If drawing a frame takes longer, stagetui simply waits for it — frames never pile up.
 - Over SSH or on slow terminals, use a lower `fps`, like 10.
 
 The **Canvas** tab of `examples/05_ui_gallery.py` shows a live drawing.
@@ -89,7 +89,7 @@ Headless runs use a **virtual clock**: time only moves when a step says so, so
 every snapshot is exactly the same on every run.
 
 ```python
-from termstage import StageApp, StageCard
+from stagetui import StageApp, StageCard
 
 
 class Hello(StageApp):

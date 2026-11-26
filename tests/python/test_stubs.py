@@ -3,9 +3,9 @@
 import ast
 from pathlib import Path
 
-import termstage._core as core
+import stagetui._core as core
 
-STUB = Path(__file__).parents[2] / "python" / "termstage" / "_core.pyi"
+STUB = Path(__file__).parents[2] / "python" / "stagetui" / "_core.pyi"
 
 
 def stub_names() -> set[str]:

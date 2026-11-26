@@ -1,12 +1,12 @@
 # Arabic, Persian, Hindi, Chinese… — world languages
 
-termstage is built so that every language looks right, in every terminal,
+stagetui is built so that every language looks right, in every terminal,
 without any setup. This page explains what works and the few things worth knowing.
 
 ## It just works
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 ts.show("مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج", title="العربية")
 ts.show("سلام دنیا، گل‌های زیبا", title="فارسی")
@@ -14,10 +14,10 @@ ts.show("नमस्ते दुनिया", title="हिन्दी")
 ts.show("こんにちは世界 · 你好世界 · 안녕하세요", title="CJK")
 ```
 
-What termstage does for you:
+What stagetui does for you:
 
 - **Letters join.** Arabic letters change shape depending on their neighbours
-  (ب at the start of a word looks different from ب at the end). termstage picks
+  (ب at the start of a word looks different from ب at the end). stagetui picks
   the right shape for every letter, including the special لا ligature and the
   Persian letters پ چ ژ گ ک ی.
 - **Right-to-left order.** Arabic and Persian lines are written from the right,
@@ -35,7 +35,7 @@ other way. Typing in a `StageInput` works right-to-left, and ← / → follow th
 text.
 
 ```python
-from termstage import Stage, StageApp, StageButton, StageCard, StageInput
+from stagetui import Stage, StageApp, StageButton, StageCard, StageInput
 
 
 class Arabic(StageApp):
@@ -60,11 +60,11 @@ single container (for example, one tab page).
 
 ## Choosing the direction
 
-By default termstage looks at the first real letter: Arabic → right-to-left,
+By default stagetui looks at the first real letter: Arabic → right-to-left,
 English → left-to-right. You can force it with `dir`:
 
 ```python
-from termstage import StageCard
+from stagetui import StageCard
 
 StageCard("123 مرحبا", dir="rtl")
 StageCard("Version 2 — الإصدار الثاني", dir="ltr")
@@ -74,15 +74,15 @@ StageCard("Version 2 — الإصدار الثاني", dir="ltr")
 
 | Terminal | How Arabic is drawn |
 |---|---|
-| **Any terminal that shows pictures** (Kitty, Ghostty, WezTerm, iTerm2, foot, Windows Terminal, xterm) | As small pictures of text, drawn with termstage's bundled Noto fonts. Perfect whatever font your terminal uses. |
-| **GNOME Terminal, Ptyxis, Tilix** (VTE) | As shaped letters in cells. termstage switches off VTE's own reordering so text is never reversed twice. |
+| **Any terminal that shows pictures** (Kitty, Ghostty, WezTerm, iTerm2, foot, Windows Terminal, xterm) | As small pictures of text, drawn with stagetui's bundled Noto fonts. Perfect whatever font your terminal uses. |
+| **GNOME Terminal, Ptyxis, Tilix** (VTE) | As shaped letters in cells. stagetui switches off VTE's own reordering so text is never reversed twice. |
 | **Everything else** | As shaped letters in cells. Looks best with a monospace font that includes Arabic "presentation forms", such as **DejaVu Sans Mono**. |
 
 You can choose the mode yourself with an environment variable:
 
 ```bash
-TERMSTAGE_TEXT_MODE=cells python my_app.py    # always letters in cells
-TERMSTAGE_TEXT_MODE=auto python my_app.py     # default: pictures wherever the terminal can show them
+STAGETUI_TEXT_MODE=cells python my_app.py    # always letters in cells
+STAGETUI_TEXT_MODE=auto python my_app.py     # default: pictures wherever the terminal can show them
 ```
 
 > **Copying text.** Where Arabic is drawn as a picture, selecting it
@@ -90,7 +90,7 @@ TERMSTAGE_TEXT_MODE=auto python my_app.py     # default: pictures wherever the t
 
 ## Fonts
 
-termstage carries its own fonts, so pictures and PNG snapshots look the same on
+stagetui carries its own fonts, so pictures and PNG snapshots look the same on
 every computer — even inside a minimal Docker container:
 
 - **Noto Sans** — Latin, Greek, Cyrillic
@@ -98,11 +98,11 @@ every computer — even inside a minimal Docker container:
 - **Noto Sans Devanagari** — Hindi, Marathi, Nepali
 - **DejaVu Sans Mono** — the monospace font for terminal-style snapshots
 
-Chinese, Japanese and Korean fonts are very large, so termstage uses the ones
+Chinese, Japanese and Korean fonts are very large, so stagetui uses the ones
 already on your computer (macOS and Windows always have them). To check:
 
 ```python
-import termstage as ts
+import stagetui as ts
 
 report = ts.fonts()
 for script in report["scripts"]:

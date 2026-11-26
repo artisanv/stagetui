@@ -5,7 +5,7 @@ text, a choice. These functions are called **handlers**. You pass them with
 `on_<something>=`.
 
 ```python
-from termstage import StageApp, StageButton, StageCard, StageInput
+from stagetui import StageApp, StageButton, StageCard, StageInput
 
 
 class Greeter(StageApp):
@@ -50,7 +50,7 @@ works too.
 ### More widgets you can use
 
 ```python
-from termstage import (
+from stagetui import (
     Stage,
     StageApp,
     StageCheckbox,
@@ -90,7 +90,7 @@ the screen stays responsive while you wait:
 ```python
 import asyncio
 
-from termstage import StageApp, StageButton, StageProgress
+from stagetui import StageApp, StageButton, StageProgress
 
 
 class Download(StageApp):
@@ -139,7 +139,7 @@ And on the app:
 ## Keyboard shortcuts with `BINDINGS`
 
 ```python
-from termstage import StageApp, StageBar, StageCard
+from stagetui import StageApp, StageBar, StageCard
 
 
 class Notes(StageApp):
@@ -162,7 +162,7 @@ class Notes(StageApp):
 Notes().run()
 ```
 
-Each entry is `(key, action)` or `(key, action, description)`. termstage calls
+Each entry is `(key, action)` or `(key, action, description)`. stagetui calls
 `action_<name>` on your app (or a method called `<name>`). Keys look like
 `"ctrl+s"`, `"ctrl+shift+d"`, `"alt+x"`, `"f5"`, `"enter"`, `"?"`, `"ctrl+backslash"`.
 

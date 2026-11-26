@@ -1,6 +1,6 @@
 """End-to-end in a real pseudo-terminal: this test *is* the terminal.
 
-It answers termstage's capability queries like a Kitty-compatible terminal,
+It answers stagetui's capability queries like a Kitty-compatible terminal,
 checks the first frame is drawn with synchronized output, presses `q`, and
 verifies every terminal mode is restored.
 """
@@ -54,8 +54,8 @@ def run_app_in_pty(extra_env: dict[str, str]) -> bytes:
     import struct
     import termios
 
-    env = {**os.environ, "TERM": "xterm-kitty", "TERMSTAGE_PROBE_TIMEOUT_MS": "2000", **extra_env}
-    for key in ("TERMSTAGE_HEADLESS", "VTE_VERSION", "TMUX", "SSH_TTY", "SSH_CONNECTION"):
+    env = {**os.environ, "TERM": "xterm-kitty", "STAGETUI_PROBE_TIMEOUT_MS": "2000", **extra_env}
+    for key in ("STAGETUI_HEADLESS", "VTE_VERSION", "TMUX", "SSH_TTY", "SSH_CONNECTION"):
         if key not in extra_env:
             env.pop(key, None)
     pid, fd = pty.fork()
@@ -65,7 +65,7 @@ def run_app_in_pty(extra_env: dict[str, str]) -> bytes:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 1000, 600))
     out = bytearray()
     try:
-        assert read_until(fd, b"Welcome to termstage", 15, out), out[-2000:]
+        assert read_until(fd, b"Welcome to stagetui", 15, out), out[-2000:]
         os.write(
             fd, b"\x1b[113u" if b"\x1b[>1u" in out else b"q"
         )  # 'q' (kitty key event if enabled)
@@ -105,7 +105,7 @@ def test_interactive_app_draws_and_restores_terminal():
 
 
 def test_vte_gets_presentation_forms_and_explicit_bidi():
-    out = run_app_in_pty({"VTE_VERSION": "8002", "TERMSTAGE_TEXT_MODE": "cells"})
+    out = run_app_in_pty({"VTE_VERSION": "8002", "STAGETUI_TEXT_MODE": "cells"})
     assert b"\x1b[8l" in out, "explicit BiDi mode not enabled"
     assert b"\x1b[8h" in restore_tail(out), "BiDi mode not restored"
     assert "\ufee3".encode() in out, "Arabic should be shaped into presentation forms"
@@ -113,7 +113,7 @@ def test_vte_gets_presentation_forms_and_explicit_bidi():
 
 INTERACTIVE_APP = """
 import sys
-from termstage import Stage, StageApp, StageButton, StageCard
+from stagetui import Stage, StageApp, StageButton, StageCard
 
 class App(StageApp):
     def __init__(self):
@@ -153,13 +153,13 @@ def test_mouse_and_keys_reach_python_handlers(tmp_path):
         [sys.executable, str(script), "where"],
         capture_output=True,
         text=True,
-        env={**os.environ, "TERMSTAGE_HEADLESS": "1"},
+        env={**os.environ, "STAGETUI_HEADLESS": "1"},
         check=True,
     )
     bx, by = map(int, where.stdout.split())
 
-    env = {**os.environ, "TERM": "xterm-kitty", "TERMSTAGE_PROBE_TIMEOUT_MS": "2000"}
-    for key in ("TERMSTAGE_HEADLESS", "VTE_VERSION", "TMUX", "SSH_TTY", "SSH_CONNECTION"):
+    env = {**os.environ, "TERM": "xterm-kitty", "STAGETUI_PROBE_TIMEOUT_MS": "2000"}
+    for key in ("STAGETUI_HEADLESS", "VTE_VERSION", "TMUX", "SSH_TTY", "SSH_CONNECTION"):
         env.pop(key, None)
     pid, fd = pty.fork()
     if pid == 0:

@@ -10,7 +10,7 @@ Keys:  Tab moves between panes · in the shell, Ctrl+Space then Tab gets you out
 import asyncio
 import os
 
-from termstage import StageApp, StageBar, StagePane, StagePrompt, StageSplit
+from stagetui import StageApp, StageBar, StagePane, StagePrompt, StageSplit
 
 BEFORE = """def greet(name):
     print("hello " + name)
