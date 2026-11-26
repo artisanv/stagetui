@@ -693,7 +693,8 @@ mod tests {
 
         fn open(reg: &Registry, name: &str, caps: Capabilities, size: (u16, u16)) -> Stream {
             let (mut s, _, token) = reg.connect(Some(name)).unwrap();
-            s.set_recv_timeout(Some(Duration::from_secs(10))).unwrap();
+            // Not on Windows pipes; there a stuck test is ended by the CI timeout.
+            let _ = s.set_recv_timeout(Some(Duration::from_secs(10)));
             let hello = ClientMsg::Hello {
                 token,
                 protocol: PROTOCOL,
