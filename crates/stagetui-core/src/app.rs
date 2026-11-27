@@ -295,6 +295,8 @@ impl App {
         *lock(&self.wake) = Some(tx.clone());
         lock(&WAKERS).push(tx.clone());
         *lock(&self.info) = registration.as_ref().map(|r| r.info.clone());
+        self.session()
+            .set_session_name(registration.as_ref().map(|r| r.info.name.clone()));
         *lock(&self.waker) = registration.as_ref().map(Registration::waker);
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<()>>(1);
         let me = Arc::clone(self);
@@ -524,6 +526,8 @@ impl App {
                         s.set_cell_px(w.cell_px());
                         s.touch();
                     }
+                    // q in an attached window asks: detach or quit the app?
+                    s.set_detachable(*id != LOCAL);
                     s.handle(i);
                     if s.take_detach() {
                         self.detach(&mut s, &mut windows, *id);
@@ -782,7 +786,10 @@ mod tests {
             );
             assert!(app.is_running());
 
-            // q in the other window quits the app for everyone.
+            // q in an attached window asks first; q again quits the app for everyone.
+            press(&mut a, "q");
+            let (out, _) = read_until(&mut a, |o| o.contains("Quit app"));
+            assert!(out.contains("Leave \"two-windows\"?"));
             press(&mut a, "q");
             let (_, bye) = read_until(&mut a, |_| false);
             assert!(

@@ -67,7 +67,8 @@ stagetui attach my-app                 # open it (again) in this terminal
 stagetui stop my-app                   # quit it
 ```
 
-While attached, **Ctrl+Space** then **d** detaches. See [Sessions](sessions.md).
+While attached, **Ctrl+Space** then **d** detaches; **q** asks whether to detach or
+quit the app. See [Sessions](sessions.md).
 
 ## `stagetui doctor` — what can my terminal do?
 

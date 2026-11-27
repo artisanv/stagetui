@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Milestone 5b
+- **"Leave?" prompt**: q, Ctrl+C or Esc in an attached window asks *Detach* (default),
+  *Quit app* or *Cancel*, so a background app is never stopped by accident. Apps run with
+  `python app.py` still quit with q.
+
 ### Added — Milestone 5a: sessions and workspaces
 - **Sessions**: every interactive app is a session other terminals can attach to, over a private
   local socket (user-only folder, `0600`; named pipes on Windows) with a per-session secret token.

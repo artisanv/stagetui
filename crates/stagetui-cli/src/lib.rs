@@ -157,7 +157,7 @@ enum Command {
         #[arg(last = true)]
         args: Vec<String>,
     },
-    /// Stop a running app, as if someone pressed q in it.
+    /// Stop a running app right away (no questions asked).
     Stop {
         /// The session name (optional when only one app is running).
         name: Option<String>,

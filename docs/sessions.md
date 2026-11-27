@@ -36,7 +36,30 @@ Come back whenever you like:
 stagetui attach night-shift
 ```
 
-Everything it did while you were away is on screen. Press **q** to quit it for good.
+Everything it did while you were away is on screen.
+
+## Leaving: detach or quit?
+
+When you press **q** (or **Ctrl+C**) in an attached window, stagetui asks first:
+
+```
+╭─ Leave "night-shift"? ─────────────────────────╮
+│                                                │
+│  Detach: it keeps running, come back later.    │
+│  Quit: the app stops for every window.         │
+│                                                │
+│        Detach      Quit app      Cancel        │
+│                                                │
+│  d detach · q quit · Esc cancel · ← → choose   │
+╰────────────────────────────────────────────────╯
+```
+
+- **Enter** or **d** detaches — the safe choice, and the default.
+- **q** again quits the app for good.
+- **Esc** goes back to the app.
+
+**Ctrl+Space then d** detaches straight away, without asking. Apps you run the
+normal way (`python app.py`) quit with **q** as usual — there is nothing to detach from.
 
 ## The commands
 
@@ -48,7 +71,7 @@ Everything it did while you were away is on screen. Press **q** to quit it for g
 | `stagetui start app.py -- --fast` | Pass arguments to your app (after `--`) |
 | `stagetui sessions` | List the running apps (`--json` for programs) |
 | `stagetui attach [name]` | Show a running app in this terminal (the name can be left out when only one app runs) |
-| `stagetui stop [name]` | Quit a running app, as if someone pressed **q** in it |
+| `stagetui stop [name]` | Quit a running app (no questions asked) |
 
 While attached, **Ctrl+Space** then **d** detaches again.
 

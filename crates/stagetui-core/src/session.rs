@@ -23,6 +23,9 @@ use crate::text::{self, Direction};
 use crate::tree::{AppSpec, IRect, Kind, NodeSpec, Tree};
 use crate::widgets::{Card, Cx, PaintCx, Reaction, Widget, draw_box, fill, scrollbar};
 use crate::workspace::Layout;
+
+/// The buttons of the "Leave?" prompt.
+const LEAVE_BUTTONS: [&str; 3] = ["Detach", "Quit app", "Cancel"];
 use crate::{Error, Result};
 
 /// Something the app should know about (`on_click`, `on_change`, actions…).
@@ -92,6 +95,12 @@ pub struct Session {
     quit: bool,
     /// A window asked to detach (prefix + d); the runtime decides what that means.
     detach: bool,
+    /// The current input comes from a window that can detach (an attached terminal).
+    detachable: bool,
+    /// The session's name, for "Leave <name>?".
+    session_name: Option<String>,
+    /// The open "Leave?" prompt: the selected button (Detach, Quit app, Cancel).
+    leave: Option<usize>,
     frames: HashMap<usize, FrameClock>,
     modal_return: Vec<(usize, Option<usize>)>,
     autofocused: bool,
@@ -140,6 +149,9 @@ impl Session {
             size: (0, 0),
             quit: false,
             detach: false,
+            detachable: false,
+            session_name: None,
+            leave: None,
             frames: HashMap::new(),
             modal_return: Vec::new(),
             autofocused: false,
@@ -314,6 +326,159 @@ impl Session {
     /// The user asked to quit (q, Esc, Ctrl+C or a `quit` action).
     pub fn quit_requested(&self) -> bool {
         self.quit
+    }
+
+    /// Whether the input handled next comes from a window that can detach
+    /// (an attached terminal). Then q / Ctrl+C ask before quitting.
+    pub fn set_detachable(&mut self, yes: bool) {
+        self.detachable = yes;
+    }
+
+    /// The session's name, shown in the "Leave?" prompt.
+    pub fn set_session_name(&mut self, name: Option<String>) {
+        self.session_name = name;
+    }
+
+    /// Whether the "Leave?" prompt is open.
+    pub fn leave_prompt_open(&self) -> bool {
+        self.leave.is_some()
+    }
+
+    /// Someone pressed q / Ctrl+C / Esc to leave. In an attached window, ask
+    /// first: detach (the app keeps running) or quit the app.
+    fn user_quit(&mut self) {
+        if self.detachable && !self.quit {
+            self.leave = Some(0);
+            self.menu = None;
+            self.dirty = true;
+        } else {
+            self.request_quit();
+        }
+    }
+
+    fn leave_key(&mut self, k: Key) {
+        let Some(sel) = self.leave else { return };
+        let choice = match k.code {
+            Code::Char('c') if k.mods.ctrl => Some(1),
+            Code::Enter | Code::Char(' ') => Some(sel),
+            Code::Char('d') => Some(0),
+            Code::Char('q') => Some(1),
+            Code::Esc | Code::Char('c') | Code::Char('n') => Some(2),
+            Code::Right | Code::Down => {
+                self.leave = Some((sel + 1) % 3);
+                None
+            }
+            Code::Tab => {
+                self.leave = Some(if k.mods.shift {
+                    (sel + 2) % 3
+                } else {
+                    (sel + 1) % 3
+                });
+                None
+            }
+            Code::Left | Code::Up => {
+                self.leave = Some((sel + 2) % 3);
+                None
+            }
+            _ => None,
+        };
+        self.dirty = true;
+        if let Some(c) = choice {
+            self.leave_choose(c);
+        }
+    }
+
+    fn leave_choose(&mut self, choice: usize) {
+        self.leave = None;
+        self.dirty = true;
+        match choice {
+            0 => self.detach = true,
+            1 => self.request_quit(),
+            _ => {}
+        }
+    }
+
+    /// The prompt's box and its three buttons, centered on `screen`.
+    fn leave_rects(&self, screen: Rect) -> Option<(Rect, [Rect; 3])> {
+        self.leave?;
+        let w = 50.min(screen.width);
+        let h = 9.min(screen.height);
+        let rect = Rect::new(
+            screen.x + (screen.width - w) / 2,
+            screen.y + (screen.height - h) / 2,
+            w,
+            h,
+        );
+        let widths = LEAVE_BUTTONS.map(|l| l.chars().count() as u16 + 4);
+        let total: u16 = widths.iter().sum::<u16>() + 2 * 2;
+        let mut x = rect.x + rect.width.saturating_sub(total) / 2;
+        let y = (rect.y + 5).min(rect.bottom().saturating_sub(3));
+        let mut buttons = [Rect::default(); 3];
+        for (b, w) in buttons.iter_mut().zip(widths) {
+            *b = Rect::new(x, y, w, 1).intersection(rect);
+            x += w + 2;
+        }
+        Some((rect, buttons))
+    }
+
+    fn paint_leave(&self, frame: &mut Frame) {
+        let Some(sel) = self.leave else { return };
+        let Some((rect, buttons)) = self.leave_rects(frame.area()) else {
+            return;
+        };
+        let t = &self.tree.theme;
+        frame.dim_except(Rect::default(), t.bg, 0.55);
+        frame.occlude(rect);
+        fill(frame, rect, t.fg, t.surface);
+        let title = match &self.session_name {
+            Some(n) => format!("Leave \"{n}\"?"),
+            None => "Leave this app?".to_string(),
+        };
+        draw_box(
+            frame,
+            rect,
+            true,
+            t.accent,
+            t.bg,
+            Some(&title),
+            t.accent,
+            false,
+        );
+        let inner = rect.width.saturating_sub(6);
+        let text = Style::new().fg(t.fg.color()).bg(t.surface.color());
+        let muted = Style::new().fg(t.muted.color()).bg(t.surface.color());
+        frame.put_str(
+            rect.x + 3,
+            rect.y + 2,
+            "Detach: it keeps running, come back later.",
+            inner,
+            text,
+        );
+        frame.put_str(
+            rect.x + 3,
+            rect.y + 3,
+            "Quit: the app stops for every window.",
+            inner,
+            text,
+        );
+        for (k, (b, label)) in buttons.iter().zip(LEAVE_BUTTONS).enumerate() {
+            let (fg, bg) = if k == sel {
+                (t.bg, t.accent)
+            } else {
+                (t.fg, t.surface.mix(t.fg, 0.12))
+            };
+            fill(frame, *b, fg, bg);
+            let style = Style::new().fg(fg.color()).bg(bg.color());
+            frame.put_str(b.x + 2, b.y, label, b.width.saturating_sub(2), style);
+        }
+        let keys = "d detach · q quit · Esc cancel · ← → choose";
+        frame.put_str(
+            rect.x + 3,
+            rect.bottom().saturating_sub(2),
+            keys,
+            inner,
+            muted,
+        );
     }
 
     /// Whether a window asked to detach since the last call (prefix + d).
@@ -1068,6 +1233,17 @@ impl Session {
     }
 
     pub(crate) fn hints(&self) -> Vec<(String, String)> {
+        if self.leave.is_some() {
+            return [
+                ("Enter", "Choose"),
+                ("d", "Detach"),
+                ("q", "Quit app"),
+                ("Esc", "Cancel"),
+            ]
+            .iter()
+            .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
+            .collect();
+        }
         if self.prefix_armed {
             return [
                 ("Tab", "Next pane"),
@@ -1158,6 +1334,7 @@ impl Session {
             self.paint_modal(m, &mut frame, &hints);
         }
         self.paint_toasts(&mut frame);
+        self.paint_leave(&mut frame);
         frame
     }
 
@@ -1793,6 +1970,10 @@ impl Session {
     }
 
     fn key(&mut self, k: Key) {
+        if self.leave.is_some() {
+            self.leave_key(k);
+            return;
+        }
         if self.menu.is_some() {
             self.menu_key(k);
             return;
@@ -1825,7 +2006,7 @@ impl Session {
             return;
         }
         if k.mods.ctrl && k.code == Code::Char('c') {
-            self.request_quit();
+            self.user_quit();
             return;
         }
         // 1. The focused widget (or its open dropdown).
@@ -1857,11 +2038,11 @@ impl Session {
                     if self.focus.is_some() {
                         self.set_focus(None);
                     } else {
-                        self.request_quit();
+                        self.user_quit();
                     }
                 }
             }
-            Code::Char('q') if plain => self.request_quit(),
+            Code::Char('q') if plain => self.user_quit(),
             Code::PageDown | Code::PageUp if k.mods.ctrl => {
                 self.switch_tab(k.code == Code::PageDown)
             }
@@ -1911,7 +2092,7 @@ impl Session {
             Code::Char('d') => self.action("detach"),
             Code::Char(c @ '1'..='9') => self.select_workspace(c as usize - '1' as usize),
             Code::Char(' ') | Code::Enter => self.action("pane_menu"),
-            Code::Char('q') => self.request_quit(),
+            Code::Char('q') => self.user_quit(),
             _ => {}
         }
     }
@@ -1924,7 +2105,7 @@ impl Session {
     /// Run an action by name: built-ins here, the rest go to the app.
     pub fn action(&mut self, name: &str) {
         match name {
-            "quit" => self.request_quit(),
+            "quit" => self.user_quit(),
             "detach" => self.detach = true,
             "focus_next" => self.move_focus(true),
             "focus_previous" => self.move_focus(false),
@@ -2071,6 +2252,26 @@ impl Session {
 
     fn mouse(&mut self, m: Mouse) {
         let (x, y) = (m.x, m.y);
+        if let Some((rect, buttons)) = self.leave_rects(Rect::new(0, 0, self.size.0, self.size.1)) {
+            let at = buttons.iter().position(|b| b.contains((x, y).into()));
+            match m.kind {
+                MouseKind::Down(_) => match at {
+                    Some(k) => self.leave_choose(k),
+                    None if !rect.contains((x, y).into()) => self.leave_choose(2),
+                    None => {}
+                },
+                MouseKind::Move => {
+                    if let Some(k) = at
+                        && self.leave != Some(k)
+                    {
+                        self.leave = Some(k);
+                        self.dirty = true;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         // Widgets that want raw mouse events (a shell running a mouse-aware app).
         if self.popup().is_none()
             && self.drag.is_none()
@@ -2681,6 +2882,58 @@ mod tests {
 
     fn session(json: &str) -> Session {
         Session::from_json(json).unwrap()
+    }
+
+    #[test]
+    fn q_in_an_attached_window_asks_before_quitting() {
+        let mut s =
+            session(r#"{"children":[{"type":"card","content":"مَرْحَبًا Hello 日本語 नमस्ते"}]}"#);
+        s.frame(80, 24);
+        // The app's own terminal: q quits right away, as always.
+        s.press("q").unwrap();
+        assert!(s.quit_requested());
+
+        let mut s =
+            session(r#"{"children":[{"type":"card","content":"مَرْحَبًا Hello 日本語 नमस्ते"}]}"#);
+        s.set_session_name(Some("night-shift".into()));
+        s.set_detachable(true);
+        s.frame(80, 24);
+        s.press("q").unwrap();
+        assert!(!s.quit_requested() && s.leave_prompt_open());
+        let text = s.frame(80, 24).text();
+        assert!(text.contains("Leave \"night-shift\"?"), "{text}");
+        assert!(text.contains("Detach") && text.contains("Quit app") && text.contains("Cancel"));
+        // Enter picks the default: detach (the app keeps running).
+        s.press("enter").unwrap();
+        assert!(s.take_detach() && !s.quit_requested() && !s.leave_prompt_open());
+        // Esc cancels; nothing happens.
+        s.press("ctrl+c").unwrap();
+        s.press("esc").unwrap();
+        assert!(!s.take_detach() && !s.quit_requested() && !s.leave_prompt_open());
+        // Ctrl+Space then q opens it too; q again really quits.
+        s.press("ctrl+space").unwrap();
+        s.press("q").unwrap();
+        assert!(s.leave_prompt_open());
+        s.press("q").unwrap();
+        assert!(s.quit_requested());
+    }
+
+    #[test]
+    fn leave_prompt_works_with_the_mouse_and_arrows() {
+        let mut s = session(r#"{"children":[{"type":"text","content":"hi"}]}"#);
+        s.set_detachable(true);
+        s.frame(80, 24);
+        s.press("esc").unwrap(); // nothing focused: Esc means leave
+        assert!(s.leave_prompt_open());
+        s.press("right").unwrap();
+        s.press("right").unwrap();
+        s.press("enter").unwrap(); // Cancel
+        assert!(!s.leave_prompt_open() && !s.quit_requested() && !s.take_detach());
+        s.press("q").unwrap();
+        let (_, buttons) = s.leave_rects(Rect::new(0, 0, 80, 24)).unwrap();
+        let quit = buttons[1];
+        s.click_at(quit.x + 1, quit.y);
+        assert!(s.quit_requested());
     }
 
     fn mem_image(w: u32, h: u32) -> String {

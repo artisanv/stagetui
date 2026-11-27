@@ -153,7 +153,9 @@ def test_detach_and_reattach_keep_everything(tmp_path: Path, env: dict[str, str]
         assert w.wait_for("stagetui-42"), "the shell kept its output"
         assert w.wait_for("hello"), "the text box kept its text"
         w.send("\x00")
-        w.send("q")  # Ctrl+Space then q: quit the app
+        w.send("q")  # Ctrl+Space then q: leaving asks first …
+        assert w.wait_for("Quit app"), bytes(w.out[-2000:])
+        w.send("q")  # … q again quits the app
         assert w.wait_for("has quit"), bytes(w.out[-2000:])
         assert w.close() == 0
         deadline = time.monotonic() + 10

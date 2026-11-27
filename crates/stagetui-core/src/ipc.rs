@@ -452,7 +452,7 @@ impl Registry {
         Ok((stream, info, token.trim().to_string()))
     }
 
-    /// Ask a session to quit, as if someone pressed `q` in it.
+    /// Ask a session to quit (without the "Leave?" question).
     pub fn stop(&self, name: Option<&str>) -> Result<SessionInfo> {
         let (mut stream, info, token) = self.connect(name)?;
         send(&mut stream, &ClientMsg::Quit { token })?;
