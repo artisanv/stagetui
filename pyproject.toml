@@ -5,12 +5,12 @@ build-backend = "maturin"
 [project]
 name = "stagetui"
 dynamic = ["version"]
-description = "Rust-first TUI engine for agent harnesses and humans: rich terminal apps, headless snapshots, flawless Arabic/RTL."
+description = "A fun, sophisticated terminal UI engine with Blender-like flexibility: panes that show anything, sessions, real pictures, flawless Arabic/RTL, and apps AI agents can drive."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
-keywords = ["tui", "terminal", "agents", "kitty", "sixel", "rtl", "arabic", "headless"]
+keywords = ["tui", "terminal", "blender", "panes", "agents", "kitty", "sixel", "rtl", "arabic", "headless"]
 # Zero runtime dependencies: everything lives in the Rust extension.
 dependencies = []
 classifiers = [

@@ -6,8 +6,17 @@
 > and the PyPI release is an early alpha. Please don't use it for real work today.
 > Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
 
-**Beautiful terminal programs in plain Python — with pictures, drawings and every world language.**
-A fast Rust engine does the hard work. Built for humans *and* for AI coding agents.
+**A sophisticated terminal UI engine with Blender-like flexibility.** Split the screen
+into panes and make each one show anything — a chat, a shell, code, a diff, files —
+then rearrange, save the layout, pop a pane out into its own window, or leave the
+whole app running and come back later. With real pictures, flawless Arabic and
+every world language, and apps that AI coding agents can see and drive.
+Plain Python on top, a fast Rust engine underneath.
+
+> **A fun project, built for our own reasons.** We wanted a terminal UI that feels like
+> Blender — arrange everything the way *you* like — and that does Arabic right, shows
+> real pictures, and lets AI agents work with it. It is the base for our own AI coding
+> harness. We share it in case it is useful or fun for you too.
 
 ```python
 import stagetui as ts
@@ -36,11 +45,28 @@ ts.show("logo.png")
 ## Install
 
 ```bash
-pip install stagetui
+pip install stagetui     # the core: about 7 MB, no other Python packages needed
 stagetui doctor          # what can my terminal do?
 ```
 
 New to Python? Start with **[Getting started](docs/getting-started.md)** — it explains everything step by step.
+
+### Optional add-ons
+
+The core has everything for terminal apps: panes, chat, shell, code, diffs,
+pictures, Arabic, sessions. Heavy things are separate, so you only install what
+you use. When you first open one in an app, stagetui asks whether to install it.
+
+| Add-on | What it adds | Install |
+|---|---|---|
+| Video | Play video files and links in a pane, with sound | `pip install "stagetui[video]"` *(coming soon)* |
+| Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install "stagetui[web]"` *(coming soon)* |
+| 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install "stagetui[3d]"` *(coming soon)* |
+
+For pictures, video and 3D, use a terminal that can show real pictures — Ghostty,
+Kitty, WezTerm or foot (Linux), Ghostty, Kitty, WezTerm or iTerm2 (macOS),
+WezTerm or Windows Terminal (Windows). In other terminals pictures are drawn with
+blocks; `stagetui doctor` tells you what yours can do.
 
 ## A full-screen app
 
