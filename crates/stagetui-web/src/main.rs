@@ -160,6 +160,22 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// A file path → a `file://` URL (Windows' `\\?\C:\…` form becomes `file:///C:/…`).
+fn file_url(path: &str) -> String {
+    let plain = path
+        .strip_prefix(r"\\?\UNC\")
+        .map(|rest| format!(r"\\{rest}"))
+        .unwrap_or_else(|| path.strip_prefix(r"\\?\").unwrap_or(path).to_string());
+    let slashed = plain.replace('\\', "/");
+    if let Some(share) = slashed.strip_prefix("//") {
+        format!("file://{share}")
+    } else if slashed.starts_with('/') {
+        format!("file://{slashed}")
+    } else {
+        format!("file:///{slashed}")
+    }
+}
+
 /// What someone typed in the address line → a URL.
 fn to_url(text: &str) -> String {
     let t = text.trim();
@@ -174,12 +190,7 @@ fn to_url(text: &str) -> String {
         } else {
             std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
         };
-        let s = full.display().to_string().replace('\\', "/");
-        return if s.starts_with('/') {
-            format!("file://{s}")
-        } else {
-            format!("file:///{s}")
-        };
+        return file_url(&full.display().to_string());
     }
     format!("https://{t}")
 }
@@ -730,6 +741,16 @@ mod tests {
         assert_eq!(to_url("http://a.b/c"), "http://a.b/c");
         assert_eq!(to_url("about:blank"), "about:blank");
         assert!(to_url("/tmp").starts_with("file:///"));
+        assert_eq!(
+            file_url(r"\\?\C:\Users\me\مرحبا 日本語.html"),
+            "file:///C:/Users/me/مرحبا 日本語.html"
+        );
+        assert_eq!(file_url(r"C:\a\b.html"), "file:///C:/a/b.html");
+        assert_eq!(
+            file_url(r"\\?\UNC\server\share\a.html"),
+            "file://server/share/a.html"
+        );
+        assert_eq!(file_url("/home/me/a.html"), "file:///home/me/a.html");
         assert_eq!(key_code("enter").map(|k| k.2), Some(13));
         assert!(key_code("q").is_none());
     }

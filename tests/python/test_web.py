@@ -111,7 +111,7 @@ def test_a_real_page_clicks_types_navigates_and_scrolls(pages: tuple[Path, Path]
         assert until(d, lambda: js("window.scrollY") > 0)
 
         # Go somewhere else, and back.
-        web.call("navigate", f"file://{two.as_posix()}")
+        web.call("navigate", two.as_uri())
         assert until(d, lambda: web.call("state")["title"] == "Second page")
         web.call("back")
         assert until(d, lambda: web.call("state")["title"] == "Test مرحبا")
