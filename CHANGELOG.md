@@ -6,7 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0a5] — 2026-11-27
+## [0.1.0a6] — 2026-11-27
+
+(0.1.0a5 was released for the web add-on only.)
 
 ### Added
 - A picture gallery in the README: every example, drawn by stagetui itself.
@@ -16,6 +18,8 @@ All notable changes to this project are documented here. The format follows
 - Arabic (and other right-to-left or complex text) typed after English in a text
   box — "Sara · سارة" — now has joined letters in the right order.
 - The web add-on could keep saying "loading" after a page had loaded.
+- The web add-on no longer waits for a page to finish loading before it shows
+  pictures and handles input. A slow first page could freeze the pane.
 - `examples/10_plugins.py` plays a sample clip when the Video add-on is installed,
   instead of saying "no video given".
 

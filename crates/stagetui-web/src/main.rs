@@ -19,8 +19,8 @@ use chromiumoxide::cdp::browser_protocol::input::{
     InsertTextParams, MouseButton,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    EventFrameNavigated, EventLoadEventFired, EventScreencastFrame, ScreencastFrameAckParams,
-    StartScreencastFormat, StartScreencastParams, StopScreencastParams,
+    EventFrameNavigated, EventLoadEventFired, EventScreencastFrame, NavigateParams, ReloadParams,
+    ScreencastFrameAckParams, StartScreencastFormat, StartScreencastParams, StopScreencastParams,
 };
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
@@ -332,15 +332,17 @@ async fn drive(
                 match cmd {
                     Cmd::Stop => break,
                     Cmd::Navigate(url) => {
-                        if let Err(e) = page.goto(url.as_str()).await {
-                            lock(&shared).trouble = Some(format!("couldn't open {url}: {e}"));
-                        } else {
-                            lock(&shared).trouble = None;
-                        }
+                        // Only start it: the page events tell when it has loaded. (Waiting
+                        // here would stop pictures, input and events until the page is done.)
+                        let trouble = match page.execute(NavigateParams::new(url.as_str())).await {
+                            Ok(r) => r.result.error_text.clone().map(|e| format!("couldn't open {url}: {e}")),
+                            Err(e) => Some(format!("couldn't open {url}: {e}")),
+                        };
+                        lock(&shared).trouble = trouble;
                     }
                     Cmd::Back => { let _ = page.evaluate("history.back()").await; }
                     Cmd::Forward => { let _ = page.evaluate("history.forward()").await; }
-                    Cmd::Reload => { let _ = page.reload().await; }
+                    Cmd::Reload => { let _ = page.execute(ReloadParams::default()).await; }
                     Cmd::Resize(w, h) => {
                         let css = ((f64::from(w) / zoom) as i64, (f64::from(h) / zoom) as i64);
                         let _ = page.execute(SetDeviceMetricsOverrideParams::new(css.0.max(1), css.1.max(1), zoom, false)).await;
