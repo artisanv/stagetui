@@ -1657,14 +1657,8 @@ impl Session {
         self.pictures_offered.insert(pane);
         if let Some(term) = self.picture_terminal.clone() {
             let id = self.tree.nodes[pane].id.clone();
-            self.popout_terminal.insert(id, term.clone());
+            self.popout_terminal.insert(id, term);
             self.pop_out_idx(pane);
-            let _ = self.notify(
-                &format!("Opened in {term}: this terminal draws pictures with blocks"),
-                Some("info"),
-                None,
-                Duration::from_secs(5),
-            );
         } else if let Some((name, _)) = crate::launch::picture_install() {
             self.ask(
                 Ask::Pictures { pane },

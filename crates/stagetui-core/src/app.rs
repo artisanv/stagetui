@@ -612,10 +612,25 @@ impl App {
                         "attach first: stagetui attach",
                     )),
                 };
-                if let Err(e) = opened {
-                    let mut s = self.session();
-                    let _ = s.pop_in(&format!("#{id}"));
-                    let _ = s.notify(&e.to_string(), Some("info"), None, Duration::from_secs(8));
+                let mut s = self.session();
+                match opened {
+                    Ok(()) => {
+                        if let Some(term) = wanted {
+                            let _ = s.notify(
+                                &format!(
+                                    "Opened in {term}: this terminal draws pictures with blocks"
+                                ),
+                                Some("info"),
+                                None,
+                                Duration::from_secs(5),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        let _ = s.pop_in(&format!("#{id}"));
+                        let _ =
+                            s.notify(&e.to_string(), Some("info"), None, Duration::from_secs(8));
+                    }
                 }
             }
             if let Some(text) = clip
