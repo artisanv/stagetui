@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a2] — 2026-11-27
+
+Milestones 5 and 6a–6b: sessions, workspaces, panes in their own windows, add-ons, video.
+The video add-on is its own package: `pip install stagetui-video`.
+
 ### Added — Milestone 6b: video
 - **`stagetui-video`**, the video add-on (its own package): `StagePane("video", path=… or
   url=…)` plays files and links with sound. Space pause, ← → seek (Shift: 30 s), ↑ ↓ volume,

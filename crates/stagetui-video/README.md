@@ -4,7 +4,7 @@ The video add-on for [stagetui](https://github.com/artisanv/stagetui): play vide
 files and links in any pane, with sound.
 
 ```bash
-pip install stagetui-video
+pip install stagetui-video      # also installs stagetui itself (0.1.0a2 or newer)
 ```
 
 ```python

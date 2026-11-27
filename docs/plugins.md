@@ -7,7 +7,7 @@ only if you want them. Once installed, they appear in every pane's menu, like
 
 | Add-on | What it adds | Status |
 |---|---|---|
-| **Video** | Play video files and links in a pane, with sound | built — on PyPI soon ([below](#video)) |
+| **Video** | Play video files and links in a pane, with sound | `pip install stagetui-video` ([below](#video)) |
 | **Web** | A real web page in a pane (uses your Chrome / Chromium) | coming soon |
 | **3D** | Look at 3D models and turn them with the mouse | coming soon |
 

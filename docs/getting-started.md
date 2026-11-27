@@ -114,3 +114,6 @@ What's going on:
 - [Show & draw](show-and-draw.md) — pictures and drawings in one line.
 - [Apps & widgets](apps.md) — everything you can put in an app.
 - [Snapshots](snapshots.md) — test your app, or let an AI agent look at it.
+- [Panes](panes.md) — let people arrange the screen like Blender.
+- [Sessions](sessions.md) — keep an app running, come back to it later.
+- [Add-ons](plugins.md) — video and more, or write your own.

@@ -29,6 +29,17 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+# Add-ons: `pip install "stagetui[video]"`.
+video = ["stagetui-video>=0.1.0a2"]
+
+[project.urls]
+Homepage = "https://github.com/artisanv/stagetui"
+Documentation = "https://github.com/artisanv/stagetui/blob/main/docs/README.md"
+Source = "https://github.com/artisanv/stagetui"
+Changelog = "https://github.com/artisanv/stagetui/blob/main/CHANGELOG.md"
+Issues = "https://github.com/artisanv/stagetui/issues"
+
 [project.scripts]
 stagetui = "stagetui._core:cli_main"
 

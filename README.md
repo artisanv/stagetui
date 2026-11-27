@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Work in progress — not finished yet.** stagetui is under active development
-> (Milestone 5 of 6). APIs will change, it has only been tested by hand on Linux,
+> (Milestone 6 of 6). APIs will change, it has mostly been tested by hand on Linux,
 > and the PyPI release is an early alpha. Please don't use it for real work today.
 > Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
 
@@ -26,9 +26,9 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="staget
 ts.show("logo.png")
 ```
 
-> **Status: alpha (Milestone 5 of 6).** Chat, streaming Markdown, a prompt with
+> **Status: alpha (Milestone 6 of 6).** Chat, streaming Markdown, a prompt with
 > history, diffs, permission prompts, a real shell in a pane,
-> Blender-style panes and workspaces, background sessions you can detach from and
+> Blender-style panes and workspaces, add-ons (video today; write your own in Python), background sessions you can detach from and
 > attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
 > layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
 > see the [roadmap](#roadmap).
@@ -63,7 +63,7 @@ and you can write your own add-on in a few lines of Python
 
 | Add-on | What it adds | Install |
 |---|---|---|
-| Video | Play video files and links in a pane, with sound | `pip install stagetui-video` *(built — on PyPI soon)* |
+| Video | Play video files and links in a pane, with sound | `pip install stagetui-video` |
 | Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install "stagetui[web]"` *(coming soon)* |
 | 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install "stagetui[3d]"` *(coming soon)* |
 
@@ -106,8 +106,17 @@ Chat().run()  # in your terminal
 Chat().run_headless((80, 24)).save("app.png")  # no terminal: text, tree or PNG
 ```
 
-Try the tours: `python examples/05_ui_gallery.py`, `06_splits.py`, `07_harness.py` (a coding-agent
-harness with a pretend agent) and `08_workspace.py` (Blender-style panes).
+Try the tours in `examples/`:
+
+| Example | Shows |
+|---|---|
+| `05_ui_gallery.py` | Every widget, themes, the mouse |
+| `06_splits.py` | Split panes you can drag |
+| `07_harness.py` | A chat app with a pretend AI agent, diffs and a shell |
+| `08_workspace.py` | Blender-style panes and workspace tabs; Ctrl+S saves the layout |
+| `09_detach.py` | `stagetui start` it, detach, come back later; pop panes into their own window |
+| `10_plugins.py` | An add-on written in a few lines of Python |
+| `11_video.py` | Video with sound (needs `pip install stagetui-video`) |
 
 ## Command line
 
@@ -117,6 +126,8 @@ stagetui render "مرحبا بكم" --dir rtl --out card.png
 stagetui render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
 stagetui doctor
 stagetui mcp my_app.py      # let a coding agent (Claude Code…) see and operate your app
+stagetui start my_app.py    # run it in the background; `stagetui attach` to come back
+stagetui plugins            # the add-ons you have, and the ones you can add
 ```
 
 ## Documentation
@@ -130,11 +141,13 @@ stagetui mcp my_app.py      # let a coding agent (Claude Code…) see and operat
 | [Making apps interactive](docs/events.md) | Buttons, inputs, lists, shortcuts, mouse, `async` |
 | [Motion](docs/motion.md) | Animations and live drawings |
 | [Agent harness](docs/harness.md) | Chat, prompt, diffs, tool calls, permissions, shell |
-| [Panes](docs/panes.md) | Blender-style panes: switch, split, close, your own types |
+| [Panes](docs/panes.md) | Blender-style panes: switch, split, close, workspaces, own windows |
+| [Sessions](docs/sessions.md) | Keep an app running, detach, attach from any terminal |
+| [Add-ons](docs/plugins.md) | Video, web, 3D — and writing your own |
 | [AI agents](docs/agents.md) | `stagetui mcp`, `stagetui drive`, `app.drive()`, golden snapshot tests |
 | [World languages](docs/world-languages.md) | Arabic, Persian, Hindi, CJK |
 | [Snapshots](docs/snapshots.md) | Tests, CI and AI agents |
-| [Command line](docs/command-line.md) | `show`, `render`, `doctor`, `inspect` |
+| [Command line](docs/command-line.md) | `show`, `render`, `start`, `attach`, `plugins`, `doctor`… |
 | [Troubleshooting](docs/troubleshooting.md) | Terminal support and fixes |
 | [Reference](docs/reference.md) | Every function and option |
 
@@ -145,7 +158,7 @@ stagetui mcp my_app.py      # let a coding agent (Claude Code…) see and operat
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
 5. ✅ Sessions & workspaces: background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts, panes that pop out into their own terminal window and back
-6. Optional plugins: video, web, 3D
+6. 🚧 Add-ons: ✅ plugin system (write your own in Python or Rust), ✅ video with sound · next: web pages, 3D, then 1.0
 
 ## Develop
 

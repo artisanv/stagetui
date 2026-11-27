@@ -42,7 +42,7 @@ pub const KNOWN: &[Known] = &[
         icon: "play",
         package: "stagetui-video",
         about: "play video files and links, with sound",
-        available: false,
+        available: true,
     },
     Known {
         name: "web",
@@ -145,6 +145,15 @@ pub fn describe(path: &Path) -> Option<Describe> {
 
 /// Every plugin on this computer (looked up once; see [`forget`]).
 pub fn installed() -> Vec<Installed> {
+    // Tests see only what they pretend is installed, never this computer's add-ons.
+    #[cfg(test)]
+    return lock(&FOUND).clone().unwrap_or_default();
+    #[cfg(not(test))]
+    installed_here()
+}
+
+#[cfg(not(test))]
+fn installed_here() -> Vec<Installed> {
     let mut found = lock(&FOUND);
     if let Some(list) = found.as_ref() {
         return list.clone();
@@ -184,10 +193,10 @@ pub fn pretend_installed(name: &str) {
         describe: Describe::new(name, name, "dot"),
         path: PathBuf::from(format!("/nonexistent/{PREFIX}{name}")),
     };
-    let mut found = installed();
-    found.retain(|p| p.describe.name != name);
-    found.push(fake);
-    *lock(&FOUND) = Some(found);
+    let mut found = lock(&FOUND);
+    let list = found.get_or_insert_with(Vec::new);
+    list.retain(|p| p.describe.name != name);
+    list.push(fake);
 }
 
 /// Look again next time (after installing something).

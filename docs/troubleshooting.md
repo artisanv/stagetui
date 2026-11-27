@@ -78,6 +78,21 @@ stagetui doctor
 : The app was started with `python app.py`, so it lives in this terminal.
   Quit it and start it with `stagetui start app.py` instead.
 
+**A video has no sound**
+: Look at the line under the video: it says why, e.g. `no sound (no speakers found)`.
+  Check your system's volume and output device. On a Linux server without a desktop,
+  install the sound library: `sudo apt install libasound2` (Debian/Ubuntu).
+
+**"ffmpeg wasn't found"**
+: ffmpeg comes with the video add-on (through `imageio-ffmpeg`). Reinstall it:
+  `pip install --force-reinstall stagetui-video` — or point to your own copy with
+  `STAGETUI_FFMPEG=/path/to/ffmpeg`.
+
+**A video looks like coloured blocks**
+: Your terminal can't show real pictures. Use Ghostty, Kitty, WezTerm or foot (or
+  iTerm2 / Windows Terminal) — stagetui opens the video there by itself if one is
+  installed, or offers to install one. See [Add-ons → Real pictures](plugins.md#real-pictures).
+
 **An add-on doesn't show up in the pane menu**
 : stagetui looks for programs named `stagetui-plugin-<name>` next to your Python,
   in `STAGETUI_PLUGIN_PATH` and on your `PATH`. Check with `stagetui plugins`. A
@@ -108,6 +123,8 @@ stagetui doctor
 | `STAGETUI_SESSION=name` | The session name to use ([Sessions](sessions.md)) |
 | `STAGETUI_PLUGIN_PATH=dir1:dir2` | Extra folders with add-ons ([Add-ons](plugins.md)) |
 | `STAGETUI_NO_PLUGINS=1` | Don't offer add-ons in pane menus |
+| `STAGETUI_FFMPEG=/path/to/ffmpeg` | The ffmpeg the video add-on uses |
+| `STAGETUI_VIDEO_NO_AUDIO=1` | Videos play without sound |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How a pane opens in its own window ([Panes](panes.md#open-a-pane-in-its-own-window)) |
 
 ## Your terminal is always restored

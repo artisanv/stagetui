@@ -8,7 +8,7 @@ Rust, so you never have to think about it.
 It is also made for **AI coding agents**: every screen can be captured as text,
 as a list of widgets, or as a PNG picture — no human needed.
 
-> stagetui is young (Milestone 5 of 6). Everything on these pages works today.
+> stagetui is young (Milestone 6 of 6). Everything on these pages works today.
 > Features that are planned but not built yet are clearly marked *coming soon*.
 
 ## Start here
