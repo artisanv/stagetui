@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a3] — 2026-11-27
+
+### Changed
+- README and PyPI page: a calm "Alpha" note instead of the red work-in-progress warning.
+
 ## [0.1.0a2] — 2026-11-27
 
 Milestones 5 and 6a–6b: sessions, workspaces, panes in their own windows, add-ons, video.
