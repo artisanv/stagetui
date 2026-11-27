@@ -1,20 +1,22 @@
-"""An agent that keeps working while you're away: detach, come back later.
+"""An agent that keeps working while you're away — and panes that pop out.
 
 Run:   stagetui start examples/09_detach.py
-Try:   Ctrl+Space, then d   you get your terminal back; the agent keeps working
+Try:   Ctrl+Space, then o   the focused pane opens in its own terminal window
+                            (Ctrl+Shift+D too, in terminals that can tell it apart)
+       close that window    the pane snaps back, nothing lost
+       Ctrl+Space, then d   you get your terminal back; the agent keeps working
        stagetui sessions    it is listed as "night-shift"
        stagetui attach      come back: everything it did meanwhile is there
-       a second terminal can `stagetui attach` at the same time: both show it
-       q                    quit for good (or `stagetui stop night-shift`)
+       q                    asks: detach, or quit the app for good
 
 `python examples/09_detach.py` works too, but then the app lives in that
-terminal and can't be detached.
+terminal and can't be detached (panes still pop out).
 """
 
 import asyncio
 import time
 
-from stagetui import StageApp, StageBar, StageCard, StageLog, StageProgress
+from stagetui import StageApp, StageBar, StagePane, StageProgress, StageSplit
 
 STEPS = [
     "Read the issue",
@@ -29,20 +31,23 @@ STEPS = [
 
 class NightShift(StageApp):
     theme = "aurora-dark"
+    BINDINGS = [("ctrl+shift+d", "pop_out", "Pop out")]
 
     def compose(self):
         self.progress = StageProgress(0, label="Starting…")
-        self.log = StageLog(id="log", grow=1)
         return [
-            StageCard(
-                "A pretend agent that works in the background. "
-                "Press Ctrl+Space then d to detach — it keeps going.",
-                title="Night shift",
-            ),
             self.progress,
-            self.log,
-            StageBar("Ctrl+Space d — detach · q — quit"),
+            StageSplit(
+                [StagePane("log", id="steps"), StagePane("terminal", id="shell")],
+                ratio=[3, 2],
+                grow=1,
+            ),
+            StageBar("Ctrl+Space o — pop a pane out · Ctrl+Space d — detach · q — leave"),
         ]
+
+    @property
+    def log(self):
+        return self.query("#steps").content
 
     def on_mount(self):
         self.background(self.work())

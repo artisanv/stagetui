@@ -751,6 +751,13 @@ class StagePane(_Widget):
         return str(json.loads(node)["pane_type"]) if node else str(self._content)
 
     @property
+    def detached(self) -> bool:
+        """Whether the pane is open in its own window."""
+        core = self._core()
+        node = core.query(self._key) if core is not None else None
+        return bool(json.loads(node).get("detached")) if node else False
+
+    @property
     def content(self) -> _Widget | None:
         """The widget the pane shows now (if stagetui knows it)."""
         app = self._app

@@ -343,7 +343,7 @@ def test_friendly_errors():
     with pytest.raises(StageError, match="needs a running app"):
         StageCard("x").split(StageCard("y"))
 
-    with pytest.raises(StageError, match="Milestone 5"):
+    with pytest.raises(StageError, match="needs a running app"):
         StageCard("x").detach()
 
     class NoAction(StageApp):

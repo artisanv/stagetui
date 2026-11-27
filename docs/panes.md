@@ -46,11 +46,12 @@ The first argument is the **pane type**. Extra options go to that type:
 ## The pane header
 
 ```
- ▣ Files ▾                                  ⊞  ⊟  ×
+ ▣ Files ▾                               ⊞  ⊟  ↗  ×
 ```
 
 - **Click the title** (with the ▾) to open the menu: choose another type, or split / close.
-- **⊞** splits the pane side by side, **⊟** top / bottom, **×** closes it.
+- **⊞** splits the pane side by side, **⊟** top / bottom, **↗** opens it in its own
+  window (see below), **×** closes it.
 - Drag the line between two panes to resize them.
 - The focused pane's header is highlighted.
 
@@ -68,6 +69,7 @@ Press the **prefix key**, **Ctrl+Space**, then:
 | **-** | Split top / bottom |
 | **x** | Close the pane |
 | **Tab** / arrows | Move to the next pane |
+| **o** | Open the pane in its own window (again: bring it back) |
 | **1**-**9** | Switch workspace (with [workspace tabs](#workspaces-whole-layouts-like-blenders-tabs)) |
 | **d** | Detach (see [Sessions](sessions.md)) |
 | **q** | Quit |
@@ -209,6 +211,67 @@ A layout is plain JSON, easy to read and to write by hand:
 not rebuilt: its shell keeps running, its chat keeps its messages. Panes that are
 not in the layout are closed; new ones are created with their `args`.
 
+## Open a pane in its own window
+
+Want the shell on your second monitor, or the chat big while you code? Any pane
+can **pop out** into a terminal window of its own:
+
+- click **↗** in the pane's header (or choose *Open in its own window* in its menu),
+- or press **Ctrl+Space**, then **o**.
+
+A new window of the terminal you are using opens (Kitty opens Kitty, foot opens
+foot, Windows Terminal opens a new tab-window…) and shows just that pane. Its old
+spot says where it went:
+
+```
+ ▣ Files ▾                               ⊞  ⊟  ↙  ×
+                                      
+  ▣ Files is open in its own window
+                                      
+   ↙ Bring it back
+```
+
+**Everything keeps running** — a shell keeps its history, a chat keeps streaming.
+To bring the pane back, **close its window**, click **↙ Bring it back** (or
+**↙ Put back** at the top of the window), or press **Ctrl+Space** then **o** again.
+
+From code, every widget can do it for the pane it lives in:
+
+```python
+from stagetui import StageApp, StagePane, StageSplit
+
+
+class Desk(StageApp):
+    BINDINGS = [("ctrl+shift+d", "pop_out", "Pop out")]  # one key for it
+
+    def compose(self):
+        return [StageSplit([StagePane("chat", id="chat"), StagePane("terminal", id="shell")])]
+
+    def on_mount(self):
+        shell = self.query("#shell")
+        shell.detach()  # open the shell in its own window
+        print(shell.detached)  # True
+        shell.attach()  # and back
+
+
+Desk().run()
+```
+
+The window simply runs `stagetui attach <app>:<pane>` — you can run that yourself
+in any terminal, too (see [Sessions](sessions.md)).
+
+| Where you are | What opens |
+|---|---|
+| Kitty, Ghostty, WezTerm, foot, Alacritty, Konsole, GNOME Terminal, xterm | A new window of the same terminal |
+| Windows Terminal | A new Windows Terminal window |
+| Terminal.app, iTerm2 (macOS) | A new window, through AppleScript |
+| Inside tmux | A new tmux window |
+| Over SSH | Nothing can open on your computer: a message shows the command to run |
+
+To choose the terminal yourself, set `LAUNCHER = "alacritty -e {cmd}"` on your
+app, or the `STAGETUI_LAUNCHER` environment variable (`{cmd}` is where the
+command goes; without it, the command goes at the end).
+
 ## Good to know
 
 - "Any application" means **terminal programs**: shells, editors (`vim`, `nano`),
@@ -217,4 +280,3 @@ not in the layout are closed; new ones are created with their `args`.
 - Pictures that a program *inside* a terminal pane draws are not shown yet (text only).
 - Apps can keep running in the background and be opened again from any
   terminal: see [Sessions](sessions.md).
-- Popping a single pane out into its own window is *coming soon* (Milestone 5b).

@@ -27,7 +27,7 @@ use crate::term::{Modes, TerminalGuard};
 use crate::{Error, Result};
 
 /// Bumped when the messages change.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 /// Largest message accepted (pictures can be big, but not this big).
 const MAX_FRAME: usize = 64 * 1024 * 1024;
 pub const KIND_JSON: u8 = 1;
@@ -61,6 +61,9 @@ pub enum ClientMsg {
         caps: Box<Capabilities>,
         cols: u16,
         rows: u16,
+        /// Show just this pane (its id): the pane pops out into this window.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pane: Option<String>,
     },
     Input {
         input: Input,
@@ -80,7 +83,8 @@ pub enum ServerMsg {
     Welcome {
         session: String,
     },
-    /// The window should restore itself and exit. `reason`: `detached` or `quit`.
+    /// The window should restore itself and exit. `reason`: `detached`, `quit`,
+    /// `reattached` (a pane went back), or `error` (after an `Error`).
     Bye {
         reason: String,
     },
@@ -607,6 +611,8 @@ impl Write for FrameWriter {
 pub struct Viewer {
     pub caps: Capabilities,
     pub size: (u16, u16),
+    /// The pane this window shows, if just one.
+    pub pane: Option<String>,
     /// Read the window's messages with `ipc::recv(&mut &*viewer.conn)`.
     pub conn: Arc<Stream>,
     pub out: SyncSender<Out>,
@@ -643,6 +649,7 @@ pub fn handshake(mut stream: Stream, token: &str, session: &str) -> Hello {
             caps,
             cols,
             rows,
+            pane,
         } if same_token(&t, token) => {
             if protocol != PROTOCOL {
                 return refuse(
@@ -661,6 +668,7 @@ pub fn handshake(mut stream: Stream, token: &str, session: &str) -> Hello {
             Hello::Viewer(Box::new(Viewer {
                 caps: *caps,
                 size: (cols.max(1), rows.max(1)),
+                pane,
                 out: spawn_writer(Arc::clone(&conn)),
                 conn,
             }))
@@ -700,6 +708,8 @@ pub enum Ended {
     Quit(String),
     /// The connection broke (the app crashed or was killed).
     Lost(String),
+    /// This window showed one pane, and the pane went back to the app's window.
+    Back(String),
 }
 
 impl Ended {
@@ -711,12 +721,18 @@ impl Ended {
             ),
             Ended::Quit(n) => format!("\"{n}\" has quit."),
             Ended::Lost(n) => format!("Lost the connection to \"{n}\" (the app stopped)."),
+            Ended::Back(n) => format!("The pane is back in \"{n}\"."),
         }
     }
 }
 
 /// Show a running session in this terminal until it detaches or quits.
+/// `name:pane` shows just one pane (it pops out of the app's window into this one).
 pub fn attach(name: Option<&str>) -> Result<Ended> {
+    let (name, pane) = match name.and_then(|n| n.split_once(':')) {
+        Some((n, p)) => ((!n.is_empty()).then_some(n), Some(p.to_string())),
+        None => (name, None),
+    };
     let registry = Registry::open()?;
     let (mut stream, info, token) = registry.connect(name)?;
     let caps = caps::detect(&DetectOptions::default());
@@ -738,6 +754,7 @@ pub fn attach(name: Option<&str>) -> Result<Ended> {
         caps: Box::new(caps),
         cols,
         rows,
+        pane,
     };
     let welcome = send(&mut stream, &hello).and_then(|()| recv::<ServerMsg>(&mut stream));
     match welcome {
@@ -786,6 +803,7 @@ pub fn attach(name: Option<&str>) -> Result<Ended> {
     };
     let mut out = io::stdout();
     let mut rx = &*conn;
+    let mut refused = None;
     let ended = loop {
         match read_frame(&mut rx) {
             Ok((KIND_OUTPUT, bytes)) => {
@@ -797,7 +815,14 @@ pub fn attach(name: Option<&str>) -> Result<Ended> {
                 Ok(ServerMsg::Bye { reason }) if reason == "detached" => {
                     break Ended::Detached(info.name.clone());
                 }
+                Ok(ServerMsg::Bye { reason }) if reason == "reattached" => {
+                    break Ended::Back(info.name.clone());
+                }
+                Ok(ServerMsg::Bye { .. }) if refused.is_some() => {
+                    break Ended::Lost(info.name.clone());
+                }
                 Ok(ServerMsg::Bye { .. }) => break Ended::Quit(info.name.clone()),
+                Ok(ServerMsg::Error { message }) => refused = Some(message),
                 _ => {}
             },
             Ok(_) => {}
@@ -807,6 +832,13 @@ pub fn attach(name: Option<&str>) -> Result<Ended> {
     running.store(false, Ordering::SeqCst);
     let _ = keys.join();
     guard.restore()?;
+    if let Some(why) = refused {
+        return Err(Error::friendly(
+            format!("\"{}\" can't show that", info.name),
+            why,
+            "list the panes with `app.panes()`, or attach without `:pane`",
+        ));
+    }
     Ok(ended)
 }
 

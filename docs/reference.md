@@ -53,6 +53,7 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 | `capture_text()`, `capture_tree()`, `capture_png()` | The live screen while the app runs |
 | `await ask_permission(question, *, tool=None, args=None)` | Pop-up: returns `"allow"`, `"always"` or `"deny"` |
 | `PREFIX = "ctrl+space"` | Class attribute: the key that reaches the app from a terminal pane |
+| `LAUNCHER = None` | Class attribute: how a pane opens in its own window, e.g. `"foot {cmd}"` (`None`: the terminal in use) |
 | `background(work)` | Run `async` work (an agent loop…) alongside the app; cancelled when it quits |
 | `session` | While running: `{"name", "pid", "app", …}` — other terminals open it with `stagetui attach <name>` ([Sessions](sessions.md)) |
 | `workspace()` | The layout of splits and panes, as a dict |
@@ -61,7 +62,8 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 | `workspaces(*, path=None) -> list[str]` | Names of the saved layouts |
 
 Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`,
-`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`, `detach`.
+`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`, `pop_out` (open the
+focused pane in its own window, or bring it back), `detach`.
 
 ### `class Driver`
 Made by `app.drive()`; use it in a `with` block.
@@ -128,7 +130,8 @@ All widgets accept `id`, `theme`, `accent` and (most) `animate`, `visible`,
 ### Methods on every widget
 `update(content=None, **options)` · `load(content)` · `show()` · `hide()` ·
 `focus()` · `split(widget, direction="horizontal")` · `remove()` · `value` ·
-`detach()` / `attach()` (*coming in Milestone 5b*). Containers also have `add(widget)`.
+`detach()` / `attach()` (open the pane holding the widget in its own window, and
+bring it back — [Panes](panes.md#open-a-pane-in-its-own-window)). Containers also have `add(widget)`.
 
 ### Extra methods
 | Widget | Methods |
@@ -141,7 +144,7 @@ All widgets accept `id`, `theme`, `accent` and (most) `animate`, `visible`,
 | `StageToolCall` | `finish(output="", *, ok=True)`, `append(text)` |
 | `StageTerminal` | `send(text)`, `restart()`, `screen` |
 | `StageLog` | `append(text_or_lines)`, `clear()`, `filter(text)` |
-| `StagePane` | `set_type(type, **options)`, `switch(type)`, `type`, `content` |
+| `StagePane` | `set_type(type, **options)`, `switch(type)`, `type`, `content`, `detached` |
 | `StageCode` | `StageCode.from_file(path)` |
 
 ### `@ts.pane_type(name, *, title=None, icon="cube")`

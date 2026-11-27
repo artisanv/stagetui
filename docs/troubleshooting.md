@@ -78,6 +78,12 @@ stagetui doctor
 : The app was started with `python app.py`, so it lives in this terminal.
   Quit it and start it with `stagetui start app.py` instead.
 
+**A pane's window doesn't open**
+: stagetui opens a window of the terminal you are in. If that doesn't work (or
+  you prefer another one), tell it which: `STAGETUI_LAUNCHER="alacritty -e {cmd}"`.
+  Over SSH no window can open on your computer: run the command the message shows
+  (`stagetui attach <app>:<pane>`) in another terminal.
+
 **"The session folder … is not yours"**
 : Someone else (another user) created stagetui's session folder. Remove that
   folder, or set `XDG_RUNTIME_DIR` to a folder only you can open.
@@ -95,6 +101,7 @@ stagetui doctor
 | `STAGETUI_REDUCE_MOTION=1` | Turn off animations |
 | `STAGETUI_NO_SESSION=1` | Don't let other terminals attach to apps run with `python app.py` |
 | `STAGETUI_SESSION=name` | The session name to use ([Sessions](sessions.md)) |
+| `STAGETUI_LAUNCHER="foot {cmd}"` | How a pane opens in its own window ([Panes](panes.md#open-a-pane-in-its-own-window)) |
 
 ## Your terminal is always restored
 

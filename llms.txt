@@ -2,7 +2,7 @@
 
 > Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
 
-Status: Milestone 5a (harness kit, Blender-style panes, workspaces, background sessions, agent interface). APIs below exist today; single-pane pop-out windows (M5b) and media plugins (M6) are planned.
+Status: Milestone 5 (harness kit, Blender-style panes, workspaces, background sessions, pop-out pane windows, agent interface). APIs below exist today; media plugins (M6) are planned.
 
 ## Python API
 - `import stagetui as ts`
@@ -20,7 +20,8 @@ Status: Milestone 5a (harness kit, Blender-style panes, workspaces, background s
 - Harness: `StageChat(messages)` → `.add(role, text) -> msg` (`msg.append(chunk)`, `msg.update(text)`), `.add_tool(name, args) -> msg` (`msg.finish(output, ok=True)`), `.clear()`; `StageMarkdown(text)` `.append()`; `StagePrompt(text, placeholder=, commands=[(name, desc)], mentions=[files], on_submit=)` (Enter sends, Shift/Alt+Enter or Ctrl+J newline, ↑/↓ history, / and @ completion); `StageCode(source, language=, path=)`, `StageCode.from_file(p)`; `StageDiff((old, new), path=, on_decide=)` (a/r/A keys, `.accept_all()`, `.result`); `StageToolCall(name, args=)` `.finish()`; `StagePermission(question, tool=, args=, on_decide=)`; `await app.ask_permission(q, tool=, args=) -> "allow"|"always"|"deny"`; `StageTerminal(command="", cwd=)` `.send(text)`, `.screen`; `StageLog(text, max_lines=)` `.append()`, `.filter()`.
 - Panes: `StagePane(type, **options)` types chat, terminal(command, cwd), files(root), diff(old, new, path), code(path|text, language), markdown(text), log, empty; header menu (click title / prefix+Space), ⊞ ⊟ × buttons; `.set_type(type, **o)`, `.switch(type)` (restores stashed), `.type`, `.content`; `app.panes()`; `@ts.pane_type(name, title=, icon=)`; prefix key `PREFIX="ctrl+space"` then Space | - x Tab q, d (detach), 1-9 (workspace).
 - Workspaces: `StageWorkspaces({"Code": layout, ...})` tabs; `app.workspace()` → layout dict `{"split": "horizontal", "ratio": [..], "children": [{"pane": type, "id": id, "args": {...}} | {"keep": id} | split]}`; `app.save_workspace(name=None, path=None)`, `app.load_workspace(name_or_layout=None, path=None)` (re-uses panes by id), `app.workspaces()`; files in ~/.config/stagetui/workspaces/<app>.json.
-- Sessions: `app.session`, `ts.sessions()`, `app.background(coro)`.
+- Sessions: `app.session`, `ts.sessions()`, `app.background(coro)`. q in an attached window asks Detach / Quit app / Cancel.
+- Pop-out: `widget.detach()` / `.attach()` (the pane holding it opens in its own terminal window / comes back), `pane.detached`, action `pop_out`, prefix then o, header ↗; window runs `stagetui attach app:pane`; `LAUNCHER = "foot {cmd}"` or `STAGETUI_LAUNCHER`.
 - Every widget: `.update(content, **props)`, `.load(content)`, `.show()`, `.hide()`, `.focus()`, `.split(widget, direction=)`, `.remove()`, `.value`; containers `.add(widget)`.
 - `Canvas(width, height, background)`: clear, rect, rounded_rect, circle, line, polyline, gradient_rect, gradient_circle, text (shaped Arabic/Hindi), image, png, save.
 - `Style(padding=, rounded=, accent=, shadow=, width=, height=, grow=)`, `@ts.component` (returns a widget or a list), `ts.StageError` (`.what`, `.why`, `.fix`).
@@ -45,7 +46,7 @@ Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, term
 - `stagetui inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
 - `stagetui doctor` — plain-English report with fixes
 - `stagetui drive app.py` / `stagetui mcp app.py` — agent interface (above)
-- `stagetui start app.py [--name N] [-d] [-- args]`, `stagetui sessions [--json]`, `stagetui attach [name]`, `stagetui stop [name]` — background sessions; Ctrl+Space d detaches
+- `stagetui start app.py [--name N] [-d] [-- args]`, `stagetui sessions [--json]`, `stagetui attach [name[:pane]]`, `stagetui stop [name]` — background sessions; Ctrl+Space d detaches
 - `python -m stagetui …` — same CLI
 
 ## Docs

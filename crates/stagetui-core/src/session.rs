@@ -26,6 +26,15 @@ use crate::workspace::Layout;
 
 /// The buttons of the "Leave?" prompt.
 const LEAVE_BUTTONS: [&str; 3] = ["Detach", "Quit app", "Cancel"];
+/// In a popped-out pane's empty spot, and in its window's header.
+const PLACEHOLDER_BUTTON: &str = "↙ Bring it back";
+const POPOUT_BUTTON: &str = "↙ Put back";
+
+/// Where the "put back" button sits in a pop-out window's header.
+fn popout_button(cols: u16) -> Rect {
+    let w = (text::width(POPOUT_BUTTON) as u16 + 2).min(cols);
+    Rect::new(cols - w, 0, w, 1)
+}
 use crate::{Error, Result};
 
 /// Something the app should know about (`on_click`, `on_change`, actions…).
@@ -49,8 +58,17 @@ enum Hit {
     Toast(usize),
     /// A pane header's title (opens the pane menu).
     PaneTitle(usize),
-    /// A pane header button: 0 split right, 1 split down, 2 close.
+    /// A pane button: 0 split right, 1 split down, 2 pop out / back, 3 close,
+    /// 4 bring a popped-out pane back.
     PaneAction(usize, u8),
+}
+
+/// What one pop-out window shows: its own layout and click areas.
+#[derive(Debug, Default)]
+struct WindowState {
+    laid: Laid,
+    hits: Vec<(Rect, Hit)>,
+    size: (u16, u16),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -101,6 +119,13 @@ pub struct Session {
     session_name: Option<String>,
     /// The open "Leave?" prompt: the selected button (Detach, Quit app, Cancel).
     leave: Option<usize>,
+    /// Popped-out panes' windows.
+    windows: HashMap<usize, WindowState>,
+    /// The popped-out pane whose window the current input comes from.
+    view_pane: Option<usize>,
+    /// Panes (ids) that need a new window, and panes brought back.
+    popouts: Vec<String>,
+    popins: Vec<String>,
     frames: HashMap<usize, FrameClock>,
     modal_return: Vec<(usize, Option<usize>)>,
     autofocused: bool,
@@ -152,6 +177,10 @@ impl Session {
             detachable: false,
             session_name: None,
             leave: None,
+            windows: HashMap::new(),
+            view_pane: None,
+            popouts: Vec::new(),
+            popins: Vec::new(),
             frames: HashMap::new(),
             modal_return: Vec::new(),
             autofocused: false,
@@ -347,6 +376,11 @@ impl Session {
     /// Someone pressed q / Ctrl+C / Esc to leave. In an attached window, ask
     /// first: detach (the app keeps running) or quit the app.
     fn user_quit(&mut self) {
+        // In a pop-out window, leaving puts the pane back.
+        if let Some(p) = self.view_pane {
+            self.pop_in_idx(p);
+            return;
+        }
         if self.detachable && !self.quit {
             self.leave = Some(0);
             self.menu = None;
@@ -559,6 +593,7 @@ impl Session {
         }
         if let Some(f) = self.focus
             && !self.focusables().contains(&f)
+            && !(self.tree.popped_nodes().contains(&f) && self.can_focus(f))
         {
             self.focus = None;
         }
@@ -572,8 +607,11 @@ impl Session {
     fn prepass(&mut self, cols: u16, rows: u16) {
         let screen = Rect::new(0, 0, cols, rows);
         self.hits.clear();
-        for n in &mut self.tree.nodes {
-            n.bounds = Rect::default();
+        let popped = self.tree.popped_nodes();
+        for (k, n) in self.tree.nodes.iter_mut().enumerate() {
+            if !popped.contains(&k) {
+                n.bounds = Rect::default();
+            }
         }
         let roots = self.tree.roots.clone();
         for r in roots {
@@ -596,7 +634,10 @@ impl Session {
             self.walk_bounds(m, rect);
         }
         let now = self.now;
-        for n in &mut self.tree.nodes {
+        for (k, n) in self.tree.nodes.iter_mut().enumerate() {
+            if popped.contains(&k) {
+                continue;
+            }
             if n.alive && n.bounds.width > 0 && n.bounds.height > 0 {
                 n.born.get_or_insert(now);
             } else if n.rect == IRect::default() {
@@ -629,6 +670,16 @@ impl Session {
                     self.hits.push((r, h));
                 }
             }
+        }
+        if self.is_popped(i) {
+            // The content is in another window; here is just the way back.
+            if let Some(r) = self.placeholder_button(i) {
+                let r = r.intersection(bounds);
+                if !r.is_empty() {
+                    self.hits.push((r, Hit::PaneAction(i, 4)));
+                }
+            }
+            return;
         }
         if let Kind::Tabs(_) = &self.tree.nodes[i].kind {
             for (k, r) in self.tab_titles(i) {
@@ -689,9 +740,9 @@ impl Session {
         }
         let (x, y, w) = (r.x as u16, r.y as u16, r.w);
         let title_w = (text::width(&self.pane_label(i)) as u16 + 2).min(w);
-        let buttons = if w >= title_w + 10 {
-            (0..3)
-                .map(|k| Rect::new(x + w - 9 + 3 * k, y, 3, 1))
+        let buttons = if w >= title_w + 13 {
+            (0..4)
+                .map(|k| Rect::new(x + w - 12 + 3 * k, y, 3, 1))
                 .collect()
         } else {
             Vec::new()
@@ -776,7 +827,7 @@ impl Session {
         );
         for (k, b) in buttons.into_iter().enumerate() {
             let b = shift(b).intersection(row);
-            let glyph = ["⊞", "⊟", "×"][k];
+            let glyph = ["⊞", "⊟", if self.is_popped(i) { "↙" } else { "↗" }, "×"][k];
             let hot = self.hover_pane_button == Some((i, k as u8));
             let fg = if hot {
                 t.accent
@@ -906,6 +957,7 @@ impl Session {
             pane,
             &self.tree.pane_types,
             &current,
+            self.is_popped(pane),
         ));
         self.dirty = true;
     }
@@ -933,6 +985,7 @@ impl Session {
             "@split_right" => self.split_pane(pane, true),
             "@split_down" => self.split_pane(pane, false),
             "@close" => self.close_pane(pane),
+            "@pop" => self.toggle_pop(pane),
             name => self.switch_pane(pane, name),
         }
     }
@@ -981,6 +1034,304 @@ impl Session {
             );
         }
         self.dirty = true;
+    }
+
+    // ----- pop-out windows ------------------------------------------------
+
+    /// Whether pane `i` is popped out into its own window.
+    fn is_popped(&self, i: usize) -> bool {
+        matches!(&self.tree.nodes[i].kind, Kind::Pane(pb) if pb.detached)
+    }
+
+    /// What a popped-out pane shows.
+    fn popped_content(&self, pane: usize) -> Option<usize> {
+        match &self.tree.nodes[pane].kind {
+            Kind::Pane(pb) if pb.detached && self.tree.nodes[pane].alive => {
+                crate::layout::pane_child(&self.tree, pane, pb)
+            }
+            _ => None,
+        }
+    }
+
+    /// The pane `target` is, or is inside.
+    fn typed_pane(&self, target: &str) -> Result<usize> {
+        let start = self.target(target)?;
+        let mut cur = Some(start);
+        while let Some(i) = cur {
+            if self.tree.is_typed_pane(i) {
+                return Ok(i);
+            }
+            cur = self.tree.nodes[i].parent;
+        }
+        Err(Error::friendly(
+            format!("\"{}\" is not in a pane", self.tree.nodes[start].id),
+            "only StagePane widgets (and what is inside them) open in their own window",
+            "put the widget in a StagePane(...), then call detach()",
+        ))
+    }
+
+    fn set_popped(&mut self, pane: usize, yes: bool) -> bool {
+        let Kind::Pane(pb) = &mut self.tree.nodes[pane].kind else {
+            return false;
+        };
+        if pb.detached == yes {
+            return false;
+        }
+        pb.detached = yes;
+        self.dirty = true;
+        true
+    }
+
+    /// Pop a pane out into its own terminal window. The runtime opens the
+    /// window ([`Session::take_popouts`]); meanwhile its spot says where it went.
+    pub fn pop_out(&mut self, target: &str) -> Result<()> {
+        let p = self.typed_pane(target)?;
+        self.pop_out_idx(p);
+        Ok(())
+    }
+
+    fn pop_out_idx(&mut self, pane: usize) {
+        if self.set_popped(pane, true) {
+            self.popouts.push(self.tree.nodes[pane].id.clone());
+            if self.focus.is_some_and(|f| self.within(f, pane)) {
+                self.focus = Some(pane);
+            }
+            self.emit(pane, "window", json!("out"));
+        }
+    }
+
+    /// Bring a popped-out pane back; its window closes.
+    pub fn pop_in(&mut self, target: &str) -> Result<()> {
+        let p = self.typed_pane(target)?;
+        self.pop_in_idx(p);
+        Ok(())
+    }
+
+    fn pop_in_idx(&mut self, pane: usize) {
+        if self.set_popped(pane, false) {
+            self.popins.push(self.tree.nodes[pane].id.clone());
+            self.windows.remove(&pane);
+            if self.focus.is_none_or(|f| f == pane || self.within(f, pane)) {
+                self.focus = None;
+                self.focus_into(pane);
+            }
+            self.emit(pane, "window", json!("in"));
+        }
+    }
+
+    fn toggle_pop(&mut self, pane: usize) {
+        if self.is_popped(pane) {
+            self.pop_in_idx(pane);
+        } else {
+            self.pop_out_idx(pane);
+        }
+    }
+
+    /// Panes (ids) waiting for a new terminal window.
+    pub fn take_popouts(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.popouts)
+    }
+
+    /// Panes (ids) brought back since the last call: close their windows.
+    pub fn take_popins(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.popins)
+    }
+
+    /// A window for pane `pane` connected (it may have been asked for, or
+    /// someone ran `stagetui attach app:pane`).
+    pub fn pane_window_opened(&mut self, pane: usize) {
+        if self.set_popped(pane, true) {
+            if self.focus.is_some_and(|f| self.within(f, pane)) {
+                self.focus = Some(pane);
+            }
+            self.emit(pane, "window", json!("out"));
+        }
+    }
+
+    /// The window of pane `pane` was closed: the pane snaps back.
+    pub fn pane_window_closed(&mut self, pane: usize) {
+        self.pop_in_idx(pane);
+        self.popins.retain(|id| *id != self.tree.nodes[pane].id);
+    }
+
+    fn swap_window(&mut self, pane: usize) {
+        let w = self.windows.entry(pane).or_default();
+        std::mem::swap(&mut self.laid, &mut w.laid);
+        std::mem::swap(&mut self.hits, &mut w.hits);
+        std::mem::swap(&mut self.size, &mut w.size);
+    }
+
+    /// Paint a popped-out pane for its own window of `cols × rows`
+    /// (`None` once it is back in the main window).
+    pub fn pane_frame(&mut self, pane: usize, cols: u16, rows: u16) -> Option<Frame> {
+        let content = self.popped_content(pane)?;
+        let (cols, rows) = (cols.max(1), rows.max(2));
+        self.swap_window(pane);
+        self.size = (cols, rows);
+        self.laid = layout::layout_popout(&mut self.tree, content, cols, rows, &self.cx);
+        self.hits.clear();
+        let area = self.laid.content;
+        let mut stack = vec![content];
+        let mut nodes = Vec::new();
+        while let Some(i) = stack.pop() {
+            self.tree.nodes[i].bounds = Rect::default();
+            nodes.push(i);
+            stack.extend(self.tree.nodes[i].children.iter().copied());
+        }
+        self.walk_bounds(content, area);
+        for (k, d) in self.laid.dividers.iter().enumerate() {
+            let r = d.rect.intersection(area);
+            if !r.is_empty() {
+                self.hits.push((r, Hit::Divider(k)));
+            }
+        }
+        self.hits
+            .push((popout_button(cols), Hit::PaneAction(pane, 4)));
+        let now = self.now;
+        for i in nodes {
+            let n = &mut self.tree.nodes[i];
+            if n.alive && n.bounds.width > 0 && n.bounds.height > 0 {
+                n.born.get_or_insert(now);
+            }
+        }
+        let theme = self.tree.nodes[pane].theme;
+        let mut frame = Frame::new(Rect::new(0, 0, cols, rows), theme.bg, theme.fg);
+        self.paint_node(content, &mut frame, (0, 0), area, &[]);
+        if let Some((i, popup)) = self.popup()
+            && self.within(i, content)
+        {
+            frame.occlude(popup);
+            if let Some(w) = self.tree.nodes[i].widget() {
+                w.paint_popup(popup, &mut frame, &self.pcx(i, 0.0, &[]));
+            }
+        }
+        self.paint_popout_header(pane, &mut frame, cols);
+        self.swap_window(pane);
+        Some(frame)
+    }
+
+    /// Input from a popped-out pane's window (`Some(pane)`) or the main one (`None`).
+    pub fn handle_in(&mut self, window: Option<usize>, input: &Input) -> bool {
+        // Typing or clicking in a window works there (Esc may mean "leave").
+        let pressed = matches!(input, Input::Key(k) if k.code != Code::Esc)
+            || matches!(input, Input::Paste(_))
+            || matches!(input, Input::Mouse(m) if matches!(m.kind, MouseKind::Down(_)));
+        let Some((pane, content)) = window.and_then(|p| self.popped_content(p).map(|c| (p, c)))
+        else {
+            // The main window: keys there don't go to a pane shown elsewhere.
+            if pressed
+                && let Some(f) = self.focus
+                && let Some((p, _)) = self
+                    .tree
+                    .popped()
+                    .into_iter()
+                    .find(|(_, c)| self.within(f, *c))
+            {
+                self.focus = Some(p);
+            }
+            return self.handle(input);
+        };
+        self.swap_window(pane);
+        self.view_pane = Some(pane);
+        if pressed && self.focus.is_none_or(|f| !self.within(f, content)) {
+            self.focus = self.focusables().first().copied();
+        }
+        let changed = self.handle(input);
+        self.view_pane = None;
+        // The pane may have been put back meanwhile (its state is gone then).
+        if self.windows.contains_key(&pane) || self.is_popped(pane) {
+            self.swap_window(pane);
+        }
+        changed
+    }
+
+    /// The message in a popped-out pane's empty spot, wrapped to fit.
+    fn placeholder_lines(&self, i: usize) -> Vec<text::Line> {
+        let r = self.tree.nodes[i].rect;
+        if r.h < 6 || r.w < 8 {
+            return Vec::new();
+        }
+        let label = self.pane_label(i);
+        let message = format!("{} is open in its own window", label.trim_end_matches(" ▾"));
+        let mut lines = text::layout(&message, usize::from(r.w - 4), Direction::Ltr);
+        lines.truncate(usize::from(r.h - 5).min(2));
+        lines
+    }
+
+    /// The "bring it back" button in a popped-out pane's empty spot.
+    fn placeholder_button(&self, i: usize) -> Option<Rect> {
+        let r = self.tree.nodes[i].rect;
+        if r.x < 0 || r.y < 0 || r.h < 3 || r.w < 6 {
+            return None;
+        }
+        let lines = self.placeholder_lines(i).len() as u16;
+        let y = r.y as u16 + if lines > 0 { 3 + lines } else { 2 };
+        let w = (text::width(PLACEHOLDER_BUTTON) as u16 + 2).min(r.w - 4);
+        Some(Rect::new(r.x as u16 + 2, y, w, 1))
+    }
+
+    fn paint_placeholder(&self, i: usize, target: &mut Frame, off: (i32, i32)) {
+        let n = &self.tree.nodes[i];
+        let t = &n.theme;
+        let r = n.rect;
+        for (k, line) in self.placeholder_lines(i).iter().enumerate() {
+            let x = (r.x + off.0 + 2).max(0) as u16;
+            let y = (r.y + off.1 + 2 + k as i32).max(0) as u16;
+            let bg = crate::widgets::behind(target, x, y, t.bg);
+            target.put_line(x, y, r.w.saturating_sub(4), line, t.muted, bg, false);
+        }
+        if let Some(b) = self.placeholder_button(i) {
+            let b = Rect::new(
+                (i32::from(b.x) + off.0).max(0) as u16,
+                (i32::from(b.y) + off.1).max(0) as u16,
+                b.width,
+                1,
+            )
+            .intersection(target.area());
+            let hot = self.hover_pane_button == Some((i, 4));
+            let (fg, bg) = if hot {
+                (t.bg, t.accent)
+            } else {
+                (t.accent, t.surface)
+            };
+            fill(target, b, fg, bg);
+            target.put_str(
+                b.x + 1,
+                b.y,
+                PLACEHOLDER_BUTTON,
+                b.width.saturating_sub(2),
+                Style::new().fg(fg.color()).bg(bg.color()),
+            );
+        }
+    }
+
+    fn paint_popout_header(&self, pane: usize, frame: &mut Frame, cols: u16) {
+        let t = &self.tree.nodes[pane].theme;
+        let row = Rect::new(0, 0, cols, 1);
+        let bg = t.accent.mix(t.surface, 0.78);
+        fill(frame, row, t.fg, bg);
+        let label = self.pane_label(pane);
+        let mut title = format!(" ↗ {}", label.trim_end_matches(" ▾"));
+        if let Some(name) = &self.session_name {
+            title.push_str(&format!("  ·  {name}"));
+        }
+        let style = Style::new().fg(t.accent.color()).bg(bg.color());
+        frame.put_str(0, 0, &title, cols, style);
+        let b = popout_button(cols);
+        let hot = self.hover_pane_button == Some((pane, 4));
+        let (fg, bbg) = if hot {
+            (t.bg, t.accent)
+        } else {
+            (t.fg, t.surface)
+        };
+        fill(frame, b, fg, bbg);
+        frame.put_str(
+            b.x + 1,
+            0,
+            POPOUT_BUTTON,
+            b.width.saturating_sub(1),
+            Style::new().fg(fg.color()).bg(bbg.color()),
+        );
     }
 
     // ----- workspaces -----------------------------------------------------
@@ -1236,6 +1587,7 @@ impl Session {
         if self.leave.is_some() {
             return [
                 ("Enter", "Choose"),
+                ("o", "Pop out"),
                 ("d", "Detach"),
                 ("q", "Quit app"),
                 ("Esc", "Cancel"),
@@ -1409,7 +1761,12 @@ impl Session {
     ) {
         let n = &self.tree.nodes[i];
         match &n.kind {
-            Kind::Pane(_) => self.paint_pane_header(i, target, area, off),
+            Kind::Pane(_) => {
+                self.paint_pane_header(i, target, area, off);
+                if self.is_popped(i) {
+                    self.paint_placeholder(i, target, off);
+                }
+            }
             Kind::Tabs(t) => {
                 let theme = &n.theme;
                 let titles = self.tab_titles(i);
@@ -1488,6 +1845,9 @@ impl Session {
         hints: &[(String, String)],
     ) {
         let n = &self.tree.nodes[i];
+        if self.is_popped(i) {
+            return; // shown in its own window
+        }
         for &c in &n.children {
             if !matches!(self.tree.nodes[c].kind, Kind::Modal(_)) {
                 self.paint_node(c, target, off, clip, hints);
@@ -1811,6 +2171,9 @@ impl Session {
     /// Widgets that can take focus, in order (only inside the top modal while one is open).
     fn focusables(&self) -> Vec<usize> {
         let scope = self.top_modal();
+        // Each window cycles through its own widgets.
+        let popped = self.tree.popped_nodes();
+        let window = self.view_pane.and_then(|p| self.popped_content(p));
         self.tree
             .preorder()
             .into_iter()
@@ -1819,8 +2182,14 @@ impl Session {
                 n.visible
                     && n.bounds.width > 0
                     && self.can_focus(*i)
-                    && scope.is_none_or(|m| self.within(*i, m))
-                    && (scope.is_some() || !self.in_modal(*i))
+                    && match window {
+                        Some(c) => self.within(*i, c),
+                        None => {
+                            !popped.contains(i)
+                                && scope.is_none_or(|m| self.within(*i, m))
+                                && (scope.is_some() || !self.in_modal(*i))
+                        }
+                    }
             })
             .collect()
     }
@@ -2090,6 +2459,7 @@ impl Session {
             Code::Char('-') => self.action("split_pane_down"),
             Code::Char('x') => self.action("close_pane"),
             Code::Char('d') => self.action("detach"),
+            Code::Char('o') => self.action("pop_out"),
             Code::Char(c @ '1'..='9') => self.select_workspace(c as usize - '1' as usize),
             Code::Char(' ') | Code::Enter => self.action("pane_menu"),
             Code::Char('q') => self.user_quit(),
@@ -2107,6 +2477,11 @@ impl Session {
         match name {
             "quit" => self.user_quit(),
             "detach" => self.detach = true,
+            "pop_out" | "detach_focused" => {
+                if let Some(p) = self.view_pane.or_else(|| self.current_pane()) {
+                    self.toggle_pop(p);
+                }
+            }
             "focus_next" => self.move_focus(true),
             "focus_previous" => self.move_focus(false),
             "next_theme" => {
@@ -2366,7 +2741,9 @@ impl Session {
                     Some(Hit::PaneAction(p, k)) => match k {
                         0 => self.split_pane(p, true),
                         1 => self.split_pane(p, false),
-                        _ => self.close_pane(p),
+                        2 => self.toggle_pop(p),
+                        3 => self.close_pane(p),
+                        _ => self.pop_in_idx(p),
                     },
                     Some(Hit::Backdrop(_)) => {
                         self.close_top_modal();
@@ -2882,6 +3259,73 @@ mod tests {
 
     fn session(json: &str) -> Session {
         Session::from_json(json).unwrap()
+    }
+
+    const POP: &str = r##"{"children":[{"type":"split","children":[
+        {"type":"pane","content":"markdown","props":{"id":"a"},"children":[{"type":"markdown","content":"# مَرْحَبًا Hello 日本語 नमस्ते"}]},
+        {"type":"pane","content":"notes","props":{"id":"b"},"children":[{"type":"input","props":{"id":"box"}}]}]}]}"##;
+
+    fn key(s: &mut Session, window: Option<usize>, k: &str) {
+        s.handle_in(window, &Input::Key(Key::parse(k).unwrap()));
+    }
+
+    #[test]
+    fn a_pane_pops_out_into_its_own_window_and_back() {
+        let mut s = session(POP);
+        assert!(s.frame(100, 30).text().contains("Hello"));
+        let a = s.tree().require("#a").unwrap();
+        s.pop_out("#a").unwrap();
+        assert_eq!(s.take_popouts(), ["a"]);
+        assert_eq!(s.query("#a").unwrap()["detached"], true);
+        let main = s.frame(100, 30).text();
+        assert!(
+            main.contains("open in its own window") && !main.contains("Hello"),
+            "{main}"
+        );
+        let win = s.pane_frame(a, 60, 16).unwrap().text();
+        assert!(win.contains("Hello") && win.contains("日本語"), "{win}");
+        assert!(
+            win.lines().next().unwrap().contains("↗") && win.contains("Put back"),
+            "{win}"
+        );
+        // Clicking "Bring it back" in the main window puts it back.
+        let b = s.placeholder_button(a).unwrap();
+        s.click_at(b.x + 1, b.y);
+        assert_eq!(s.take_popins(), ["a"]);
+        assert!(s.pane_frame(a, 60, 16).is_none());
+        assert!(s.frame(100, 30).text().contains("Hello"));
+    }
+
+    #[test]
+    fn each_window_types_into_its_own_widgets() {
+        let mut s = session(POP);
+        s.frame(100, 30);
+        let b = s.tree().require("#b").unwrap();
+        s.focus("#box").unwrap();
+        s.press("ctrl+space").unwrap();
+        s.press("o").unwrap(); // pop out the focused pane
+        assert_eq!(s.take_popouts(), ["b"]);
+        s.frame(100, 30);
+        s.pane_frame(b, 50, 10).unwrap();
+        for c in ["h", "i"] {
+            key(&mut s, Some(b), c);
+        }
+        assert_eq!(s.value("#box").unwrap(), json!("hi"));
+        key(&mut s, None, "x"); // the main window doesn't type into it
+        assert_eq!(s.value("#box").unwrap(), json!("hi"));
+        // Esc leaves the box; Esc again in the pop-out window puts the pane back.
+        s.pane_frame(b, 50, 10).unwrap();
+        key(&mut s, Some(b), "esc");
+        key(&mut s, Some(b), "esc");
+        assert!(!s.quit_requested());
+        assert_eq!(s.take_popins(), ["b"]);
+        assert_eq!(s.value("#box").unwrap(), json!("hi"), "nothing is lost");
+        // A window closing on its own also brings the pane back (no window to close).
+        s.pane_window_opened(b);
+        assert!(s.take_popouts().is_empty(), "the window is already there");
+        s.pane_window_closed(b);
+        assert!(s.take_popins().is_empty());
+        assert_eq!(s.query("#b").unwrap()["detached"], false);
     }
 
     #[test]

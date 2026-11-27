@@ -64,6 +64,7 @@ stagetui start my_app.py               # start it in the background and open it 
 stagetui start my_app.py -d            # start it in the background only
 stagetui sessions                      # what is running
 stagetui attach my-app                 # open it (again) in this terminal
+stagetui attach my-app:chat            # just one pane (it pops out into this terminal)
 stagetui stop my-app                   # quit it
 ```
 

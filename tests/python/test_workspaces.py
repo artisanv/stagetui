@@ -132,3 +132,29 @@ def test_background_work_runs_while_the_app_does() -> None:
             Counter().background(coro)
         finally:
             coro.close()
+
+
+def test_a_pane_pops_out_and_comes_back() -> None:
+    with Desk().drive((100, 28)) as d:
+        pane = d.app.query("#files")
+        assert not pane.detached
+        pane.detach()
+        d.wait(0.1)
+        text = d.snapshot().text
+        assert "open in its own" in text and "Bring it back" in text
+        assert pane.detached
+        assert [p["detached"] for p in d.app.panes() if p["id"] == "files"] == [True]
+        pane.attach()
+        d.wait(0.1)
+        assert not pane.detached
+        assert "Bring it back" not in d.snapshot().text
+        d.app.query("#g").content.detach()  # a widget inside a pane: its pane pops out
+        assert d.app.query("#g").detached
+        d.app.query("#g").attach()
+
+    class NoPanes(StageApp):
+        def compose(self):
+            return [StageCard("alone", id="alone")]
+
+    with NoPanes().drive((40, 8)) as d, pytest.raises(ts.StageError, match="not in a pane"):
+        d.app.query("#alone").detach()

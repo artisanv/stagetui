@@ -240,16 +240,18 @@ class _Widget:
             self._app._unbind(self)
 
     def detach(self) -> None:
-        """Pop this pane out into its own terminal window (*coming in Milestone 5*)."""
-        raise _error(
-            "detach() isn't available yet",
-            "popping panes into their own window arrives in Milestone 5",
-            "keep the pane in the main window for now",
-        )
+        """Open the pane holding this widget in its own terminal window ("pop out").
+
+        Everything keeps running. Close that window — or call :meth:`attach` —
+        and the pane snaps back into its place.
+        """
+        self._require_running("detach()").pop_out(self._key)
 
     def attach(self) -> None:
-        """Bring a detached pane back (*coming in Milestone 5*)."""
-        self.detach()
+        """Bring the pane back into the app's window (its pop-out window closes)."""
+        core = self._core()
+        if core is not None:
+            core.pop_in(self._key)
 
     @property
     def value(self) -> Any:

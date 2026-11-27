@@ -134,8 +134,10 @@ enum Command {
     /// Examples:
     ///   stagetui attach            # the only running app
     ///   stagetui attach harness    # one by name (see `stagetui sessions`)
+    ///   stagetui attach harness:chat   # just one pane: it pops out into this terminal
     Attach {
-        /// The session name (optional when only one app is running).
+        /// The session name (optional when only one app is running), with
+        /// `:pane` to show just that pane.
         name: Option<String>,
     },
     /// Start an app that keeps running when you detach or close the terminal.

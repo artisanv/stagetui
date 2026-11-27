@@ -47,45 +47,65 @@ struct Remote {
     id: u64,
     view: TerminalView<FrameWriter>,
     out: SyncSender<Out>,
+    caps: Capabilities,
+    /// It asked for one pane (by id) …
+    wants: Option<String>,
+    /// … which is this node.
+    pane: Option<usize>,
 }
 
 enum Window {
-    Local(Box<TerminalView<io::Stdout>>),
+    Local(Box<TerminalView<io::Stdout>>, Box<Capabilities>),
     Remote(Box<Remote>),
 }
 
 impl Window {
+    /// The popped-out pane this window shows (`None`: the whole app).
+    fn pane(&self) -> Option<usize> {
+        match self {
+            Window::Local(..) => None,
+            Window::Remote(r) => r.pane,
+        }
+    }
+
+    fn caps(&self) -> &Capabilities {
+        match self {
+            Window::Local(_, c) => c,
+            Window::Remote(r) => &r.caps,
+        }
+    }
+
     fn id(&self) -> u64 {
         match self {
-            Window::Local(_) => LOCAL,
+            Window::Local(..) => LOCAL,
             Window::Remote(r) => r.id,
         }
     }
 
     fn size(&self) -> (u16, u16) {
         match self {
-            Window::Local(v) => v.size(),
+            Window::Local(v, _) => v.size(),
             Window::Remote(r) => r.view.size(),
         }
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
         match self {
-            Window::Local(v) => v.resize(cols, rows),
+            Window::Local(v, _) => v.resize(cols, rows),
             Window::Remote(r) => r.view.resize(cols, rows),
         }
     }
 
     fn cell_px(&self) -> (u32, u32) {
         match self {
-            Window::Local(v) => v.cell_px(),
+            Window::Local(v, _) => v.cell_px(),
             Window::Remote(r) => r.view.cell_px(),
         }
     }
 
     fn present(&mut self, frame: &Frame) -> io::Result<()> {
         match self {
-            Window::Local(v) => v.present(frame),
+            Window::Local(v, _) => v.present(frame),
             Window::Remote(r) => r.view.present(frame),
         }
     }
@@ -93,7 +113,7 @@ impl Window {
     /// Bytes for the terminal itself (e.g. the clipboard sequence).
     fn raw(&mut self, bytes: &str) {
         match self {
-            Window::Local(_) => {
+            Window::Local(..) => {
                 let mut out = io::stdout();
                 let _ = out.write_all(bytes.as_bytes());
                 let _ = out.flush();
@@ -121,6 +141,9 @@ fn fit(frame: &Frame, (cols, rows): (u16, u16)) -> Frame {
     out
 }
 
+/// Opens a terminal window running a command (tests replace it).
+pub type Launcher = Arc<dyn Fn(&[String], &Capabilities) -> Result<()> + Send + Sync>;
+
 /// How to serve a session.
 #[derive(Debug, Clone, Default)]
 pub struct Serve {
@@ -146,6 +169,11 @@ pub struct App {
     info: Mutex<Option<SessionInfo>>,
     waker: Mutex<Option<ipc::Waker>>,
     windows: AtomicU64,
+    /// How a pop-out window runs stagetui: `["stagetui"]`, or Python's `-m stagetui`.
+    attach_cmd: Mutex<Vec<String>>,
+    /// Overrides how pop-out windows are opened (`"foot {cmd}"`).
+    launch_template: Mutex<Option<String>>,
+    launcher: Mutex<Option<Launcher>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -186,6 +214,9 @@ impl App {
             info: Mutex::new(None),
             waker: Mutex::new(None),
             windows: AtomicU64::new(1),
+            attach_cmd: Mutex::new(vec!["stagetui".into()]),
+            launch_template: Mutex::new(None),
+            launcher: Mutex::new(None),
         })
     }
 
@@ -210,6 +241,59 @@ impl App {
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// How a new window runs stagetui, e.g. `["python", "-m", "stagetui"]`.
+    pub fn set_attach_command(&self, cmd: Vec<String>) {
+        if !cmd.is_empty() {
+            *lock(&self.attach_cmd) = cmd;
+        }
+    }
+
+    /// How pop-out windows are opened, e.g. `"foot {cmd}"` (`None`: the
+    /// terminal in use, or `STAGETUI_LAUNCHER`).
+    pub fn set_launch_template(&self, template: Option<String>) {
+        *lock(&self.launch_template) = template;
+    }
+
+    /// Replace how windows are opened (tests).
+    pub fn set_launcher(&self, launcher: Launcher) {
+        *lock(&self.launcher) = Some(launcher);
+    }
+
+    /// Open a window showing pane `pane` (an id), like the window the person used.
+    fn open_window(&self, pane: &str, caps: &Capabilities) -> Result<()> {
+        let session = lock(&self.info)
+            .as_ref()
+            .map(|i| i.name.clone())
+            .ok_or_else(|| {
+                Error::friendly(
+                    "This app can't open other windows",
+                    "it was started without sessions (STAGETUI_NO_SESSION)",
+                    "start it without STAGETUI_NO_SESSION, or with `stagetui start`",
+                )
+            })?;
+        let mut cmd = lock(&self.attach_cmd).clone();
+        cmd.push("attach".into());
+        cmd.push(format!("{session}:{pane}"));
+        if let Some(f) = lock(&self.launcher).clone() {
+            return f(&cmd, caps);
+        }
+        let template = lock(&self.launch_template)
+            .clone()
+            .or_else(|| std::env::var("STAGETUI_LAUNCHER").ok());
+        let argv =
+            crate::launch::window_command(caps, &cmd, template.as_deref()).ok_or_else(|| {
+                Error::friendly(
+                    "Can't open a window from here",
+                    "over SSH, or in a terminal stagetui doesn't know how to open",
+                    format!(
+                        "open another terminal and run: {}",
+                        crate::launch::shell_line(&cmd)
+                    ),
+                )
+            })?;
+        crate::launch::spawn(&argv)
     }
 
     /// The session other windows can attach to, while the app runs.
@@ -375,14 +459,20 @@ impl App {
                         let ipc::Viewer {
                             caps,
                             size,
+                            pane,
                             conn,
                             out,
                         } = *v;
                         let view = TerminalView::new(FrameWriter::new(out.clone()), &caps, size);
-                        if tx
-                            .send(Msg::Attach(Box::new(Remote { id, view, out })))
-                            .is_err()
-                        {
+                        let remote = Remote {
+                            id,
+                            view,
+                            out,
+                            caps,
+                            wants: pane,
+                            pane: None,
+                        };
+                        if tx.send(Msg::Attach(Box::new(remote))).is_err() {
                             return;
                         }
                         let mut r = &*conn;
@@ -427,45 +517,113 @@ impl App {
             let size = crossterm::terminal::size().unwrap_or((caps.size.cols, caps.size.rows));
             let view = TerminalView::new(io::stdout(), caps, size);
             self.session().set_cell_px(view.cell_px());
-            windows.push(Window::Local(Box::new(view)));
+            windows.push(Window::Local(Box::new(view), Box::new(caps.clone())));
         }
         let _ = ready.send(Ok(()));
         let start = Instant::now();
         // The window used last: the app takes its size.
         let mut active = LOCAL;
         'run: loop {
-            let size = windows
-                .iter()
+            let mains = || windows.iter().filter(|w| w.pane().is_none());
+            let size = mains()
                 .find(|w| w.id() == active)
-                .or(windows.first())
+                .or(mains().next())
                 .map(Window::size);
-            let (frame, wake, quit, events, clip) = {
+            let (frame, pane_frames, wake, quit, events, clip, popouts, popins) = {
                 let mut s = self.session();
                 s.set_time(start.elapsed());
-                let frame = match size {
-                    Some((c, r)) if s.is_dirty() => Some(s.frame(c, r)),
-                    _ => None,
+                let dirty = s.is_dirty() && !windows.is_empty();
+                // Pop-out windows only: keep the app's own screen up to date anyway.
+                let fallback = match s.size() {
+                    (0, _) | (_, 0) => (100, 30),
+                    other => other,
+                };
+                let frame =
+                    dirty.then(|| s.frame(size.unwrap_or(fallback).0, size.unwrap_or(fallback).1));
+                let pane_frames: Vec<(u64, Option<Frame>)> = if dirty {
+                    windows
+                        .iter()
+                        .filter_map(|w| {
+                            let p = w.pane()?;
+                            let (c, r) = w.size();
+                            Some((w.id(), s.pane_frame(p, c, r)))
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
                 };
                 (
                     frame,
+                    pane_frames,
                     s.next_wake(),
                     s.quit_requested(),
                     s.take_events(),
                     s.take_clipboard(),
+                    s.take_popouts(),
+                    s.take_popins(),
                 )
             };
             self.push(events);
             if quit {
                 break;
             }
+            // Panes that went back: their windows close.
+            for id in &popins {
+                let pane = self.session().tree().find(&format!("#{id}"));
+                for w in windows
+                    .iter()
+                    .filter(|w| w.pane().is_some() && w.pane() == pane)
+                {
+                    w.bye("reattached");
+                }
+                windows.retain(|w| w.pane().is_none() || w.pane() != pane);
+            }
+            // Panes that want their own window: open one like the window used last.
+            for id in popouts {
+                let caps = windows
+                    .iter()
+                    .find(|w| w.id() == active)
+                    .or(windows.first())
+                    .map(|w| w.caps().clone());
+                let opened = match caps {
+                    Some(c) => self.open_window(&id, &c),
+                    None => Err(Error::friendly(
+                        "No window to open from",
+                        "nobody is looking at the app right now",
+                        "attach first: stagetui attach",
+                    )),
+                };
+                if let Err(e) = opened {
+                    let mut s = self.session();
+                    let _ = s.pop_in(&format!("#{id}"));
+                    let _ = s.notify(&e.to_string(), Some("info"), None, Duration::from_secs(8));
+                }
+            }
             if let Some(text) = clip
                 && let Some(w) = windows.iter_mut().find(|w| w.id() == active)
             {
                 w.raw(&osc52(&text));
             }
+            let mut lost = Vec::new();
+            for (id, f) in pane_frames {
+                let Some(w) = windows.iter_mut().find(|w| w.id() == id) else {
+                    continue;
+                };
+                match f {
+                    Some(f) => {
+                        if w.present(&f).is_err() {
+                            lost.push(id);
+                        }
+                    }
+                    // The pane is gone (closed, or back): so is its window.
+                    None => {
+                        w.bye("reattached");
+                        lost.push(id);
+                    }
+                }
+            }
             if let (Some(f), Some(size)) = (frame, size) {
-                let mut lost = Vec::new();
-                for w in &mut windows {
+                for w in windows.iter_mut().filter(|w| w.pane().is_none()) {
                     let shown = if w.size() == size {
                         w.present(&f)
                     } else {
@@ -477,6 +635,14 @@ impl App {
                             break 'run;
                         }
                         lost.push(w.id());
+                    }
+                }
+            }
+            if !lost.is_empty() {
+                let mut s = self.session();
+                for w in windows.iter().filter(|w| lost.contains(&w.id())) {
+                    if let Some(p) = w.pane() {
+                        s.pane_window_closed(p);
                     }
                 }
                 windows.retain(|w| !lost.contains(&w.id()));
@@ -496,13 +662,40 @@ impl App {
                 for m in first.into_iter().chain(rx.try_iter()) {
                     match m {
                         Msg::Input(id, i) => inputs.push((id, i)),
-                        Msg::Attach(r) => {
+                        Msg::Attach(mut r) => {
+                            if let Some(want) = r.wants.clone() {
+                                // A window for one pane: it pops out into it.
+                                let pane = s
+                                    .tree()
+                                    .find(&format!("#{want}"))
+                                    .filter(|p| s.tree().is_typed_pane(*p));
+                                match pane {
+                                    Some(p) => {
+                                        s.pane_window_opened(p);
+                                        r.pane = Some(p);
+                                        windows.push(Window::Remote(r));
+                                    }
+                                    None => {
+                                        let message = format!("there is no pane \"{want}\"");
+                                        let _ =
+                                            r.out.try_send(Out::Msg(ServerMsg::Error { message }));
+                                        Window::Remote(r).bye("error");
+                                    }
+                                }
+                                s.touch();
+                                continue;
+                            }
                             active = r.id;
                             s.set_cell_px(r.view.cell_px());
                             windows.push(Window::Remote(r));
                             s.touch();
                         }
                         Msg::Gone(id) => {
+                            if let Some(p) =
+                                windows.iter().find(|w| w.id() == id).and_then(Window::pane)
+                            {
+                                s.pane_window_closed(p);
+                            }
                             windows.retain(|w| w.id() != id);
                             if active == id {
                                 active = windows.last().map_or(LOCAL, Window::id);
@@ -521,6 +714,17 @@ impl App {
                     if let Input::Resize(c, r) = i {
                         w.resize(*c, *r);
                     }
+                    if let Some(p) = w.pane() {
+                        // A pop-out window: its pane gets the keys; leaving puts it back.
+                        s.set_detachable(true);
+                        s.handle_in(Some(p), i);
+                        if s.take_detach() {
+                            // Ctrl+Space d in a pop-out window: the pane goes back.
+                            let pid = s.tree().nodes[p].id.clone();
+                            let _ = s.pop_in(&format!("#{pid}"));
+                        }
+                        continue;
+                    }
                     if *id != active {
                         active = *id;
                         s.set_cell_px(w.cell_px());
@@ -528,7 +732,7 @@ impl App {
                     }
                     // q in an attached window asks: detach or quit the app?
                     s.set_detachable(*id != LOCAL);
-                    s.handle(i);
+                    s.handle_in(None, i);
                     if s.take_detach() {
                         self.detach(&mut s, &mut windows, *id);
                         if active == *id {
@@ -696,6 +900,16 @@ mod tests {
         }
 
         fn open(reg: &Registry, name: &str, caps: Capabilities, size: (u16, u16)) -> Stream {
+            open_pane(reg, name, caps, size, None)
+        }
+
+        fn open_pane(
+            reg: &Registry,
+            name: &str,
+            caps: Capabilities,
+            size: (u16, u16),
+            pane: Option<&str>,
+        ) -> Stream {
             let (mut s, _, token) = reg.connect(Some(name)).unwrap();
             // Not on Windows pipes; there a stuck test is ended by the CI timeout.
             let _ = s.set_recv_timeout(Some(Duration::from_secs(10)));
@@ -705,6 +919,7 @@ mod tests {
                 caps: Box::new(caps),
                 cols: size.0,
                 rows: size.1,
+                pane: pane.map(String::from),
             };
             ipc::send(&mut s, &hello).unwrap();
             let reply = ipc::recv::<ServerMsg>(&mut s).unwrap();
@@ -837,6 +1052,109 @@ mod tests {
             app.stop().unwrap();
             let quit = std::iter::from_fn(|| app.next_event(Duration::ZERO)).any(|e| e.id == "app");
             assert!(quit, "the app hears that it was asked to quit");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_pane_pops_out_into_a_window_and_snaps_back_when_it_closes() {
+            let dir =
+                std::env::temp_dir().join(format!("stagetui-test-pop-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let reg = Registry::at(&dir).unwrap();
+            let app = App::new(
+                Session::from_json(
+                    r##"{"children":[{"type":"split","children":[
+                        {"type":"pane","content":"markdown","props":{"id":"doc"},"children":[{"type":"markdown","content":"# مَرْحَبًا Hello 日本語 नमस्ते"}]},
+                        {"type":"pane","content":"notes","props":{"id":"notes"},"children":[{"type":"input","props":{"id":"box"}}]}]}]}"##,
+                )
+                .unwrap(),
+            );
+            let asked: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
+            let log = Arc::clone(&asked);
+            app.set_attach_command(vec!["python".into(), "-m".into(), "stagetui".into()]);
+            app.set_launcher(Arc::new(move |cmd: &[String], _caps: &Capabilities| {
+                lock(&log).push(cmd.to_vec());
+                Ok(())
+            }));
+            app.serve(Serve {
+                name: "popper".into(),
+                dir: Some(dir.clone()),
+                ..Serve::default()
+            })
+            .unwrap();
+            let plain = || term(b"\x1b[?62c");
+            let mut main = open(&reg, "popper", plain(), (80, 20));
+            read_until(&mut main, |o| o.contains("Hello"));
+
+            // Ctrl+Space then o on the focused pane asks for a new window …
+            let mut s = app.session();
+            s.focus("#box").unwrap();
+            drop(s);
+            app.wake();
+            press(&mut main, "ctrl+space");
+            press(&mut main, "o");
+            let (out, _) = read_until(&mut main, |o| o.contains("open in its own window"));
+            assert!(out.contains("Bring it back"));
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while lock(&asked).is_empty() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(
+                lock(&asked)[0],
+                ["python", "-m", "stagetui", "attach", "popper:notes"],
+                "the window runs `stagetui attach app:pane`"
+            );
+
+            // … which shows just that pane, and types into it.
+            let mut win = open_pane(&reg, "popper", plain(), (40, 8), Some("notes"));
+            read_until(&mut win, |o| o.contains("Put back"));
+            for c in ["h", "i"] {
+                press(&mut win, c);
+            }
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while app.session().value("#box").unwrap() != serde_json::json!("hi")
+                && Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(
+                app.session().value("#box").unwrap(),
+                serde_json::json!("hi")
+            );
+
+            // Closing the window snaps the pane back, with everything in it.
+            drop(win);
+            let (out, _) = read_until(&mut main, |o| o.contains("hi") && !o.ends_with("window"));
+            assert!(out.contains("hi"));
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while app.session().query("#notes").unwrap()["detached"] == true
+                && Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(app.session().query("#notes").unwrap()["detached"], false);
+
+            // A pane that doesn't exist is refused.
+            let (mut s, _, token) = reg.connect(Some("popper")).unwrap();
+            let hello = ClientMsg::Hello {
+                token,
+                protocol: PROTOCOL,
+                caps: Box::new(plain()),
+                cols: 40,
+                rows: 8,
+                pane: Some("nope".into()),
+            };
+            ipc::send(&mut s, &hello).unwrap();
+            assert!(matches!(
+                ipc::recv::<ServerMsg>(&mut s).unwrap(),
+                ServerMsg::Welcome { .. }
+            ));
+            let (_, msg) = read_until(&mut s, |_| false);
+            assert!(
+                matches!(msg, Some(ServerMsg::Error { ref message }) if message.contains("nope")),
+                "{msg:?}"
+            );
+            app.stop().unwrap();
             let _ = std::fs::remove_dir_all(&dir);
         }
     }

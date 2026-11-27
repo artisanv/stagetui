@@ -300,7 +300,8 @@ impl<'a> Builder<'a> {
                 if style.min_size.height == LengthPercentageAuto::auto() {
                     style.min_size.height = LengthPercentageAuto::length(3.0);
                 }
-                let current = pane_child(self.tree, i, pb);
+                // A popped-out pane keeps its spot; its content is in another window.
+                let current = pane_child(self.tree, i, pb).filter(|_| !pb.detached);
                 let kids: Vec<NodeId> = current
                     .and_then(|c| {
                         let id = self.build(c, Parent::Pane, None)?;
@@ -411,6 +412,42 @@ pub fn pane_child(tree: &Tree, pane: usize, pb: &crate::tree::PaneBox) -> Option
         .find(|(c, t)| **t == pb.ptype && live(c))
         .map(|(c, _)| *c)
         .or_else(|| kids.iter().copied().find(live))
+}
+
+/// Lay out what a popped-out pane shows, filling a window of `cols × rows`
+/// below its one-row header.
+pub fn layout_popout(tree: &mut Tree, content: usize, cols: u16, rows: u16, cx: &Cx) -> Laid {
+    let area = Rect::new(0, 1, cols, rows.saturating_sub(1));
+    let mut laid = Laid {
+        content: area,
+        content_rows: area.height,
+        ..Laid::default()
+    };
+    let mut b = Builder::new(tree);
+    let Some(id) = b.build(content, Parent::Pane, None) else {
+        return laid;
+    };
+    if let Ok(mut st) = b.taffy.style(id).cloned() {
+        st.size = Size {
+            width: Dimension::length(f32::from(area.width)),
+            height: Dimension::length(f32::from(area.height)),
+        };
+        st.max_size = Size::auto();
+        let _ = b.taffy.set_style(id, st);
+    }
+    b.compute(id, Some(area.width), Some(area.height), cx);
+    let boxes = b.boxes();
+    let rtls: Vec<bool> = (0..tree.nodes.len()).map(|i| b.rtl(i)).collect();
+    drop(b);
+    let mut stack = vec![content];
+    while let Some(i) = stack.pop() {
+        tree.nodes[i].rect = IRect::default();
+        tree.nodes[i].content_h = 0;
+        tree.nodes[i].rtl = rtls[i];
+        stack.extend(tree.nodes[i].children.iter().copied());
+    }
+    place(tree, &boxes, content, (0, 1), &mut laid, false);
+    laid
 }
 
 /// Lay out `tree` on a `cols × rows` screen. Writes every node's `rect`, `rtl`
@@ -566,8 +603,12 @@ pub fn layout(
         content_rows,
         ..Laid::default()
     };
-    // Reset everything, then place what was laid out.
-    for (n, rtl) in tree.nodes.iter_mut().zip(rtls) {
+    // Reset everything (but what pop-out windows show), then place what was laid out.
+    let popped = tree.popped_nodes();
+    for (k, (n, rtl)) in tree.nodes.iter_mut().zip(rtls).enumerate() {
+        if popped.contains(&k) {
+            continue;
+        }
         n.rect = IRect::default();
         n.content_h = 0;
         n.rtl = rtl;

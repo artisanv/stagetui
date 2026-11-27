@@ -125,7 +125,7 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(pane: usize, types: &[PaneTypeSpec], current: &str) -> Self {
+    pub fn new(pane: usize, types: &[PaneTypeSpec], current: &str, popped: bool) -> Self {
         let mut items: Vec<MenuItem> = types
             .iter()
             .map(|t| {
@@ -144,9 +144,15 @@ impl Menu {
                 }
             })
             .collect();
+        let pop = if popped {
+            "↙  Bring back here"
+        } else {
+            "↗  Open in its own window"
+        };
         for (key, label) in [
             ("@split_right", "⊞  Split side by side"),
             ("@split_down", "⊟  Split top / bottom"),
+            ("@pop", pop),
             ("@close", "×  Close pane"),
         ] {
             items.push(MenuItem {
@@ -180,7 +186,7 @@ mod tests {
             assert!(crate::widgets::icon(t.icon.as_deref().unwrap()).is_ok());
         }
         assert!(builtin_content("my-custom").is_none());
-        let m = Menu::new(3, &types, "terminal");
+        let m = Menu::new(3, &types, "terminal", false);
         assert_eq!(m.items[m.hover].key, "terminal");
         assert_eq!(m.items[m.first_action()].key, "@split_right");
         let tree = files_tree(env!("CARGO_MANIFEST_DIR"), 2);

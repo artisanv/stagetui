@@ -202,3 +202,65 @@ def test_session_folder_is_private(tmp_path: Path, env: dict[str, str]) -> None:
                 assert f.stat().st_mode & 0o077 == 0, f"{f.name} is readable by others"
     finally:
         cli(env, "stop")
+
+
+PANES_APP = textwrap.dedent(
+    """
+    from stagetui import StageApp, StagePane, StageSplit
+
+
+    class Desk(StageApp):
+        def compose(self):
+            return [
+                StageSplit(
+                    [
+                        StagePane("markdown", id="doc", text="# Notes"),
+                        StagePane("terminal", id="sh", command="sh"),
+                    ]
+                )
+            ]
+
+
+    Desk().run()
+    """
+)
+
+RECORDER = "import sys, pathlib; pathlib.Path(sys.argv[1]).write_text(' '.join(sys.argv[2:]))\n"
+
+
+def test_a_pane_pops_out_into_its_own_window(tmp_path: Path, env: dict[str, str]) -> None:
+    app = tmp_path / "desk.py"
+    app.write_text(PANES_APP, encoding="utf-8")
+    recorder, asked = tmp_path / "rec.py", tmp_path / "asked.txt"
+    recorder.write_text(RECORDER, encoding="utf-8")
+    # Instead of opening a real terminal window, write down what would run in it.
+    env = {**env, "STAGETUI_LAUNCHER": f"{sys.executable} {recorder} {asked} {{cmd}}"}
+    assert cli(env, "start", str(app), "-d").returncode == 0
+    try:
+        main = Window(env, "desk")
+        assert main.wait_for("Notes"), bytes(main.out[-2000:])
+        main.send("\x00")  # Ctrl+Space …
+        main.send("o")  # … o: open the focused pane (the shell) in its own window
+        assert main.wait_for("Bring it back"), bytes(main.out[-2000:])
+        deadline = time.monotonic() + 10
+        while not asked.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert asked.read_text(encoding="utf-8").endswith("-m stagetui attach desk:sh")
+
+        pop = Window(env, "desk:sh")  # what the new window runs
+        assert pop.wait_for("Put back"), bytes(pop.out[-2000:])
+        pop.send("echo pop-$((6*7))\r")
+        assert pop.wait_for("pop-42"), bytes(pop.out[-2000:])
+
+        # Closing the window brings the pane back, shell and all.
+        os.kill(pop.pid, 1)  # SIGHUP: the window is closed
+        pop.close()
+        main.out.clear()
+        main.send("\x00")
+        main.send("\t")  # a key, so the screen is drawn again
+        assert main.wait_for("pop-42"), bytes(main.out[-2000:])
+        main.send("\x00")
+        main.send("d")
+        assert main.close() == 0
+    finally:
+        cli(env, "stop")

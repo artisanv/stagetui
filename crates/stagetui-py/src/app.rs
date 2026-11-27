@@ -87,6 +87,27 @@ impl PyApp {
             .map_err(|e| to_py(py, &e))
     }
 
+    /// How a pop-out window runs stagetui (e.g. Python's `-m stagetui`).
+    fn set_attach_command(&self, cmd: Vec<String>) {
+        self.app.set_attach_command(cmd);
+    }
+
+    /// How pop-out windows are opened, e.g. "foot {cmd}" (None: automatic).
+    #[pyo3(signature = (template = None))]
+    fn set_launch_template(&self, template: Option<String>) {
+        self.app.set_launch_template(template);
+    }
+
+    /// Open a pane in its own terminal window.
+    fn pop_out(&self, py: Python<'_>, target: &str) -> PyResult<()> {
+        self.run(py, |s| s.pop_out(target))
+    }
+
+    /// Bring a popped-out pane back (its window closes).
+    fn pop_in(&self, py: Python<'_>, target: &str) -> PyResult<()> {
+        self.run(py, |s| s.pop_in(target))
+    }
+
     /// The session other windows can attach to (JSON), or None.
     fn session(&self) -> Option<String> {
         self.app

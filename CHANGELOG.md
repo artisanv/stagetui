@@ -10,6 +10,15 @@ All notable changes to this project are documented here. The format follows
 - **"Leave?" prompt**: q, Ctrl+C or Esc in an attached window asks *Detach* (default),
   *Quit app* or *Cancel*, so a background app is never stopped by accident. Apps run with
   `python app.py` still quit with q.
+- **Panes pop out into their own terminal window**: the ↗ header button, the pane menu,
+  Ctrl+Space then o, the `pop_out` action, or `widget.detach()` / `attach()`. The window
+  runs `stagetui attach <app>:<pane>`; closing it snaps the pane back, with everything
+  still running. Its spot in the app shows "↙ Bring it back".
+- Terminal launcher: Kitty, Ghostty, WezTerm, foot, Alacritty, Konsole, GNOME Terminal,
+  xterm, mintty, Windows Terminal, Terminal.app / iTerm2 (AppleScript), tmux; over SSH it
+  shows the command instead. `LAUNCHER = "..."` on the app or `STAGETUI_LAUNCHER` override it.
+- `stagetui attach app:pane` shows one pane in any terminal; session protocol 2.
+- `09_detach.py` has panes to pop out.
 
 ### Added — Milestone 5a: sessions and workspaces
 - **Sessions**: every interactive app is a session other terminals can attach to, over a private

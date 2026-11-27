@@ -158,5 +158,6 @@ The work is cancelled when the app quits.
 | `STAGETUI_NO_SESSION=1` | Don't let other terminals attach to apps started with `python app.py` |
 | `STAGETUI_SESSION=name` | The session name to use (same as `--name`) |
 
-Popping a **single pane** out into its own terminal window — and snapping it back
-when you close that window — is *coming soon* (Milestone 5b).
+`stagetui attach night-shift:steps` shows just **one pane** (here `steps`) in
+this terminal: the pane pops out of the app's window into this one, and goes back
+when you close it. See [Panes → Open a pane in its own window](panes.md#open-a-pane-in-its-own-window).

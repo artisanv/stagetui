@@ -137,6 +137,9 @@ class StageApp:
     reduce_motion: ClassVar[bool] = False
     #: The key that reaches the app from inside a terminal pane (then press Tab, |, -, x, Space, q).
     PREFIX: ClassVar[str] = "ctrl+space"
+    #: How a pane opens in its own window: ``None`` uses the terminal you are in
+    #: (Kitty opens Kitty, foot opens foot…). Or a command like ``"foot {cmd}"``.
+    LAUNCHER: ClassVar[str | None] = None
 
     def __init__(self) -> None:
         self._core: _core.App | None = None
@@ -308,6 +311,7 @@ class StageApp:
                             "bounds": n["bounds"],
                             "focused": inside,
                             "stashed": n.get("stashed", []),
+                            "detached": n.get("detached", False),
                         }
                     )
                 walk(n.get("children", []))
@@ -414,6 +418,9 @@ class StageApp:
         core = self._create(cell=(16, 32))
         self._loop = asyncio.get_running_loop()
         self._failure = None
+        # Pop-out windows run this same stagetui (`python -m stagetui attach …`).
+        core.set_attach_command([sys.executable, "-m", "stagetui"])
+        core.set_launch_template(self.LAUNCHER)
         core.start(type(self).__name__, sys.argv[0] if sys.argv else "")
         try:
             await self._await(self.on_mount())

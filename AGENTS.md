@@ -14,6 +14,7 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
     local and remote windows (each its own `TerminalView`), accept loop for attaching windows
   - `ipc.rs` sessions: private runtime folder, token, framing, registry, `attach` client
   - `workspace.rs` layouts of splits/panes: capture, apply (re-using nodes by id), JSON files
+  - `launch.rs` opens a new terminal window (per terminal family) for popped-out panes
   - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
     markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
   - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect
@@ -79,3 +80,4 @@ snap.query("#chat")  # widget JSON: id, type, bounds, text, dir, theme, focusedâ
 | `STAGETUI_SESSION=name` | Session name |
 | `STAGETUI_NO_SESSION=1` | Interactive apps don't accept attaching windows |
 | `STAGETUI_LOG=path` | Log file shown by `stagetui sessions --json` (set by `stagetui start`) |
+| `STAGETUI_LAUNCHER="foot {cmd}"` | How pop-out pane windows are opened (default: same terminal family) |

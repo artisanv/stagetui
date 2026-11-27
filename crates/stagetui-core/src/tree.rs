@@ -352,6 +352,9 @@ pub struct PaneBox {
     /// The type of each child; only the child of the current type is shown,
     /// the others are kept (stashed) so switching back restores them.
     pub types: Vec<String>,
+    /// Popped out into its own terminal window: the content is shown there,
+    /// this spot shows a placeholder.
+    pub detached: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -618,6 +621,33 @@ pub struct Tree {
 }
 
 impl Tree {
+    /// The content shown by each popped-out pane: `(pane, content)`.
+    pub fn popped(&self) -> Vec<(usize, usize)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.alive)
+            .filter_map(|(i, n)| match &n.kind {
+                Kind::Pane(pb) if pb.detached => {
+                    crate::layout::pane_child(self, i, pb).map(|c| (i, c))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every node shown in a pop-out window (content of detached panes and below).
+    pub fn popped_nodes(&self) -> std::collections::HashSet<usize> {
+        let mut out = std::collections::HashSet::new();
+        let mut stack: Vec<usize> = self.popped().into_iter().map(|(_, c)| c).collect();
+        while let Some(i) = stack.pop() {
+            if out.insert(i) {
+                stack.extend(self.nodes[i].children.iter().copied());
+            }
+        }
+        out
+    }
+
     /// Validate a spec and build the tree.
     pub fn build(spec: &AppSpec) -> Result<Self> {
         let mut theme = style::theme(&spec.theme)?;
@@ -1220,6 +1250,7 @@ impl Tree {
                     map.insert("pane_type".into(), json!(p.ptype));
                     let stashed: Vec<&String> = p.types.iter().filter(|t| **t != p.ptype).collect();
                     map.insert("stashed".into(), json!(stashed));
+                    map.insert("detached".into(), json!(p.detached));
                 }
                 _ => {}
             }
@@ -1558,6 +1589,7 @@ fn build_kind(kind: &str, spec: &NodeSpec) -> Result<Kind> {
                 .take(64)
                 .collect::<String>(),
             types: Vec::new(),
+            detached: false,
         }),
         "markdown" => {
             let mut m = Markdown::new(text_content(spec));

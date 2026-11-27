@@ -114,7 +114,7 @@ stagetui mcp my_app.py      # let a coding agent (Claude Code…) see and operat
 2. ✅ Text & pictures: Arabic/RTL shaping, bundled fonts, Kitty/Sixel/iTerm2 images, Canvas, PNG export
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
-5. 🚧 Sessions & workspaces: ✅ background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts · next: pop a pane out into its own terminal window and back
+5. ✅ Sessions & workspaces: background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts, panes that pop out into their own terminal window and back
 6. Optional plugins: video, web, 3D
 
 ## Develop
