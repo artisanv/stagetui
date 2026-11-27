@@ -162,5 +162,8 @@ def test_problems_are_explained(models: dict[str, Path], tmp_path: Path) -> None
             return [StagePane("3d", id="a", path=str(odd)), StagePane("3d", id="b")]
 
     with Viewer().drive((100, 24)) as d:
-        assert until(d, lambda: "export it as one of those" in d.snapshot().text)
-        assert until(d, lambda: 'path="model.glb"' in d.snapshot().text)
+        # The pane says what went wrong (long temporary paths wrap on screen, so read its data).
+        error = lambda pane: d.query(pane)["children"][0]["error"] or ""
+        assert until(d, lambda: "export it as one of those" in error("#a"))
+        assert until(d, lambda: 'path="model.glb"' in error("#b"))
+        assert "could not start" in d.snapshot().text
