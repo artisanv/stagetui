@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/stagetui-core", "crates/stagetui-cli", "crates/stagetui-py"]
+members = ["crates/stagetui-core", "crates/stagetui-cli", "crates/stagetui-py", "crates/stagetui-plugin-api"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -12,6 +12,7 @@ categories = ["command-line-interface"]
 [workspace.dependencies]
 stagetui-core = { path = "crates/stagetui-core", version = "0.1.0-alpha.1" }
 stagetui-cli = { path = "crates/stagetui-cli", version = "0.1.0-alpha.1" }
+stagetui-plugin-api = { path = "crates/stagetui-plugin-api", version = "0.1.0-alpha.1" }
 clap = { version = "4.6", features = ["derive"] }
 crossterm = "0.29"
 ratatui-core = { version = "0.1", default-features = false, features = ["std"] }

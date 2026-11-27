@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Milestone 6a: add-ons
+- **Add-ons (plugins)**: pane types served by their own program, `stagetui-plugin-<name>`,
+  found next to the app's Python, in `STAGETUI_PLUGIN_PATH` or on the `PATH`. They show
+  frames (pictures) with each terminal's best graphics, get keys/mouse/paste, send events
+  (`on_<name>`), answer calls (`pane.content.call(...)`), and crash on their own: the pane
+  says so and Enter restarts. Processes are tracked by the reaper.
+- New crate `stagetui-plugin-api` (protocol + `PaneSource` trait + `serve()`), and
+  `stagetui.plugin` to write add-ons in Python; `Canvas.rgba()`; `StagePlugin`;
+  `ts.plugins()`; `stagetui plugins [install <name>]`.
+- **Install on first use**: picking an add-on that isn't installed asks "Install …?" and
+  installs it into the app's Python (pip, or uv) inside the pane. Official add-ons (video,
+  web, 3D) show "coming soon" until we publish them (never installed by name before then).
+- **Real pictures**: in a terminal that draws pictures with blocks, a picture add-on opens
+  by itself in Ghostty, Kitty, WezTerm or foot if one is installed — or stagetui offers to
+  install one (pacman / apt / dnf / zypper, Homebrew, winget), running in the pane.
+- The "Leave?" prompt became a general dialog; `Key::name()`; example `10_plugins.py` with
+  a sample add-on in `examples/plugins/`; docs: Add-ons.
+
 ### Added — Milestone 5b
 - **"Leave?" prompt**: q, Ctrl+C or Esc in an attached window asks *Detach* (default),
   *Quit app* or *Cancel*, so a background app is never stopped by accident. Apps run with

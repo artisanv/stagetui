@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""A tiny add-on: a pulsing heart. Click it, or press space, to change its color.
+
+Try it:  STAGETUI_PLUGIN_PATH=examples/plugins python examples/10_plugins.py
+"""
+
+import math
+
+from stagetui import Canvas
+from stagetui.plugin import Plugin, serve
+
+COLORS = ["#f7768e", "#7aa2f7", "#9ece6a", "#e0af68", "#bb9af7"]
+
+
+class Pulse(Plugin):
+    name, title, icon = "pulse", "Pulse", "heart"
+    keys = ("space",)
+    fps = 20
+
+    def start(self, args):
+        self.color = 0
+        self.clicks = 0
+        self.status(f"{args.get('label', 'Pulse')} · space or click to change color")
+
+    def frame(self, t):
+        c = Canvas(self.width, self.height, "#16161e")
+        r = min(self.width, self.height) / 3 * (1 + 0.15 * math.sin(t * 4))
+        c.circle(self.width / 2, self.height / 2, r, fill=COLORS[self.color])
+        return c
+
+    def key(self, key, text):
+        self.next_color()
+
+    def mouse(self, kind, x, y, button):
+        if kind == "down":
+            self.next_color()
+
+    def next_color(self):
+        self.color = (self.color + 1) % len(COLORS)
+        self.clicks += 1
+        self.event("color", COLORS[self.color])
+
+    def call(self, method, args):
+        if method == "clicks":
+            return self.clicks
+        return super().call(method, args)
+
+
+if __name__ == "__main__":
+    serve(Pulse())

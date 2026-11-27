@@ -27,6 +27,7 @@ as a list of widgets, or as a PNG picture — no human needed.
 | Open a pane in its own terminal window (second monitor!) | [Panes → Own window](panes.md#open-a-pane-in-its-own-window) |
 | Save and restore layouts, workspace tabs like Blender | [Panes → Workspaces](panes.md#workspaces-whole-layouts-like-blenders-tabs) |
 | Keep an app running in the background, attach to it later | [Sessions](sessions.md) |
+| Add video, web pages, 3D — or write my own pane type | [Add-ons](plugins.md) |
 | Let an AI agent (Claude Code…) see and operate my app | [AI agents](agents.md) |
 | Use Arabic, Persian, Hindi, Chinese… | [World languages](world-languages.md) |
 | Test my app (press keys, click) or let an AI agent see it | [Snapshots](snapshots.md) |

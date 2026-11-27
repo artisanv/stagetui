@@ -71,6 +71,16 @@ stagetui stop my-app                   # quit it
 While attached, **Ctrl+Space** then **d** detaches; **q** asks whether to detach or
 quit the app. See [Sessions](sessions.md).
 
+## `stagetui plugins` — add-ons
+
+```bash
+stagetui plugins                    # installed add-ons, and the ones you can add
+stagetui plugins install video      # install one into this Python
+stagetui plugins --json             # for programs
+```
+
+See [Add-ons](plugins.md).
+
 ## `stagetui doctor` — what can my terminal do?
 
 ```bash

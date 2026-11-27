@@ -519,6 +519,8 @@ impl App {
             self.session().set_cell_px(view.cell_px());
             windows.push(Window::Local(Box::new(view), Box::new(caps.clone())));
         }
+        self.session()
+            .set_picture_terminal(crate::launch::picture_terminal());
         let _ = ready.send(Ok(()));
         let start = Instant::now();
         // The window used last: the app takes its size.
@@ -532,6 +534,14 @@ impl App {
             let (frame, pane_frames, wake, quit, events, clip, popouts, popins) = {
                 let mut s = self.session();
                 s.set_time(start.elapsed());
+                // Pictures drawn with blocks? Then picture add-ons may open elsewhere.
+                let blocks = mains()
+                    .find(|w| w.id() == active)
+                    .or(mains().next())
+                    .is_some_and(|w| {
+                        w.caps().graphics.best == crate::caps::GraphicsProtocol::Halfblocks
+                    });
+                s.set_pictures(!blocks);
                 let dirty = s.is_dirty() && !windows.is_empty();
                 // Pop-out windows only: keep the app's own screen up to date anyway.
                 let fallback = match s.size() {
@@ -580,11 +590,20 @@ impl App {
             }
             // Panes that want their own window: open one like the window used last.
             for id in popouts {
+                let wanted = self.session().popout_terminal(&id);
                 let caps = windows
                     .iter()
                     .find(|w| w.id() == active)
                     .or(windows.first())
-                    .map(|w| w.caps().clone());
+                    .map(|w| {
+                        let mut c = w.caps().clone();
+                        // Open a specific terminal (one that shows real pictures).
+                        if let Some(f) = wanted.as_deref().and_then(crate::launch::family_of) {
+                            c.terminal.family = f;
+                            c.remote.tmux = false;
+                        }
+                        c
+                    });
                 let opened = match caps {
                     Some(c) => self.open_window(&id, &c),
                     None => Err(Error::friendly(

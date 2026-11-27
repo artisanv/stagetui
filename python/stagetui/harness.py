@@ -460,6 +460,56 @@ class StagePermission(_Widget):
 # ----- shell & logs ----------------------------------------------------------------
 
 
+class StagePlugin(_Callable):
+    """A pane type served by an add-on program — video, web, 3D, or your own.
+
+    Usually you write ``StagePane("video", path="movie.mp4")``; this is what ends
+    up inside. Options go to the add-on; ``on_<event>=`` handlers get its events.
+    If the add-on isn't installed, the pane offers to install it.
+    """
+
+    _type = "plugin"
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        id: str | None = None,
+        theme: Theme | None = None,
+        accent: str | None = None,
+        visible: bool | None = None,
+        width: Size | None = None,
+        height: int | None = None,
+        grow: float | None = None,
+        **options: Any,
+    ) -> None:
+        handlers = {
+            k[3:]: options.pop(k)
+            for k in list(options)
+            if k.startswith("on_") and callable(options[k])
+        }
+        super().__init__(
+            name,
+            id=id,
+            theme=theme,
+            accent=accent,
+            visible=visible,
+            width=width,
+            height=height,
+            grow=grow,
+            args=_plain(options) or None,
+            handlers=handlers,
+        )
+
+    def call(self, method: str, args: Any = None) -> Any:
+        """Ask the add-on to do something, e.g. ``video.call("pause")``."""
+        return self._call(method, args)
+
+    def restart(self) -> None:
+        """Stop the add-on's program and start it again."""
+        self._call("restart")
+
+
 class StageTerminal(_Callable):
     """A real terminal running your shell — or any command: ``StageTerminal("htop")``.
 
@@ -672,6 +722,12 @@ def _pane_types_spec() -> list[dict[str, Any]]:
     ]
 
 
+def _addons() -> list[dict[str, Any]]:
+    from ._inspect import plugins
+
+    return plugins()
+
+
 def _plain(args: Mapping[str, Any]) -> dict[str, Any]:
     """The options that can be written to a file (text, numbers, lists…)."""
     out: dict[str, Any] = {}
@@ -686,6 +742,8 @@ def _plain(args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _build_pane_content(name: str, args: Mapping[str, Any]) -> _Widget:
     t = _PANE_TYPES.get(name)
+    if t is None and any(p["name"] == name for p in _addons()):
+        return StagePlugin(name, **args)
     if t is None:
         raise _error(
             f'Unknown pane type "{name}"',

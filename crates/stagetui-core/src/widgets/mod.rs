@@ -17,6 +17,7 @@ mod image_view;
 mod input;
 mod log;
 pub mod markdown;
+mod plugin;
 mod progress;
 mod prompt;
 mod select;
@@ -41,6 +42,7 @@ pub use image_view::ImageView;
 pub use input::Input;
 pub use log::Log;
 pub use markdown::Markdown;
+pub use plugin::PluginView;
 pub use progress::Progress;
 pub use prompt::Prompt;
 pub use select::Select;
@@ -189,6 +191,11 @@ pub trait Widget {
     /// to get the normal click / wheel handling.
     fn mouse(&mut self, _m: crate::input::MouseKind, _x: u16, _y: u16, _area: Rect) -> Reaction {
         Reaction::Ignored
+    }
+
+    /// Things that happened on their own (a plugin's events), for the app.
+    fn take_events(&mut self) -> Vec<(String, Value)> {
+        Vec::new()
     }
 }
 

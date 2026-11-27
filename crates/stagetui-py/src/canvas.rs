@@ -293,6 +293,11 @@ impl PyCanvas {
         })
     }
 
+    /// The pixels as RGBA bytes (premultiplied), row by row — what a plugin sends.
+    fn rgba<'py>(&self, py: Python<'py>) -> Bound<'py, pyo3::types::PyBytes> {
+        pyo3::types::PyBytes::new(py, self.lock().pixmap().data())
+    }
+
     /// Register a snapshot of this canvas for `StageImage` (internal).
     fn _register(&self) -> String {
         gfx::register(self.snapshot("canvas"))

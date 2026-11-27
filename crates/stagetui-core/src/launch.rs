@@ -63,6 +63,106 @@ pub fn window_command(
     })
 }
 
+/// Whether `program` is on the `PATH`.
+pub fn on_path(program: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| {
+        let p = dir.join(program);
+        p.is_file() || (cfg!(windows) && dir.join(format!("{program}.exe")).is_file())
+    })
+}
+
+/// A terminal on this computer that shows real pictures, best first:
+/// `"ghostty"`, `"kitty"`, `"wezterm"`, `"foot"` (or `"iterm2"` on macOS).
+pub fn picture_terminal() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        for (app, name) in [
+            ("Ghostty", "ghostty"),
+            ("kitty", "kitty"),
+            ("WezTerm", "wezterm"),
+            ("iTerm", "iterm2"),
+        ] {
+            if std::path::Path::new(&format!("/Applications/{app}.app")).exists() {
+                return Some(name.into());
+            }
+        }
+    }
+    let candidates: &[&str] = if cfg!(windows) {
+        &["wezterm"]
+    } else {
+        &["ghostty", "kitty", "wezterm", "foot"]
+    };
+    candidates
+        .iter()
+        .find(|t| on_path(t))
+        .map(|t| (*t).to_string())
+}
+
+/// The terminal family for a name from [`picture_terminal`].
+pub fn family_of(name: &str) -> Option<Family> {
+    Some(match name {
+        "ghostty" => Family::Ghostty,
+        "kitty" => Family::Kitty,
+        "wezterm" => Family::Wezterm,
+        "foot" => Family::Foot,
+        "iterm2" => Family::Iterm2,
+        _ => return None,
+    })
+}
+
+/// How to install a terminal with real pictures here: `(name, command)`.
+/// Linux package managers ask for the admin password in the pane.
+pub fn picture_install() -> Option<(String, Vec<String>)> {
+    let cmd = |name: &str, words: &[&str]| {
+        Some((
+            name.to_string(),
+            words.iter().map(|w| (*w).to_string()).collect(),
+        ))
+    };
+    if cfg!(target_os = "macos") {
+        return if on_path("brew") {
+            cmd("Ghostty", &["brew", "install", "--cask", "ghostty"])
+        } else {
+            None
+        };
+    }
+    if cfg!(windows) {
+        return if on_path("winget") {
+            cmd(
+                "WezTerm",
+                &["winget", "install", "-e", "--id", "wez.wezterm"],
+            )
+        } else {
+            None
+        };
+    }
+    let release = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+    let ids: Vec<String> = release
+        .lines()
+        .filter_map(|l| l.strip_prefix("ID=").or_else(|| l.strip_prefix("ID_LIKE=")))
+        .flat_map(|v| {
+            v.trim_matches('"')
+                .split_whitespace()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let is = |id: &str| ids.iter().any(|i| i == id);
+    if is("arch") && on_path("pacman") {
+        cmd("Ghostty", &["sudo", "pacman", "-S", "--needed", "ghostty"])
+    } else if (is("debian") || is("ubuntu")) && on_path("apt-get") {
+        cmd("Kitty", &["sudo", "apt-get", "install", "-y", "kitty"])
+    } else if (is("fedora") || is("rhel")) && on_path("dnf") {
+        cmd("Kitty", &["sudo", "dnf", "install", "-y", "kitty"])
+    } else if (is("suse") || is("opensuse")) && on_path("zypper") {
+        cmd("Kitty", &["sudo", "zypper", "install", "-y", "kitty"])
+    } else {
+        None
+    }
+}
+
 /// `"foot -e {cmd}"` → `["foot", "-e", cmd…]` (`cmd` goes last without `{cmd}`).
 fn fill(template: &str, cmd: &[String]) -> Vec<String> {
     let mut out = Vec::new();

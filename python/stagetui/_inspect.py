@@ -27,3 +27,14 @@ def sessions() -> list[dict[str, Any]]:
     ``stagetui attach <name>``.
     """
     return json.loads(_core.sessions())
+
+
+def plugins(*, refresh: bool = False) -> list[dict[str, Any]]:
+    """Add-ons (pane types in their own program): the installed ones, and the
+    official ones you can install (video, web, 3D).
+
+    Each is a dict with ``name``, ``title``, ``installed``, ``package`` and ``about``.
+    Same as ``stagetui plugins --json``. ``refresh=True`` looks again (after
+    installing one while your program runs).
+    """
+    return json.loads(_core.plugins(refresh))

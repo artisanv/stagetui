@@ -18,17 +18,18 @@ use crate::style::{self, Rgb, Theme};
 use crate::text::{self, Direction};
 use crate::widgets::{
     Bar, Button, Card, Chat, Checkbox, Code, Diff, ImageView, Input, Log, Markdown, Permission,
-    Progress, Prompt, Select, Spinner, Table, Terminal, TextBlock, ToolCall, TreeItem, TreeView,
-    Variant, Widget, tool_from,
+    PluginView, Progress, Prompt, Select, Spinner, Table, Terminal, TextBlock, ToolCall, TreeItem,
+    TreeView, Variant, Widget, tool_from,
 };
 use crate::{Error, Result};
 
 /// Widget types, as written in app descriptions (`"type": "card"`).
-pub const WIDGET_TYPES: [&str; 27] = [
+pub const WIDGET_TYPES: [&str; 28] = [
     "stage",
     "split",
     "tabs",
     "workspaces",
+    "plugin",
     "modal",
     "pane",
     "bar",
@@ -82,7 +83,7 @@ pub struct AppSpec {
 }
 
 /// A pane type offered in the pane switcher menu.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PaneTypeSpec {
     pub name: String,
@@ -93,6 +94,12 @@ pub struct PaneTypeSpec {
     /// Built by the app (Python), not by stagetui's built-ins.
     #[serde(default)]
     pub custom: bool,
+    /// Served by a plugin program (video, web, 3D…).
+    #[serde(default)]
+    pub plugin: bool,
+    /// A plugin that isn't installed: picking it offers to install it.
+    #[serde(default)]
+    pub missing: bool,
 }
 
 fn default_theme() -> String {
@@ -393,6 +400,7 @@ pub enum Kind {
     Chat(Chat),
     Prompt(Prompt),
     Terminal(Terminal),
+    Plugin(PluginView),
 }
 
 impl Kind {
@@ -419,6 +427,7 @@ impl Kind {
             Self::Chat(w) => w,
             Self::Prompt(w) => w,
             Self::Terminal(w) => w,
+            Self::Plugin(w) => w,
             Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) | Self::Pane(_) => {
                 return None;
             }
@@ -448,6 +457,7 @@ impl Kind {
             Self::Chat(w) => w,
             Self::Prompt(w) => w,
             Self::Terminal(w) => w,
+            Self::Plugin(w) => w,
             Self::Stage(_) | Self::Split(_) | Self::Tabs(_) | Self::Modal(_) | Self::Pane(_) => {
                 return None;
             }
@@ -483,6 +493,7 @@ impl Kind {
             Self::Chat(_) => "chat",
             Self::Prompt(_) => "prompt",
             Self::Terminal(_) => "terminal",
+            Self::Plugin(_) => "plugin",
         }
     }
 
@@ -682,11 +693,11 @@ impl Tree {
             bindings,
             reduce_motion: spec.reduce_motion.unwrap_or(false)
                 || std::env::var("STAGETUI_REDUCE_MOTION").is_ok_and(|v| v == "1"),
-            pane_types: if spec.pane_types.is_empty() {
+            pane_types: crate::panes::with_plugins(if spec.pane_types.is_empty() {
                 crate::panes::builtin_types()
             } else {
                 spec.pane_types.clone()
-            },
+            }),
             counters: HashMap::new(),
         };
         for child in &spec.children {
@@ -803,7 +814,8 @@ impl Tree {
                     | Kind::Diff(_)
                     | Kind::Log(_)
                     | Kind::Chat(_)
-                    | Kind::Terminal(_),
+                    | Kind::Terminal(_)
+                    | Kind::Plugin(_),
                     _,
                 )
                 | (_, None) => None,
@@ -1691,6 +1703,14 @@ fn build_kind(kind: &str, spec: &NodeSpec) -> Result<Kind> {
             t.height = cells_prop(&p.height);
             Kind::Terminal(t)
         }
+        "plugin" => {
+            let mut v = PluginView::new(
+                text_content(spec).trim(),
+                p.args.clone().unwrap_or(Value::Null),
+            );
+            v.height = cells_prop(&p.height);
+            Kind::Plugin(v)
+        }
         _ => unreachable!("checked against WIDGET_TYPES"),
     })
 }
@@ -1733,6 +1753,7 @@ fn carry_state(new: &mut Kind, old: &Kind, spec: &NodeSpec) {
         (Kind::Chat(n), Kind::Chat(o)) => n.carry(o),
         (Kind::Prompt(n), Kind::Prompt(o)) => n.carry(o),
         (Kind::Terminal(n), Kind::Terminal(o)) => n.carry(o),
+        (Kind::Plugin(n), Kind::Plugin(o)) => n.carry(o),
         (Kind::ToolCall(n), Kind::ToolCall(o)) if spec.props.expanded.is_none() => {
             n.expanded = o.expanded;
         }

@@ -22,7 +22,7 @@ Apps use ``Stage*`` nouns::
 from __future__ import annotations
 
 from ._core import Canvas, StageError, __version__
-from ._inspect import fonts, inspect, sessions
+from ._inspect import fonts, inspect, plugins, sessions
 from .app import Driver, Snapshot, StageApp
 from .component import component
 from .harness import (
@@ -34,6 +34,7 @@ from .harness import (
     StageMarkdown,
     StagePane,
     StagePermission,
+    StagePlugin,
     StagePrompt,
     StageTerminal,
     StageToolCall,
@@ -85,6 +86,7 @@ __all__ = [
     "StageModal",
     "StagePane",
     "StagePermission",
+    "StagePlugin",
     "StageProgress",
     "StagePrompt",
     "StageSelect",
@@ -104,6 +106,7 @@ __all__ = [
     "fonts",
     "inspect",
     "pane_type",
+    "plugins",
     "sessions",
     "show",
 ]

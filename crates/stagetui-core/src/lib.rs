@@ -23,6 +23,7 @@ pub mod layout;
 pub mod motion;
 pub mod os;
 pub mod panes;
+pub mod plugins;
 pub mod reaper;
 pub mod render;
 pub mod runtime;

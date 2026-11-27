@@ -164,6 +164,19 @@ enum Command {
         /// The session name (optional when only one app is running).
         name: Option<String>,
     },
+    /// List the add-ons (video, web, 3D, your own), or install one.
+    ///
+    /// Examples:
+    ///   stagetui plugins                 # what is installed, what you can add
+    ///   stagetui plugins install video   # install the video add-on
+    Plugins {
+        /// `install <name>` to install an add-on.
+        #[command(subcommand)]
+        action: Option<PluginsAction>,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Reaper sidecar (internal).
     #[command(name = "__reaper", hide = true)]
     Reaper,
@@ -173,6 +186,15 @@ enum Command {
         /// Also create and track a POSIX shared-memory object with this name.
         #[arg(long)]
         shm: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginsAction {
+    /// Install an add-on into this Python (pip, or uv).
+    Install {
+        /// The add-on: video, web or 3d.
+        name: String,
     },
 }
 
@@ -271,6 +293,10 @@ where
             args,
         } => sessions::start(&app, name.as_deref(), detached, &args),
         Command::Stop { name } => sessions::stop(name.as_deref()),
+        Command::Plugins { action, json } => match action {
+            None => sessions::plugins(json),
+            Some(PluginsAction::Install { name }) => sessions::install_plugin(&name),
+        },
         Command::Reaper => stagetui_core::reaper::sidecar_main(),
         Command::ReaperSelftest { shm } => reaper_selftest(shm.as_deref()),
     }

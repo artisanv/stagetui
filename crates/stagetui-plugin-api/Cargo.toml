@@ -1,0 +1,15 @@
+[package]
+name = "stagetui-plugin-api"
+description = "Write new pane types (video, web, 3D, …) for stagetui: a small protocol and a serve() loop."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

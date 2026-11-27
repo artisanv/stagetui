@@ -57,7 +57,9 @@ New to Python? Start with **[Getting started](docs/getting-started.md)** — it 
 
 The core has everything for terminal apps: panes, chat, shell, code, diffs,
 pictures, Arabic, sessions. Heavy things are separate, so you only install what
-you use. When you first open one in an app, stagetui asks whether to install it.
+you use. When you first open one in an app, stagetui asks whether to install it —
+and you can write your own add-on in a few lines of Python
+([Add-ons](docs/plugins.md)).
 
 | Add-on | What it adds | Install |
 |---|---|---|

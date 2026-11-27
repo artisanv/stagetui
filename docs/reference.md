@@ -22,6 +22,14 @@ What the current terminal can do (same as `stagetui inspect`).
 Bundled fonts and which writing systems have fonts available.
 
 
+### `ts.plugins(*, refresh=False) -> list[dict]`
+Add-ons: installed ones and the official ones you can install — `name`, `title`,
+`installed`, `package`, `about`. Same as `stagetui plugins --json` ([Add-ons](plugins.md)).
+
+### `stagetui.plugin.Plugin` / `serve(plugin)`
+Write an add-on in Python: override `start`, `frame`, `key`, `mouse`, `call`; use
+`self.status(...)` and `self.event(...)`; finish the file with `serve(MyPlugin())`.
+
 ### `ts.sessions() -> list[dict]`
 The apps running right now that a terminal can attach to: `name`, `pid`, `app`, `cwd`, `started`.
 Same as `stagetui sessions --json` ([Sessions](sessions.md)).
@@ -125,6 +133,7 @@ All widgets accept `id`, `theme`, `accent` and (most) `animate`, `visible`,
 | `StageTerminal(command)` | command (`""` = your shell) or list | `cwd`, `title`, `height` | — |
 | `StageLog(text)` | starting text | `max_lines`, `filter`, `height` | — |
 | `StagePane(type, **options)` | a pane type | the type's options | `on_change(type)` |
+| `StagePlugin(name, **options)` | an add-on's name | its options; `on_<event>=` for its events | the add-on's events |
 | `StageWorkspaces(workspaces)` | `{"name": layout, …}` or a list of names | `active` | `on_change(index)` |
 
 ### Methods on every widget
@@ -146,6 +155,7 @@ bring it back — [Panes](panes.md#open-a-pane-in-its-own-window)). Containers a
 | `StageLog` | `append(text_or_lines)`, `clear()`, `filter(text)` |
 | `StagePane` | `set_type(type, **options)`, `switch(type)`, `type`, `content`, `detached` |
 | `StageCode` | `StageCode.from_file(path)` |
+| `StagePlugin` | `call(method, args=None)`, `restart()` |
 
 ### `@ts.pane_type(name, *, title=None, icon="cube")`
 Register a function returning a widget as a pane type (offered in every pane's menu).
@@ -178,6 +188,8 @@ Turns a function that returns a widget (or a list of widgets) into a reusable wi
 
 **Colors:** `"#rgb"`, `"#rrggbb"`, `"#rrggbbaa"`, `"blue"`, `"mint"`, `"amber"`,
 `"rose"`, `"violet"`, `"white"`, `"black"`, `"gray"`, `"red"`, `"transparent"`.
+
+`canvas.rgba()` gives the raw pixels (what an add-on sends as a frame).
 
 ## Errors
 

@@ -305,6 +305,82 @@ pub fn start(app: &str, name: Option<&str>, detached: bool, args: &[String]) -> 
     }
 }
 
+/// `stagetui plugins`
+pub fn plugins(json: bool) -> i32 {
+    let list = stagetui_core::plugins::report();
+    if json {
+        return match serde_json::to_string_pretty(&list) {
+            Ok(t) => print_line(&t),
+            Err(e) => fail(&e.into()),
+        };
+    }
+    let mut out = String::from("Add-ons (pane types in their own program):\n");
+    for p in &list {
+        let mark = if p.installed { "✓" } else { " " };
+        let about = p.about.clone().unwrap_or_else(|| p.title.clone());
+        out.push_str(&format!("\n {mark} {:<8} {about}", p.name));
+        if !p.installed && !p.available {
+            out.push_str("\n            coming soon");
+        } else if !p.installed
+            && let Some(pkg) = &p.package
+        {
+            out.push_str(&format!(
+                "\n            install: stagetui plugins install {}   ({pkg})",
+                p.name
+            ));
+        }
+    }
+    out.push_str("\n\nIn an app, picking one that isn't installed offers to install it.");
+    print_line(&out)
+}
+
+/// `stagetui plugins install <name>`
+pub fn install_plugin(name: &str) -> i32 {
+    let Some(k) = stagetui_core::plugins::known(name) else {
+        let names: Vec<&str> = stagetui_core::plugins::KNOWN
+            .iter()
+            .map(|k| k.name)
+            .collect();
+        return fail(&Error::friendly(
+            format!("No add-on called \"{name}\""),
+            format!("the add-ons are: {}", names.join(", ")),
+            "pick one of those, e.g. stagetui plugins install video",
+        ));
+    };
+    if !k.available {
+        return fail(&Error::friendly(
+            format!("The {} add-on isn't out yet", k.title),
+            "it is being built (Milestone 6) and isn't on PyPI yet",
+            "follow the project on GitHub (artisanv/stagetui) for its release",
+        ));
+    }
+    let Some(cmd) = stagetui_core::plugins::installer(k.package) else {
+        return fail(&Error::friendly(
+            format!("Can't install {} from here", k.title),
+            "this Python has no pip, and uv isn't installed",
+            format!("install it yourself: pip install {}", k.package),
+        ));
+    };
+    eprintln!("$ {}", stagetui_core::launch::shell_line(&cmd));
+    match Command::new(&cmd[0]).args(&cmd[1..]).status() {
+        Ok(s) if s.success() => {
+            stagetui_core::plugins::forget();
+            if stagetui_core::plugins::find(name).is_some() {
+                eprintln!("✓ {} is installed", k.title);
+                0
+            } else {
+                fail(&Error::friendly(
+                    format!("{} was installed, but stagetui can't find it", k.title),
+                    "its program isn't next to this Python or on the PATH",
+                    "open a new terminal (or activate your environment) and run `stagetui plugins`",
+                ))
+            }
+        }
+        Ok(_) => 1,
+        Err(e) => fail(&e.into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

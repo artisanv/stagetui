@@ -1490,6 +1490,7 @@ dependencies = [
  "serde_json",
  "signal-hook 0.4.6",
  "similar",
+ "stagetui-plugin-api",
  "syntect",
  "taffy",
  "tiny-skia",
@@ -1498,6 +1499,14 @@ dependencies = [
  "unicode-width",
  "vt100",
  "windows-sys",
+]
+
+[[package]]
+name = "stagetui-plugin-api"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

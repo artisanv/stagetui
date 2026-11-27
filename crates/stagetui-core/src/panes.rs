@@ -23,9 +23,54 @@ pub fn builtin_types() -> Vec<PaneTypeSpec> {
         name: (*n).into(),
         title: Some((*t).into()),
         icon: Some((*i).into()),
-        custom: false,
+        ..PaneTypeSpec::default()
     })
     .collect()
+}
+
+/// Add the plugins: installed ones, then the official add-ons that aren't
+/// installed yet (picking one offers to install it).
+pub fn with_plugins(mut types: Vec<PaneTypeSpec>) -> Vec<PaneTypeSpec> {
+    if std::env::var("STAGETUI_NO_PLUGINS").is_ok_and(|v| v == "1") {
+        return types;
+    }
+    for p in crate::plugins::installed() {
+        if !types.iter().any(|t| t.name == p.describe.name) {
+            types.push(PaneTypeSpec {
+                name: p.describe.name.clone(),
+                title: Some(p.describe.title.clone()),
+                icon: p.describe.icon.clone(),
+                plugin: true,
+                ..PaneTypeSpec::default()
+            });
+        }
+    }
+    for k in crate::plugins::KNOWN {
+        if !types.iter().any(|t| t.name == k.name) {
+            types.push(PaneTypeSpec {
+                name: k.name.into(),
+                title: Some(k.title.into()),
+                icon: Some(k.icon.into()),
+                plugin: true,
+                missing: true,
+                ..PaneTypeSpec::default()
+            });
+        }
+    }
+    types
+}
+
+/// The content of a plugin pane.
+pub fn plugin_content(name: &str, args: Value) -> NodeSpec {
+    NodeSpec {
+        kind: "plugin".into(),
+        content: json!(name),
+        props: crate::tree::Props {
+            args: (!args.is_null()).then_some(args),
+            ..crate::tree::Props::default()
+        },
+        ..NodeSpec::default()
+    }
 }
 
 /// Content for a built-in pane type (`None` for types the app builds itself).
@@ -134,12 +179,16 @@ impl Menu {
                     .as_deref()
                     .and_then(|i| crate::widgets::icon(i).ok())
                     .unwrap_or("•");
+                let title = t.title.clone().unwrap_or_else(|| t.name.clone());
                 MenuItem {
                     key: t.name.clone(),
-                    label: format!(
-                        "{icon}  {}",
-                        t.title.clone().unwrap_or_else(|| t.name.clone())
-                    ),
+                    label: if t.missing {
+                        let soon = crate::plugins::known(&t.name).is_some_and(|k| !k.available);
+                        let note = if soon { "coming soon" } else { "install…" };
+                        format!("{icon}  {title}  ({note})")
+                    } else {
+                        format!("{icon}  {title}")
+                    },
                     current: t.name == current,
                 }
             })

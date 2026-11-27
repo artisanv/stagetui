@@ -64,6 +64,17 @@ fn sessions(py: Python<'_>) -> PyResult<String> {
     serde_json::to_string(&list).map_err(|e| to_py(py, &e.into()))
 }
 
+/// Add-ons: installed plugins and the official ones (JSON list), like `stagetui plugins --json`.
+#[pyfunction]
+#[pyo3(signature = (refresh = false))]
+fn plugins(py: Python<'_>, refresh: bool) -> PyResult<String> {
+    if refresh {
+        stagetui_core::plugins::forget();
+    }
+    let list = py.detach(stagetui_core::plugins::report);
+    serde_json::to_string(&list).map_err(|e| to_py(py, &e.into()))
+}
+
 /// The default workspaces file of an app (by its class name).
 #[pyfunction]
 fn workspace_file(app: &str) -> String {
@@ -191,6 +202,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         && !exe.is_empty()
     {
         stagetui_cli::set_python(exe.clone());
+        // Add-ons install into (and are found next to) this Python.
+        stagetui_core::plugins::set_python(&exe);
         reaper::global().set_launcher(vec![
             exe,
             "-I".into(),
@@ -205,6 +218,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(inspect, m)?)?;
     m.add_function(wrap_pyfunction!(fonts, m)?)?;
     m.add_function(wrap_pyfunction!(sessions, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins, m)?)?;
     m.add_function(wrap_pyfunction!(workspace_file, m)?)?;
     m.add_function(wrap_pyfunction!(workspace_names, m)?)?;
     m.add_function(wrap_pyfunction!(register_image, m)?)?;

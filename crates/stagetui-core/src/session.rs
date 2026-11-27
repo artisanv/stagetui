@@ -24,8 +24,42 @@ use crate::tree::{AppSpec, IRect, Kind, NodeSpec, Tree};
 use crate::widgets::{Card, Cx, PaintCx, Reaction, Widget, draw_box, fill, scrollbar};
 use crate::workspace::Layout;
 
-/// The buttons of the "Leave?" prompt.
-const LEAVE_BUTTONS: [&str; 3] = ["Detach", "Quit app", "Cancel"];
+/// An install running in a pane, and what to do when it is done.
+#[derive(Debug, Clone)]
+struct Install {
+    pane: usize,
+    node: usize,
+    after: After,
+}
+
+#[derive(Debug, Clone)]
+enum After {
+    /// Switch the pane to this add-on.
+    Plugin(String),
+    /// A picture terminal: switch the pane back to this type (it then opens there).
+    Pictures(String),
+}
+
+/// What an open dialog asks.
+#[derive(Debug, Clone, PartialEq)]
+enum Ask {
+    /// Detach, quit the app, or cancel (q in an attached window).
+    Leave,
+    /// Install an add-on for this pane?
+    Install { pane: usize, plugin: String },
+    /// Install a terminal that shows real pictures?
+    Pictures { pane: usize },
+}
+
+#[derive(Debug, Clone)]
+struct Dialog {
+    ask: Ask,
+    title: String,
+    lines: Vec<String>,
+    buttons: Vec<String>,
+    hint: String,
+    selected: usize,
+}
 /// In a popped-out pane's empty spot, and in its window's header.
 const PLACEHOLDER_BUTTON: &str = "↙ Bring it back";
 const POPOUT_BUTTON: &str = "↙ Put back";
@@ -117,8 +151,8 @@ pub struct Session {
     detachable: bool,
     /// The session's name, for "Leave <name>?".
     session_name: Option<String>,
-    /// The open "Leave?" prompt: the selected button (Detach, Quit app, Cancel).
-    leave: Option<usize>,
+    /// An open question ("Leave?", "Install?", "Real pictures?").
+    dialog: Option<Dialog>,
     /// Popped-out panes' windows.
     windows: HashMap<usize, WindowState>,
     /// The popped-out pane whose window the current input comes from.
@@ -126,6 +160,16 @@ pub struct Session {
     /// Panes (ids) that need a new window, and panes brought back.
     popouts: Vec<String>,
     popins: Vec<String>,
+    /// A pane that pops out into a specific terminal (for real pictures).
+    popout_terminal: HashMap<String, String>,
+    /// Add-ons and terminals being installed, shown in a pane.
+    installing: Vec<Install>,
+    /// The window in use shows real pictures (not blocks).
+    pictures: bool,
+    /// A terminal here that does (`"ghostty"`, `"kitty"`, `"foot"`…).
+    picture_terminal: Option<String>,
+    /// Panes already offered real pictures.
+    pictures_offered: std::collections::HashSet<usize>,
     frames: HashMap<usize, FrameClock>,
     modal_return: Vec<(usize, Option<usize>)>,
     autofocused: bool,
@@ -176,10 +220,15 @@ impl Session {
             detach: false,
             detachable: false,
             session_name: None,
-            leave: None,
+            dialog: None,
             windows: HashMap::new(),
             view_pane: None,
             popouts: Vec::new(),
+            popout_terminal: HashMap::new(),
+            installing: Vec::new(),
+            pictures: true,
+            picture_terminal: None,
+            pictures_offered: std::collections::HashSet::new(),
             popins: Vec::new(),
             frames: HashMap::new(),
             modal_return: Vec::new(),
@@ -370,7 +419,29 @@ impl Session {
 
     /// Whether the "Leave?" prompt is open.
     pub fn leave_prompt_open(&self) -> bool {
-        self.leave.is_some()
+        self.dialog.as_ref().is_some_and(|d| d.ask == Ask::Leave)
+    }
+
+    /// The open question, if any (`"leave"`, `"install"`, `"pictures"`).
+    pub fn dialog_open(&self) -> Option<&'static str> {
+        self.dialog.as_ref().map(|d| match d.ask {
+            Ask::Leave => "leave",
+            Ask::Install { .. } => "install",
+            Ask::Pictures { .. } => "pictures",
+        })
+    }
+
+    fn ask(&mut self, ask: Ask, title: String, lines: Vec<String>, buttons: &[&str], hint: &str) {
+        self.dialog = Some(Dialog {
+            ask,
+            title,
+            lines,
+            buttons: buttons.iter().map(|b| (*b).to_string()).collect(),
+            hint: hint.into(),
+            selected: 0,
+        });
+        self.menu = None;
+        self.dirty = true;
     }
 
     /// Someone pressed q / Ctrl+C / Esc to leave. In an attached window, ask
@@ -382,121 +453,140 @@ impl Session {
             return;
         }
         if self.detachable && !self.quit {
-            self.leave = Some(0);
-            self.menu = None;
-            self.dirty = true;
+            let title = match &self.session_name {
+                Some(n) => format!("Leave \"{n}\"?"),
+                None => "Leave this app?".to_string(),
+            };
+            self.ask(
+                Ask::Leave,
+                title,
+                vec![
+                    "Detach: it keeps running, come back later.".into(),
+                    "Quit: the app stops for every window.".into(),
+                ],
+                &["Detach", "Quit app", "Cancel"],
+                "d detach · q quit · Esc cancel · ← → choose",
+            );
         } else {
             self.request_quit();
         }
     }
 
-    fn leave_key(&mut self, k: Key) {
-        let Some(sel) = self.leave else { return };
+    fn dialog_key(&mut self, k: Key) {
+        let Some(d) = &mut self.dialog else { return };
+        let n = d.buttons.len().max(1);
+        let sel = d.selected;
+        let last = n - 1;
+        let shortcut = |c: char| match (&d.ask, c) {
+            (Ask::Leave, 'd') => Some(0),
+            (Ask::Leave, 'q') => Some(1),
+            (Ask::Leave, 'c' | 'n') => Some(2),
+            (_, 'i' | 'y') => Some(0),
+            (_, 'n') => Some(last),
+            _ => None,
+        };
         let choice = match k.code {
-            Code::Char('c') if k.mods.ctrl => Some(1),
+            Code::Char('c') if k.mods.ctrl => Some(if d.ask == Ask::Leave { 1 } else { last }),
             Code::Enter | Code::Char(' ') => Some(sel),
-            Code::Char('d') => Some(0),
-            Code::Char('q') => Some(1),
-            Code::Esc | Code::Char('c') | Code::Char('n') => Some(2),
+            Code::Esc => Some(last),
+            Code::Char(c) => shortcut(c),
             Code::Right | Code::Down => {
-                self.leave = Some((sel + 1) % 3);
+                d.selected = (sel + 1) % n;
                 None
             }
             Code::Tab => {
-                self.leave = Some(if k.mods.shift {
-                    (sel + 2) % 3
+                d.selected = if k.mods.shift {
+                    (sel + n - 1) % n
                 } else {
-                    (sel + 1) % 3
-                });
+                    (sel + 1) % n
+                };
                 None
             }
             Code::Left | Code::Up => {
-                self.leave = Some((sel + 2) % 3);
+                d.selected = (sel + n - 1) % n;
                 None
             }
             _ => None,
         };
         self.dirty = true;
         if let Some(c) = choice {
-            self.leave_choose(c);
+            self.dialog_choose(c);
         }
     }
 
-    fn leave_choose(&mut self, choice: usize) {
-        self.leave = None;
+    fn dialog_choose(&mut self, choice: usize) {
+        let Some(d) = self.dialog.take() else { return };
         self.dirty = true;
-        match choice {
-            0 => self.detach = true,
-            1 => self.request_quit(),
+        match (d.ask, choice) {
+            (Ask::Leave, 0) => self.detach = true,
+            (Ask::Leave, 1) => self.request_quit(),
+            (Ask::Install { pane, plugin }, 0) => self.install_plugin(pane, &plugin),
+            (Ask::Pictures { pane }, 0) => self.install_picture_terminal(pane),
             _ => {}
         }
     }
 
-    /// The prompt's box and its three buttons, centered on `screen`.
-    fn leave_rects(&self, screen: Rect) -> Option<(Rect, [Rect; 3])> {
-        self.leave?;
-        let w = 50.min(screen.width);
-        let h = 9.min(screen.height);
+    /// The dialog's box and its buttons, centered on `screen`.
+    fn dialog_rects(&self, screen: Rect) -> Option<(Rect, Vec<Rect>)> {
+        let d = self.dialog.as_ref()?;
+        let widest = d
+            .lines
+            .iter()
+            .chain([&d.hint, &d.title])
+            .map(|l| text::width(l) as u16)
+            .max()
+            .unwrap_or(0);
+        let w = (widest + 8).clamp(50, 72).min(screen.width);
+        let h = (d.lines.len() as u16 + 7).min(screen.height);
         let rect = Rect::new(
             screen.x + (screen.width - w) / 2,
             screen.y + (screen.height - h) / 2,
             w,
             h,
         );
-        let widths = LEAVE_BUTTONS.map(|l| l.chars().count() as u16 + 4);
-        let total: u16 = widths.iter().sum::<u16>() + 2 * 2;
+        let widths: Vec<u16> = d
+            .buttons
+            .iter()
+            .map(|l| text::width(l) as u16 + 4)
+            .collect();
+        let total: u16 = widths.iter().sum::<u16>() + 2 * (widths.len() as u16).saturating_sub(1);
         let mut x = rect.x + rect.width.saturating_sub(total) / 2;
-        let y = (rect.y + 5).min(rect.bottom().saturating_sub(3));
-        let mut buttons = [Rect::default(); 3];
-        for (b, w) in buttons.iter_mut().zip(widths) {
-            *b = Rect::new(x, y, w, 1).intersection(rect);
+        let y = (rect.y + 3 + d.lines.len() as u16).min(rect.bottom().saturating_sub(3));
+        let mut buttons = Vec::new();
+        for w in widths {
+            buttons.push(Rect::new(x, y, w, 1).intersection(rect));
             x += w + 2;
         }
         Some((rect, buttons))
     }
 
-    fn paint_leave(&self, frame: &mut Frame) {
-        let Some(sel) = self.leave else { return };
-        let Some((rect, buttons)) = self.leave_rects(frame.area()) else {
+    fn paint_dialog(&self, frame: &mut Frame) {
+        let Some(d) = &self.dialog else { return };
+        let Some((rect, buttons)) = self.dialog_rects(frame.area()) else {
             return;
         };
         let t = &self.tree.theme;
         frame.dim_except(Rect::default(), t.bg, 0.55);
         frame.occlude(rect);
         fill(frame, rect, t.fg, t.surface);
-        let title = match &self.session_name {
-            Some(n) => format!("Leave \"{n}\"?"),
-            None => "Leave this app?".to_string(),
-        };
         draw_box(
             frame,
             rect,
             true,
             t.accent,
             t.bg,
-            Some(&title),
+            Some(&d.title),
             t.accent,
             false,
         );
         let inner = rect.width.saturating_sub(6);
         let text = Style::new().fg(t.fg.color()).bg(t.surface.color());
         let muted = Style::new().fg(t.muted.color()).bg(t.surface.color());
-        frame.put_str(
-            rect.x + 3,
-            rect.y + 2,
-            "Detach: it keeps running, come back later.",
-            inner,
-            text,
-        );
-        frame.put_str(
-            rect.x + 3,
-            rect.y + 3,
-            "Quit: the app stops for every window.",
-            inner,
-            text,
-        );
-        for (k, (b, label)) in buttons.iter().zip(LEAVE_BUTTONS).enumerate() {
-            let (fg, bg) = if k == sel {
+        for (k, line) in d.lines.iter().enumerate() {
+            frame.put_str(rect.x + 3, rect.y + 2 + k as u16, line, inner, text);
+        }
+        for (k, (b, label)) in buttons.iter().zip(&d.buttons).enumerate() {
+            let (fg, bg) = if k == d.selected {
                 (t.bg, t.accent)
             } else {
                 (t.fg, t.surface.mix(t.fg, 0.12))
@@ -505,11 +595,10 @@ impl Session {
             let style = Style::new().fg(fg.color()).bg(bg.color());
             frame.put_str(b.x + 2, b.y, label, b.width.saturating_sub(2), style);
         }
-        let keys = "d detach · q quit · Esc cancel · ← → choose";
         frame.put_str(
             rect.x + 3,
             rect.bottom().saturating_sub(2),
-            keys,
+            &d.hint,
             inner,
             muted,
         );
@@ -574,6 +663,9 @@ impl Session {
             &mut self.root_scroll,
         );
         self.prepass(cols, rows);
+        self.check_installs();
+        self.collect_widget_events();
+        self.offer_pictures();
         if !self.autofocused {
             self.autofocused = true;
             if self.focus.is_none() {
@@ -999,6 +1091,20 @@ impl Session {
         if pb.ptype == name {
             return;
         }
+        let plugin = self
+            .tree
+            .pane_types
+            .iter()
+            .find(|t| t.name == name && t.plugin)
+            .cloned();
+        if plugin
+            .as_ref()
+            .is_some_and(|t| t.missing && crate::plugins::find(name).is_none())
+        {
+            // An add-on that isn't installed: offer to install it.
+            self.ask_install(pane, name);
+            return;
+        }
         let stashed = self.tree.nodes[pane]
             .children
             .iter()
@@ -1019,7 +1125,10 @@ impl Session {
                 "pane",
                 json!({ "type": name, "built": true, "restored": true }),
             );
-        } else if let Some(spec) = crate::panes::builtin_content(name).filter(|_| !custom) {
+        } else if let Some(spec) = crate::panes::builtin_content(name)
+            .filter(|_| !custom)
+            .or_else(|| plugin.map(|_| crate::panes::plugin_content(name, Value::Null)))
+        {
             let _ = self.pane_add(pane, name, &spec);
             self.emit(
                 pane,
@@ -1334,6 +1443,242 @@ impl Session {
         );
     }
 
+    // ----- add-ons and real pictures ---------------------------------------
+
+    /// Whether the window in use shows real pictures (set by the runtime).
+    pub fn set_pictures(&mut self, yes: bool) {
+        self.pictures = yes;
+    }
+
+    /// A terminal here that shows real pictures (set by the runtime).
+    pub fn set_picture_terminal(&mut self, name: Option<String>) {
+        self.picture_terminal = name;
+    }
+
+    /// The terminal a pane asked to pop out into, if a specific one.
+    pub fn popout_terminal(&mut self, pane_id: &str) -> Option<String> {
+        self.popout_terminal.remove(pane_id)
+    }
+
+    /// Offer to install an add-on for `pane`.
+    fn ask_install(&mut self, pane: usize, plugin: &str) {
+        let Some(k) = crate::plugins::known(plugin) else {
+            let _ = self.notify(
+                &format!("No add-on called \"{plugin}\" is known"),
+                Some("info"),
+                None,
+                Duration::from_secs(4),
+            );
+            return;
+        };
+        if !k.available {
+            let _ = self.notify(
+                &format!("The {} add-on is coming soon", k.title),
+                Some("info"),
+                None,
+                Duration::from_secs(5),
+            );
+            return;
+        }
+        self.ask(
+            Ask::Install {
+                pane,
+                plugin: plugin.to_string(),
+            },
+            format!("Install {}?", k.title),
+            vec![
+                format!("{} needs the {} add-on: {}.", k.title, k.package, k.about),
+                "It goes into this app's Python. No admin password needed.".into(),
+            ],
+            &["Install", "Not now"],
+            "Enter install · Esc not now · ← → choose",
+        );
+    }
+
+    /// Install an add-on: its output shows in the pane, then the pane switches to it.
+    fn install_plugin(&mut self, pane: usize, plugin: &str) {
+        let Some(k) = crate::plugins::known(plugin) else {
+            return;
+        };
+        match crate::plugins::installer(k.package) {
+            Some(cmd) => self.run_install(
+                pane,
+                cmd,
+                After::Plugin(plugin.to_string()),
+                &format!("Installing {}", k.title),
+            ),
+            None => {
+                let _ = self.notify(
+                    &format!("Can't install {} from here: no pip or uv. In a terminal run: pip install {}", k.title, k.package),
+                    Some("warning"),
+                    None,
+                    Duration::from_secs(10),
+                );
+            }
+        }
+    }
+
+    /// Install a terminal with real pictures, then open `pane` in it.
+    fn install_picture_terminal(&mut self, pane: usize) {
+        match crate::launch::picture_install() {
+            Some((name, cmd)) => {
+                let back = match &self.tree.nodes[pane].kind {
+                    Kind::Pane(pb) => pb.ptype.clone(),
+                    _ => return,
+                };
+                self.run_install(
+                    pane,
+                    cmd,
+                    After::Pictures(back),
+                    &format!("Installing {name}"),
+                );
+            }
+            None => {
+                let _ = self.notify(
+                    "Install Ghostty, Kitty, WezTerm or foot for real pictures (see `stagetui doctor`)",
+                    Some("info"),
+                    None,
+                    Duration::from_secs(10),
+                );
+            }
+        }
+    }
+
+    /// Run an install command in a terminal inside `pane` (a password can be typed there).
+    fn run_install(&mut self, pane: usize, cmd: Vec<String>, after: After, label: &str) {
+        let spec = NodeSpec {
+            kind: "terminal".into(),
+            content: json!(cmd),
+            props: crate::tree::Props {
+                title: Some(label.to_string()),
+                ..crate::tree::Props::default()
+            },
+            ..NodeSpec::default()
+        };
+        if let Some(old) = self.installing.iter().position(|j| j.pane == pane) {
+            self.installing.remove(old);
+        }
+        if let Ok(node) = self.pane_add(pane, "installing", &spec) {
+            self.focus = Some(node);
+            self.installing.push(Install { pane, node, after });
+        }
+    }
+
+    /// Finished installs: switch the pane to what was installed.
+    fn check_installs(&mut self) {
+        let mut k = 0;
+        while k < self.installing.len() {
+            let job = &self.installing[k];
+            let n = &self.tree.nodes[job.node];
+            let exit = n
+                .widget()
+                .and_then(|w| w.describe().get("exit_code").and_then(Value::as_u64));
+            if n.alive && exit.is_none() {
+                k += 1;
+                continue;
+            }
+            let job = self.installing.remove(k);
+            match (exit, job.after) {
+                (Some(0), After::Plugin(name)) => {
+                    crate::plugins::forget();
+                    let found = crate::plugins::find(&name);
+                    for t in &mut self.tree.pane_types {
+                        if t.name == name {
+                            t.missing = found.is_none();
+                        }
+                    }
+                    let title = found.map_or_else(|| name.clone(), |p| p.describe.title);
+                    self.tree.remove(job.node);
+                    self.switch_pane(job.pane, &name);
+                    let _ = self.notify(
+                        &format!("{title} is installed"),
+                        Some("check"),
+                        None,
+                        Duration::from_secs(4),
+                    );
+                }
+                (Some(0), After::Pictures(back)) => {
+                    self.picture_terminal = crate::launch::picture_terminal();
+                    self.pictures_offered.remove(&job.pane);
+                    self.tree.remove(job.node);
+                    self.switch_pane(job.pane, &back);
+                }
+                (Some(_), _) => {
+                    let _ = self.notify(
+                        "The install didn't work: its output is in the pane",
+                        Some("warning"),
+                        None,
+                        Duration::from_secs(8),
+                    );
+                }
+                (None, _) => {}
+            }
+            self.dirty = true;
+        }
+    }
+
+    /// Things widgets did on their own (plugin events) go to the app.
+    fn collect_widget_events(&mut self) {
+        for i in 0..self.tree.nodes.len() {
+            if !self.tree.nodes[i].alive {
+                continue;
+            }
+            let events = self.tree.nodes[i]
+                .kind
+                .widget_mut()
+                .map(|w| w.take_events())
+                .unwrap_or_default();
+            for (name, value) in events {
+                self.emit(i, &name, value);
+            }
+        }
+    }
+
+    /// A picture add-on on screen in a terminal that draws blocks: open it in
+    /// a terminal with real pictures, or offer to install one.
+    fn offer_pictures(&mut self) {
+        if self.pictures || self.dialog.is_some() {
+            return;
+        }
+        let popped = self.tree.popped_nodes();
+        let showing = (0..self.tree.nodes.len()).find_map(|i| {
+            let n = &self.tree.nodes[i];
+            let Kind::Plugin(v) = &n.kind else {
+                return None;
+            };
+            if !n.alive || n.bounds.is_empty() || popped.contains(&i) {
+                return None;
+            }
+            let wants = crate::plugins::find(&v.name).is_none_or(|p| p.describe.pictures);
+            let pane = self.typed_pane(&format!("#{}", n.id)).ok()?;
+            (wants && !self.pictures_offered.contains(&pane)).then_some(pane)
+        });
+        let Some(pane) = showing else { return };
+        self.pictures_offered.insert(pane);
+        if let Some(term) = self.picture_terminal.clone() {
+            let id = self.tree.nodes[pane].id.clone();
+            self.popout_terminal.insert(id, term.clone());
+            self.pop_out_idx(pane);
+            let _ = self.notify(
+                &format!("Opened in {term}: this terminal draws pictures with blocks"),
+                Some("info"),
+                None,
+                Duration::from_secs(5),
+            );
+        } else if let Some((name, _)) = crate::launch::picture_install() {
+            self.ask(
+                Ask::Pictures { pane },
+                "Real pictures?".into(),
+                vec![
+                    "This terminal draws pictures with blocks.".into(),
+                    format!("Install {name}? This pane will open there, sharp."),
+                ],
+                &[&format!("Install {name}"), "Not now"],
+                "Enter install · Esc not now · ← → choose",
+            );
+        }
+    }
+
     // ----- workspaces -----------------------------------------------------
 
     /// The workspace tabs (`StageWorkspaces`), if the app has them.
@@ -1584,17 +1929,11 @@ impl Session {
     }
 
     pub(crate) fn hints(&self) -> Vec<(String, String)> {
-        if self.leave.is_some() {
-            return [
-                ("Enter", "Choose"),
-                ("o", "Pop out"),
-                ("d", "Detach"),
-                ("q", "Quit app"),
-                ("Esc", "Cancel"),
-            ]
-            .iter()
-            .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
-            .collect();
+        if self.dialog.is_some() {
+            return [("Enter", "Choose"), ("← →", "Move"), ("Esc", "Cancel")]
+                .iter()
+                .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
+                .collect();
         }
         if self.prefix_armed {
             return [
@@ -1603,6 +1942,7 @@ impl Session {
                 ("-", "Split ↓"),
                 ("x", "Close pane"),
                 ("Space", "Pane type"),
+                ("o", "Pop out"),
                 ("d", "Detach"),
                 ("1-9", "Workspace"),
                 ("q", "Quit"),
@@ -1686,7 +2026,7 @@ impl Session {
             self.paint_modal(m, &mut frame, &hints);
         }
         self.paint_toasts(&mut frame);
-        self.paint_leave(&mut frame);
+        self.paint_dialog(&mut frame);
         frame
     }
 
@@ -2316,6 +2656,15 @@ impl Session {
         match r {
             Reaction::Ignored => {}
             Reaction::Redraw => self.dirty = true,
+            Reaction::Emit("install_plugin", value) => {
+                self.dirty = true;
+                if let (Ok(pane), Some(plugin)) = (
+                    self.typed_pane(&format!("#{}", self.tree.nodes[i].id)),
+                    value.as_str(),
+                ) {
+                    self.ask_install(pane, plugin);
+                }
+            }
             Reaction::Emit(name, value) => {
                 self.dirty = true;
                 self.emit(i, name, value);
@@ -2339,8 +2688,8 @@ impl Session {
     }
 
     fn key(&mut self, k: Key) {
-        if self.leave.is_some() {
-            self.leave_key(k);
+        if self.dialog.is_some() {
+            self.dialog_key(k);
             return;
         }
         if self.menu.is_some() {
@@ -2627,19 +2976,24 @@ impl Session {
 
     fn mouse(&mut self, m: Mouse) {
         let (x, y) = (m.x, m.y);
-        if let Some((rect, buttons)) = self.leave_rects(Rect::new(0, 0, self.size.0, self.size.1)) {
+        if let Some((rect, buttons)) = self.dialog_rects(Rect::new(0, 0, self.size.0, self.size.1))
+        {
             let at = buttons.iter().position(|b| b.contains((x, y).into()));
             match m.kind {
                 MouseKind::Down(_) => match at {
-                    Some(k) => self.leave_choose(k),
-                    None if !rect.contains((x, y).into()) => self.leave_choose(2),
+                    Some(k) => self.dialog_choose(k),
+                    None if !rect.contains((x, y).into()) => {
+                        let last = buttons.len().saturating_sub(1);
+                        self.dialog_choose(last);
+                    }
                     None => {}
                 },
                 MouseKind::Move => {
                     if let Some(k) = at
-                        && self.leave != Some(k)
+                        && let Some(d) = &mut self.dialog
+                        && d.selected != k
                     {
-                        self.leave = Some(k);
+                        d.selected = k;
                         self.dirty = true;
                     }
                 }
@@ -3328,6 +3682,81 @@ mod tests {
         assert_eq!(s.query("#b").unwrap()["detached"], false);
     }
 
+    const ADDON: &str = r##"{"children":[{"type":"split","children":[
+        {"type":"pane","content":"pulse","props":{"id":"v"},"children":[{"type":"plugin","content":"no-such-add-on"}]},
+        {"type":"pane","content":"markdown","props":{"id":"m"},"children":[{"type":"markdown","content":"# مَرْحَبًا Hello 日本語 नमस्ते"}]}]}]}"##;
+
+    #[test]
+    fn picture_add_ons_open_where_pictures_are_real() {
+        let mut s = session(ADDON);
+        // A terminal with real pictures: nothing to do.
+        s.frame(100, 30);
+        assert!(s.take_popouts().is_empty());
+        // Blocks here, foot installed: the add-on's pane opens in foot, once.
+        s.set_pictures(false);
+        s.set_picture_terminal(Some("foot".into()));
+        s.frame(100, 30);
+        assert_eq!(s.take_popouts(), ["v"]);
+        assert_eq!(s.popout_terminal("v").as_deref(), Some("foot"));
+        let v = s.tree().require("#v").unwrap();
+        s.pane_window_closed(v);
+        s.frame(100, 30);
+        assert!(s.take_popouts().is_empty(), "brought back: not again");
+        // No such terminal: offer to install one (where we know how).
+        let mut s = session(ADDON);
+        s.set_pictures(false);
+        s.set_picture_terminal(None);
+        let text = s.frame(100, 30).text();
+        if crate::launch::picture_install().is_some() {
+            assert_eq!(s.dialog_open(), Some("pictures"));
+            assert!(s.frame(100, 30).text().contains("Real pictures?"), "{text}");
+            s.press("esc").unwrap();
+            assert_eq!(s.dialog_open(), None);
+        }
+        assert!(s.take_popouts().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_install_runs_in_the_pane_then_the_pane_switches_back() {
+        let mut s = session(ADDON);
+        s.frame(100, 30);
+        let v = s.tree().require("#v").unwrap();
+        s.run_install(
+            v,
+            vec![
+                "sh".into(),
+                "-c".into(),
+                "echo installing مرحبا; exit 0".into(),
+            ],
+            After::Pictures("markdown".into()),
+            "Installing Ghostty",
+        );
+        assert_eq!(s.query("#v").unwrap()["pane_type"], "installing");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !s.installing.is_empty() && std::time::Instant::now() < deadline {
+            s.frame(100, 30);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(s.installing.is_empty(), "the install finished");
+        assert_eq!(s.query("#v").unwrap()["pane_type"], "markdown");
+        // A failed install leaves its output on screen.
+        s.run_install(
+            v,
+            vec!["sh".into(), "-c".into(), "echo nope; exit 2".into()],
+            After::Plugin("video".into()),
+            "Installing Video",
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !s.installing.is_empty() && std::time::Instant::now() < deadline {
+            s.frame(100, 30);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let text = s.frame(100, 30).text();
+        assert_eq!(s.query("#v").unwrap()["pane_type"], "installing");
+        assert!(text.contains("didn't work"), "{text}");
+    }
+
     #[test]
     fn q_in_an_attached_window_asks_before_quitting() {
         let mut s =
@@ -3374,7 +3803,7 @@ mod tests {
         s.press("enter").unwrap(); // Cancel
         assert!(!s.leave_prompt_open() && !s.quit_requested() && !s.take_detach());
         s.press("q").unwrap();
-        let (_, buttons) = s.leave_rects(Rect::new(0, 0, 80, 24)).unwrap();
+        let (_, buttons) = s.dialog_rects(Rect::new(0, 0, 80, 24)).unwrap();
         let quit = buttons[1];
         s.click_at(quit.x + 1, quit.y);
         assert!(s.quit_requested());

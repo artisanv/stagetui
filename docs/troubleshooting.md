@@ -78,6 +78,11 @@ stagetui doctor
 : The app was started with `python app.py`, so it lives in this terminal.
   Quit it and start it with `stagetui start app.py` instead.
 
+**An add-on doesn't show up in the pane menu**
+: stagetui looks for programs named `stagetui-plugin-<name>` next to your Python,
+  in `STAGETUI_PLUGIN_PATH` and on your `PATH`. Check with `stagetui plugins`. A
+  script must be executable (`chmod +x`).
+
 **A pane's window doesn't open**
 : stagetui opens a window of the terminal you are in. If that doesn't work (or
   you prefer another one), tell it which: `STAGETUI_LAUNCHER="alacritty -e {cmd}"`.
@@ -101,6 +106,8 @@ stagetui doctor
 | `STAGETUI_REDUCE_MOTION=1` | Turn off animations |
 | `STAGETUI_NO_SESSION=1` | Don't let other terminals attach to apps run with `python app.py` |
 | `STAGETUI_SESSION=name` | The session name to use ([Sessions](sessions.md)) |
+| `STAGETUI_PLUGIN_PATH=dir1:dir2` | Extra folders with add-ons ([Add-ons](plugins.md)) |
+| `STAGETUI_NO_PLUGINS=1` | Don't offer add-ons in pane menus |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How a pane opens in its own window ([Panes](panes.md#open-a-pane-in-its-own-window)) |
 
 ## Your terminal is always restored

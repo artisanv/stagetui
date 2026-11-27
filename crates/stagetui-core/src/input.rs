@@ -164,6 +164,42 @@ impl Key {
         Ok(Self::new(code, mods))
     }
 
+    /// The name `Key::parse` understands, e.g. `ctrl+s`, `space`, `up`, `f5`.
+    pub fn name(&self) -> String {
+        let mut s = String::new();
+        for (on, name) in [
+            (self.mods.ctrl, "ctrl+"),
+            (self.mods.alt, "alt+"),
+            (self.mods.sup, "super+"),
+            (self.mods.shift, "shift+"),
+        ] {
+            if on {
+                s.push_str(name);
+            }
+        }
+        let key = match self.code {
+            Code::Char(' ') => "space".to_string(),
+            Code::Char(c) => c.to_lowercase().to_string(),
+            Code::Enter => "enter".into(),
+            Code::Esc => "esc".into(),
+            Code::Tab => "tab".into(),
+            Code::Backspace => "backspace".into(),
+            Code::Delete => "delete".into(),
+            Code::Insert => "insert".into(),
+            Code::Up => "up".into(),
+            Code::Down => "down".into(),
+            Code::Left => "left".into(),
+            Code::Right => "right".into(),
+            Code::Home => "home".into(),
+            Code::End => "end".into(),
+            Code::PageUp => "pageup".into(),
+            Code::PageDown => "pagedown".into(),
+            Code::F(n) => format!("f{n}"),
+        };
+        s.push_str(&key);
+        s
+    }
+
     /// A short human label, e.g. `Ctrl+S`, `Tab`, `?`.
     pub fn label(&self) -> String {
         let mut s = String::new();
