@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a5] — 2026-11-27
+
 ### Added
 - A picture gallery in the README: every example, drawn by stagetui itself.
   `python scripts/screenshots.py` makes the pictures again from the real examples.
