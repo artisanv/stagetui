@@ -1,10 +1,9 @@
 # stagetui
 
-> [!WARNING]
-> **Work in progress — not finished yet.** stagetui is under active development
-> (Milestone 6 of 6). APIs will change, it has mostly been tested by hand on Linux,
-> and the PyPI release is an early alpha. Please don't use it for real work today.
-> Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
+> [!NOTE]
+> **Alpha.** stagetui works and is tested on Linux, macOS and Windows. Names and
+> options may still change before version 1.0, the first stable release — see the
+> [roadmap](#roadmap).
 
 **A terminal UI library with sophisticated, fun options — and Blender-like flexibility.**
 Split the screen into panes and make each one show anything — a shell, files, code,
