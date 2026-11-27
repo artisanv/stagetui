@@ -28,6 +28,7 @@ The protocol is the same as the Rust crate ``stagetui-plugin-api``.
 from __future__ import annotations
 
 import json
+import os
 import struct
 import sys
 import threading
@@ -47,13 +48,25 @@ def _write(out: BinaryIO, kind: int, payload: bytes) -> None:
     out.flush()
 
 
-def _read(inp: BinaryIO) -> tuple[int, bytes] | None:
-    head = inp.read(4)
-    if len(head) < 4:
+def _read_exact(fd: int, n: int) -> bytes | None:
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = os.read(fd, n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return bytes(buf)
+
+
+def _read(fd: int) -> tuple[int, bytes] | None:
+    # Raw os.read, not sys.stdin.buffer: a thread blocked in a buffered read
+    # holds its lock, and Python 3.14 aborts at exit if it can't take that lock.
+    head = _read_exact(fd, 4)
+    if head is None:
         return None
     (size,) = struct.unpack("<I", head)
-    body = inp.read(size)
-    if len(body) < size or size == 0:
+    body = _read_exact(fd, size) if size else None
+    if not body:
         return None
     return body[0], body[1:]
 
@@ -142,10 +155,13 @@ def serve(plugin: Plugin) -> None:
     inbox: Queue[dict[str, Any] | None] = Queue()
 
     def reader() -> None:
-        inp = sys.stdin.buffer
-        while (msg := _read(inp)) is not None:
-            if msg[0] == _JSON:
-                inbox.put(json.loads(msg[1]))
+        fd = sys.stdin.fileno()
+        try:
+            while (msg := _read(fd)) is not None:
+                if msg[0] == _JSON:
+                    inbox.put(json.loads(msg[1]))
+        except OSError:
+            pass
         inbox.put(None)
 
     threading.Thread(target=reader, daemon=True).start()
@@ -218,3 +234,20 @@ def serve(plugin: Plugin) -> None:
                     _write(out, _FRAME, struct.pack("<II", w, h) + bytes(pic))
     except (BrokenPipeError, OSError):
         plugin.stop()
+    except Exception as e:  # noqa: BLE001 — a mistake in the plugin: say so in its pane
+        import traceback
+
+        traceback.print_exc()  # goes to the app's log of this plugin
+        try:
+            plugin._send(
+                {
+                    "t": "error",
+                    "what": f"{plugin.title} stopped",
+                    "why": f"{type(e).__name__}: {e}",
+                    "fix": "press Enter to start it again",
+                }
+            )
+        except OSError:
+            pass
+        plugin.stop()
+        raise SystemExit(1) from None

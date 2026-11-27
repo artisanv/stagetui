@@ -160,3 +160,33 @@ def test_writing_a_plugin_describes_itself(addons: Path) -> None:
         env={**os.environ},
     ).stdout
     assert '"name": "dot"' in out and '"protocol": 1' in out
+
+
+def test_a_plugin_that_exits_does_not_crash_python(addons: Path) -> None:
+    """Regression: a daemon thread blocked in a buffered stdin read made Python 3.14
+    abort (SIGABRT, a core dump) when the plugin exited. It must exit cleanly."""
+    import json
+    import struct
+    import subprocess
+
+    def msg(m: dict) -> bytes:
+        body = json.dumps(m).encode()
+        return struct.pack("<IB", len(body) + 1, 1) + body
+
+    start = {"t": "start", "width": 32, "height": 16, "cols": 4, "rows": 1, "args": {}}
+    keys = b"".join(msg({"t": "key", "key": "space"}) for _ in range(3))
+    proc = subprocess.Popen(
+        [str(addons / "stagetui-plugin-dot")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    proc.stdin.write(msg(start) + keys)
+    proc.stdin.flush()  # stdin stays open: the reader thread is blocked in a read
+    try:
+        code = proc.wait(timeout=20)
+    finally:
+        proc.kill()
+    err = proc.stderr.read().decode(errors="replace")
+    assert code == 3, f"exit code {code} (-6 is SIGABRT): {err}"
+    assert "Fatal Python error" not in err
