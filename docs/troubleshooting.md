@@ -93,6 +93,14 @@ stagetui doctor
   iTerm2 / Windows Terminal) — stagetui opens the video there by itself if one is
   installed, or offers to install one. See [Add-ons → Real pictures](plugins.md#real-pictures).
 
+**The web pane says no Chrome or Chromium was found**
+: The web add-on uses the browser already on your computer. Install Chromium or
+  Google Chrome (Edge comes with Windows), or point to one:
+  `STAGETUI_CHROME=/path/to/chrome`.
+
+**"… didn't start" in a web pane, inside Docker or CI**
+: Some containers block Chrome's sandbox. There only, set `STAGETUI_WEB_NO_SANDBOX=1`.
+
 **An add-on doesn't show up in the pane menu**
 : stagetui looks for programs named `stagetui-plugin-<name>` next to your Python,
   in `STAGETUI_PLUGIN_PATH` and on your `PATH`. Check with `stagetui plugins`. A
@@ -125,6 +133,7 @@ stagetui doctor
 | `STAGETUI_NO_PLUGINS=1` | Don't offer add-ons in pane menus |
 | `STAGETUI_FFMPEG=/path/to/ffmpeg` | The ffmpeg the video add-on uses |
 | `STAGETUI_VIDEO_NO_AUDIO=1` | Videos play without sound |
+| `STAGETUI_CHROME=/path/to/chrome` | The browser the web add-on uses |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How a pane opens in its own window ([Panes](panes.md#open-a-pane-in-its-own-window)) |
 
 ## Your terminal is always restored

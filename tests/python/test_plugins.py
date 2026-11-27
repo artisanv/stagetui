@@ -75,7 +75,7 @@ def settle(d, until, seconds: float = 10.0) -> bool:
 def test_add_ons_are_found_and_listed(addons: Path) -> None:
     found = {p["name"]: p for p in ts.plugins(refresh=True)}
     assert found["dot"]["installed"] and found["dot"]["title"] == "Dot"
-    assert found["web"]["package"] == "stagetui-web" and not found["web"]["installed"]
+    assert found["3d"]["package"] == "stagetui-3d" and not found["3d"]["installed"]
 
 
 def test_an_add_on_draws_talks_and_restarts(addons: Path) -> None:
@@ -138,16 +138,16 @@ def test_official_add_ons_say_when_they_are_coming(addons: Path) -> None:
 
     class Wants(StageApp):
         def compose(self):
-            return [StageSplit([StagePane("web", id="v"), StagePane("empty", id="e")])]
+            return [StageSplit([StagePane("3d", id="v"), StagePane("empty", id="e")])]
 
     with Wants().drive((90, 20)) as d:
         d.wait(0.1)
-        assert "Web is coming soon" in d.snapshot().text
+        assert "3D is coming soon" in d.snapshot().text
         d.click("#e")
         d.press("ctrl+space")
         d.press("space")  # the pane menu lists every add-on
         menu = d.snapshot().text
-        assert "Dot" in menu and "Web  (coming soon)" in menu, menu
+        assert "Dot" in menu and "3D  (coming soon)" in menu, menu
 
 
 def test_writing_a_plugin_describes_itself(addons: Path) -> None:

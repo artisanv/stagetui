@@ -20,6 +20,9 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
 - `crates/stagetui-video` — the video add-on (`stagetui-plugin-video`; its own PyPI package, ffmpeg via
   imageio-ffmpeg, sound via cpal). Not a default workspace member (needs ALSA headers on Linux):
   `cargo build -p stagetui-video`; test with `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_video.py`
+- `crates/stagetui-web` — the web add-on (`stagetui-plugin-web`; its own PyPI package): headless Chrome via
+  chromiumoxide + tokio, screencast JPEG frames, CDP input. `cargo build -p stagetui-web`; test with
+  `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_web.py`
   - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
     markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
   - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect
@@ -85,6 +88,8 @@ snap.query("#chat")  # widget JSON: id, type, bounds, text, dir, theme, focused�
 | `STAGETUI_SESSION=name` | Session name |
 | `STAGETUI_NO_SESSION=1` | Interactive apps don't accept attaching windows |
 | `STAGETUI_LOG=path` | Log file shown by `stagetui sessions --json` (set by `stagetui start`) |
+| `STAGETUI_CHROME=path` | Browser for the web add-on |
+| `STAGETUI_WEB_NO_SANDBOX=1` | Chrome without its sandbox (CI containers only) |
 | `STAGETUI_PLUGIN_PATH=dirs` | Extra folders with `stagetui-plugin-*` add-ons |
 | `STAGETUI_NO_PLUGINS=1` | Don't list add-ons in pane menus |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How pop-out pane windows are opened (default: same terminal family) |

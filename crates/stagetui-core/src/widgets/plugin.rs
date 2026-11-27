@@ -66,15 +66,31 @@ struct Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         self.stopping.store(true, Ordering::SeqCst);
-        if let Some(w) = self
+        let asked = self
             .stdin
             .get_mut()
             .unwrap_or_else(|e| e.into_inner())
             .as_mut()
+            .is_some_and(|w| api::write_json(w, &ToPlugin::Stop).is_ok());
+        // Give it a moment to clean up (close a browser, remove temp files)
+        // before the reaper's handle stops it for good.
+        if asked
+            && let Some(child) = self
+                .child
+                .get_mut()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+            && let Some(proc) = child.child_mut()
         {
-            let _ = api::write_json(w, &ToPlugin::Stop);
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                if !matches!(proc.try_wait(), Ok(None)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
         }
-        // The tracked child is killed when dropped.
+        // The tracked child is killed (if still running) when dropped.
     }
 }
 

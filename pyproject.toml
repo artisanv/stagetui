@@ -32,6 +32,7 @@ classifiers = [
 [project.optional-dependencies]
 # Add-ons: `pip install "stagetui[video]"`.
 video = ["stagetui-video>=0.1.0a2"]
+web = ["stagetui-web>=0.1.0a4"]
 
 [project.urls]
 Homepage = "https://github.com/artisanv/stagetui"

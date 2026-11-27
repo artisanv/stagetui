@@ -8,7 +8,7 @@ only if you want them. Once installed, they appear in every pane's menu, like
 | Add-on | What it adds | Status |
 |---|---|---|
 | **Video** | Play video files and links in a pane, with sound | `pip install stagetui-video` ([below](#video)) |
-| **Web** | A real web page in a pane (uses your Chrome / Chromium) | coming soon |
+| **Web** | A real web page in a pane (uses your Chrome / Chromium) | `pip install stagetui-web` ([below](#web)) |
 | **3D** | Look at 3D models and turn them with the mouse | coming soon |
 
 `examples/10_plugins.py` shows a tiny add-on in action.
@@ -116,6 +116,47 @@ StagePane("video", path="a.mp4", on_ended=self.next_clip, on_state=self.changed)
 The picture and the sound are decoded by **ffmpeg**, which comes with the add-on
 (through the `imageio-ffmpeg` package) — nothing else to install. On Linux the sound
 plays through your system's ALSA library (PipeWire and PulseAudio included).
+
+## Web
+
+```python
+from stagetui import StageApp, StagePane
+
+
+class Browse(StageApp):
+    def compose(self):
+        return [StagePane("web", id="page", url="https://example.com")]
+
+
+Browse().run()
+```
+
+`examples/12_web.py` is a ready-made browser pane.
+
+It is a **real page**: the Chrome, Chromium, Edge or Brave already on your
+computer draws it (hidden), and stagetui shows it — links, forms, CSS and
+JavaScript all work. Nothing is downloaded.
+
+| Option | Meaning |
+|---|---|
+| `url="https://…"` | A web address — or `path="page.html"` for a file |
+| `zoom=1.5` | Bigger (or smaller, below 1) |
+
+Click the page, then **type** — in any language. **Ctrl+L** types an address at
+the bottom (Enter goes there), **Alt+← / Alt+→** go back and forward, **F5**
+reloads. The mouse wheel scrolls.
+
+From code:
+
+<!-- not-tested -->
+```python
+page = self.query("#page").content
+page.call("navigate", "github.com")
+page.call("back")                      # also "forward", "reload"
+title = page.call("evaluate", "document.title")   # run JavaScript, get the result
+page.call("state")                     # {"url", "title", "loading", "zoom"}
+StagePane("web", url="…", on_title=self.titled, on_navigated=self.went, on_loaded=self.ready)
+```
 
 ## In your code
 

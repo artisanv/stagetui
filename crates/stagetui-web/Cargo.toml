@@ -1,0 +1,23 @@
+[package]
+name = "stagetui-web"
+description = "The web add-on for stagetui: a real web page in a pane, from your own Chrome or Chromium."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "stagetui-plugin-web"
+path = "src/main.rs"
+
+[dependencies]
+stagetui-plugin-api = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
+chromiumoxide = { version = "0.9", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+futures = "0.3"
+
+[lints]
+workspace = true

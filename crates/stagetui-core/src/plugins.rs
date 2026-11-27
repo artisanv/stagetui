@@ -50,7 +50,7 @@ pub const KNOWN: &[Known] = &[
         icon: "globe",
         package: "stagetui-web",
         about: "show a real web page (uses your Chrome or Chromium)",
-        available: false,
+        available: true,
     },
     Known {
         name: "3d",

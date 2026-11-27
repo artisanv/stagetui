@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "stagetui-web"
+dynamic = ["version"]
+description = "The web add-on for stagetui: a real web page in a pane, from your own Chrome or Chromium."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+keywords = ["tui", "terminal", "web", "browser", "chromium", "stagetui", "add-on"]
+dependencies = ["stagetui>=0.1.0a4"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Terminals",
+]
+
+[project.urls]
+Homepage = "https://github.com/artisanv/stagetui"
+Documentation = "https://github.com/artisanv/stagetui/blob/main/docs/plugins.md"
+
+[tool.maturin]
+bindings = "bin"

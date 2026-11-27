@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a4] — 2026-11-27
+
+### Added — Milestone 6c: web
+- **`stagetui-web`**, the web add-on (its own package): `StagePane("web", url=… or path=…)`
+  shows a real page from the Chrome, Chromium, Edge or Brave already installed (headless;
+  nothing is downloaded). Chrome's screencast sends a picture when the page changes; clicks,
+  the wheel and typing (any language) go to the page. Ctrl+L types an address, Alt+← / Alt+→
+  back and forward, F5 reload. Option `zoom`; calls `navigate`, `back`, `forward`, `reload`,
+  `evaluate` (JavaScript), `state`; events `navigated`, `title`, `loaded`.
+- CI job for the web add-on on all three systems (with the runner's Chrome), release workflow
+  `release-web.yml` (tags `web-v*`), example `12_web.py`, docs: Add-ons → Web.
+- The web add-on is offered for install in apps.
+
 ## [0.1.0a3] — 2026-11-27
 
 ### Changed

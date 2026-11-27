@@ -27,7 +27,7 @@ ts.show("logo.png")
 
 > **Status: alpha (Milestone 6 of 6).** Chat, streaming Markdown, a prompt with
 > history, diffs, permission prompts, a real shell in a pane,
-> Blender-style panes and workspaces, add-ons (video today; write your own in Python), background sessions you can detach from and
+> Blender-style panes and workspaces, add-ons (video and web pages; write your own in Python), background sessions you can detach from and
 > attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
 > layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
 > see the [roadmap](#roadmap).
@@ -63,7 +63,7 @@ and you can write your own add-on in a few lines of Python
 | Add-on | What it adds | Install |
 |---|---|---|
 | Video | Play video files and links in a pane, with sound | `pip install stagetui-video` |
-| Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install "stagetui[web]"` *(coming soon)* |
+| Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install stagetui-web` |
 | 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install "stagetui[3d]"` *(coming soon)* |
 
 For pictures, video and 3D, use a terminal that can show real pictures — Ghostty,
@@ -116,6 +116,7 @@ Try the tours in `examples/`:
 | `09_detach.py` | `stagetui start` it, detach, come back later; pop panes into their own window |
 | `10_plugins.py` | An add-on written in a few lines of Python |
 | `11_video.py` | Video with sound (needs `pip install stagetui-video`) |
+| `12_web.py` | A real web page in a pane (needs `pip install stagetui-web`) |
 
 ## Command line
 
@@ -157,7 +158,7 @@ stagetui plugins            # the add-ons you have, and the ones you can add
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
 5. ✅ Sessions & workspaces: background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts, panes that pop out into their own terminal window and back
-6. 🚧 Add-ons: ✅ plugin system (write your own in Python or Rust), ✅ video with sound · next: web pages, 3D, then 1.0
+6. 🚧 Add-ons: ✅ plugin system (write your own in Python or Rust), ✅ video with sound, ✅ web pages · next: 3D, then 1.0
 
 ## Develop
 
