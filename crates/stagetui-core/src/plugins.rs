@@ -177,6 +177,19 @@ pub fn installed() -> Vec<Installed> {
     list
 }
 
+/// Tests: treat `name` as installed (it won't actually run).
+#[cfg(test)]
+pub fn pretend_installed(name: &str) {
+    let fake = Installed {
+        describe: Describe::new(name, name, "dot"),
+        path: PathBuf::from(format!("/nonexistent/{PREFIX}{name}")),
+    };
+    let mut found = installed();
+    found.retain(|p| p.describe.name != name);
+    found.push(fake);
+    *lock(&FOUND) = Some(found);
+}
+
 /// Look again next time (after installing something).
 pub fn forget() {
     *lock(&FOUND) = None;

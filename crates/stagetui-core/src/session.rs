@@ -1649,7 +1649,8 @@ impl Session {
             if !n.alive || n.bounds.is_empty() || popped.contains(&i) {
                 return None;
             }
-            let wants = crate::plugins::find(&v.name).is_none_or(|p| p.describe.pictures);
+            // Only an installed add-on that draws pictures (not a "not installed" note).
+            let wants = crate::plugins::find(&v.name).is_some_and(|p| p.describe.pictures);
             let pane = self.typed_pane(&format!("#{}", n.id)).ok()?;
             (wants && !self.pictures_offered.contains(&pane)).then_some(pane)
         });
@@ -3677,11 +3678,14 @@ mod tests {
     }
 
     const ADDON: &str = r##"{"children":[{"type":"split","children":[
-        {"type":"pane","content":"pulse","props":{"id":"v"},"children":[{"type":"plugin","content":"no-such-add-on"}]},
+        {"type":"pane","content":"pulse","props":{"id":"v"},"children":[{"type":"plugin","content":"pulse-test"}]},
+        {"type":"pane","content":"video","props":{"id":"w"},"children":[{"type":"plugin","content":"video"}]},
         {"type":"pane","content":"markdown","props":{"id":"m"},"children":[{"type":"markdown","content":"# مَرْحَبًا Hello 日本語 नमस्ते"}]}]}]}"##;
 
     #[test]
     fn picture_add_ons_open_where_pictures_are_real() {
+        // "pulse-test" is installed (a program that never starts here); "video" is not.
+        crate::plugins::pretend_installed("pulse-test");
         let mut s = session(ADDON);
         // A terminal with real pictures: nothing to do.
         s.frame(100, 30);
@@ -3690,7 +3694,7 @@ mod tests {
         s.set_pictures(false);
         s.set_picture_terminal(Some("foot".into()));
         s.frame(100, 30);
-        assert_eq!(s.take_popouts(), ["v"]);
+        assert_eq!(s.take_popouts(), ["v"], "only the installed add-on moves");
         assert_eq!(s.popout_terminal("v").as_deref(), Some("foot"));
         let v = s.tree().require("#v").unwrap();
         s.pane_window_closed(v);
