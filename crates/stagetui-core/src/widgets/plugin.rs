@@ -56,6 +56,8 @@ struct Inner {
     cell_px: Mutex<(u32, u32)>,
     generation: AtomicU64,
     painted: AtomicU64,
+    /// Frames received (for `describe`: how smoothly it plays).
+    frames: AtomicU64,
     started: AtomicBool,
     stopping: AtomicBool,
     stderr: Mutex<VecDeque<String>>,
@@ -253,6 +255,7 @@ impl PluginView {
                             {
                                 *lock(&inner.frame) =
                                     Some(Image::from_pixmap(format!("plugin-{name}"), px));
+                                inner.frames.fetch_add(1, Ordering::SeqCst);
                                 inner.changed();
                             }
                         }
@@ -488,6 +491,7 @@ impl Widget for PluginView {
             "installed": crate::plugins::find(&self.name).is_some(),
             "running": lock(&self.inner.stdin).is_some(),
             "status": *lock(&self.inner.status),
+            "frames": self.inner.frames.load(Ordering::SeqCst),
             "error": problem.as_ref().map(|p| format!("{} — {}", p.what, p.why)),
         }))
     }
