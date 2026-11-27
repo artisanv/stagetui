@@ -175,9 +175,11 @@ def test_mouse_and_keys_reach_python_handlers(tmp_path):
         os.write(fd, b"\t")
         time.sleep(0.2)
         os.write(fd, b"\r")
-        # Only changed cells are sent, so wait for a redraw rather than the whole word.
-        n = len(out)
-        assert read_until(fd, b"\x1b[?2026l", 10, out) and len(out) > n
+        # Only changed cells are sent, so wait for a *new* redraw (not one already
+        # in `out`) rather than the whole word.
+        fresh = bytearray()
+        assert read_until(fd, b"\x1b[?2026l", 10, fresh), out[-2000:]
+        out.extend(fresh)
         time.sleep(0.3)
         os.write(fd, b"\x1b[113u" if b"\x1b[>1u" in out else b"q")
         assert read_until(fd, b"RESULT 2", 10, out), out[-2000:]
