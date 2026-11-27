@@ -3837,6 +3837,33 @@ mod tests {
     }
 
     #[test]
+    fn arabic_typed_after_english_is_joined_and_in_order() {
+        let mut s = session(r#"{"children":[{"type":"input","props":{"id":"name"}}]}"#);
+        s.frame(60, 6);
+        let typed = "Sara · مَرْحَبًا سارة 日本語 नमस्ते";
+        s.type_text(typed);
+        let f = s.frame(60, 6);
+        // The whole line is one text run in reading order (pixel text where pictures work)…
+        assert!(
+            f.runs.iter().any(|r| r.logical == typed && r.complex),
+            "{:?}",
+            f.runs
+        );
+        // …and the cells hold the joined letters, right-to-left words in visual order.
+        let row: String = (0..f.cells.area.height)
+            .map(|y| {
+                (0..f.cells.area.width)
+                    .map(|x| f.cells[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .find(|r| r.contains("Sara"))
+            .unwrap();
+        let sara = text::bidi::visual(&text::arabic::shape("سارة"), Direction::Rtl);
+        assert!(row.contains(&sara), "{row:?} should contain {sara:?}");
+        assert!(!row.contains('س'), "unjoined letters: {row:?}");
+    }
+
+    #[test]
     fn clicking_and_typing() {
         let mut s = session(
             r#"{"children":[{"type":"input","props":{"id":"name","placeholder":"Name"}},{"type":"checkbox","content":"Agree","props":{"id":"ok"}},{"type":"button","content":"Send","props":{"id":"send"}}]}"#,

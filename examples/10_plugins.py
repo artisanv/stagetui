@@ -3,12 +3,35 @@
 Run:   STAGETUI_PLUGIN_PATH=examples/plugins python examples/10_plugins.py
 Try:   the left pane is "pulse", a tiny add-on written in Python
        (examples/plugins/stagetui-plugin-pulse): click it or press space
-       the right pane wants the Video add-on: press Enter in it, and stagetui
-       asks whether to install it
+       the right pane is the Video add-on: if it isn't installed yet, press
+       Enter in it and stagetui asks whether to install it
        click any pane's title to see every add-on in the menu
 """
 
+import subprocess
+import tempfile
+from pathlib import Path
+
 from stagetui import StageApp, StageBar, StagePane, StageSplit
+
+
+def sample_video() -> str | None:
+    """A short test clip, made with the ffmpeg that the Video add-on brings along.
+
+    Before the add-on is installed there is no ffmpeg yet: the pane then offers to install it.
+    """
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        return None
+    out = Path(tempfile.gettempdir()) / "stagetui-sample.mp4"
+    if not out.exists():
+        subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi",
+             "-i", "mandelbrot=size=640x360:rate=24", "-t", "8", "-pix_fmt", "yuv420p", str(out)],
+            check=True,
+        )  # fmt: skip
+    return str(out)
 
 
 class AddOns(StageApp):
@@ -19,10 +42,10 @@ class AddOns(StageApp):
             StageSplit(
                 [
                     StagePane("pulse", id="pulse", label="Hello", on_color=self.colored),
-                    StagePane("video", id="video"),
+                    StagePane("video", id="video", path=sample_video()),
                 ]
             ),
-            StageBar("Click the heart · Enter in the right pane installs Video"),
+            StageBar("Click the heart · the right pane is the Video add-on (Enter installs it)"),
         ]
 
     def colored(self, color):

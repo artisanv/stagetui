@@ -11,6 +11,8 @@ notes, a chat — then rearrange them, save the layout, pop a pane out into its 
 window, or leave the whole app running and come back later. Real pictures, flawless
 Arabic and every world language. Plain Python on top, a fast Rust engine underneath.
 
+[![A stagetui app: a chat with a (pretend) AI agent, a proposed code change and a real shell, side by side](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/harness.png)](https://github.com/artisanv/stagetui/blob/main/examples/07_harness.py)
+
 > **A fun project with a serious goal: make the terminal a place people enjoy.**
 > We build stagetui for ourselves, because we love the terminal — and we want
 > newcomers to never be afraid of it, and everyone else to have one more reason to
@@ -105,18 +107,34 @@ Chat().run()  # in your terminal
 Chat().run_headless((80, 24)).save("app.png")  # no terminal: text, tree or PNG
 ```
 
-Try the tours in `examples/`:
+## Gallery
 
-| Example | Shows |
+Every picture here is a real example from [`examples/`](https://github.com/artisanv/stagetui/blob/main/examples), drawn by stagetui
+itself. Run any of them with `python examples/<name>.py` — click a picture to see its code.
+
+| Panes like Blender: each one can show anything | Every widget, themes and the mouse |
 |---|---|
-| `05_ui_gallery.py` | Every widget, themes, the mouse |
-| `06_splits.py` | Split panes you can drag |
-| `07_harness.py` | A chat app with a pretend AI agent, diffs and a shell |
-| `08_workspace.py` | Blender-style panes and workspace tabs; Ctrl+S saves the layout |
-| `09_detach.py` | `stagetui start` it, detach, come back later; pop panes into their own window |
-| `10_plugins.py` | An add-on written in a few lines of Python |
-| `11_video.py` | Video with sound (needs `pip install stagetui-video`) |
-| `12_web.py` | A real web page in a pane (needs `pip install stagetui-web`) |
+| [![Files, notes and a clock in three panes, with workspace tabs on top](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/workspace.png)](https://github.com/artisanv/stagetui/blob/main/examples/08_workspace.py) | [![Buttons, a text box with English and Arabic, a checkbox, a dropdown and a progress bar](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/gallery.png)](https://github.com/artisanv/stagetui/blob/main/examples/05_ui_gallery.py) |
+| `08_workspace.py` — click a pane's title to change what it shows; drag the lines; Ctrl+S saves the layout | `05_ui_gallery.py` — buttons, text boxes, tabs, tables, trees, progress, pop-ups |
+
+| Split panes you can drag | Pictures drawn with code |
+|---|---|
+| [![Four panes split side by side and top to bottom](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/splits.png)](https://github.com/artisanv/stagetui/blob/main/examples/06_splits.py) | [![A line chart and a glowing sun, drawn by Python code](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/canvas.png)](https://github.com/artisanv/stagetui/blob/main/examples/04_canvas.py) |
+| `06_splits.py` — press \| or - to split, x to close | `04_canvas.py` — charts and drawings, no image files |
+
+| Every world language | Add-ons: yours, and ours |
+|---|---|
+| [![Arabic with harakat, Persian, mixed English and Arabic, Hindi and Japanese](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/world.png)](https://github.com/artisanv/stagetui/blob/main/examples/03_arabic_rtl.py) | [![A pulsing circle from a tiny Python add-on, next to the Video add-on](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/plugins.png)](https://github.com/artisanv/stagetui/blob/main/examples/10_plugins.py) |
+| `03_arabic_rtl.py` — Arabic and Persian join and flow right to left; Hindi and Japanese too | `10_plugins.py` — an add-on in a few lines of Python, next to the Video add-on |
+
+| A real web page in a pane | Video with sound |
+|---|---|
+| [![A web page shown inside a pane, with notes on the side](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/web.png)](https://github.com/artisanv/stagetui/blob/main/examples/12_web.py) | [![A video playing in a pane, with its time and volume](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/video.png)](https://github.com/artisanv/stagetui/blob/main/examples/11_video.py) |
+| `12_web.py` — needs `pip install stagetui-web` | `11_video.py` — needs `pip install stagetui-video` |
+
+Two more: `07_harness.py` is the chat app at the top of this page (a pretend AI agent,
+diffs and a real shell), and `09_detach.py` keeps running in the background — start it
+with `stagetui start`, close the terminal, and come back with `stagetui attach`.
 
 ## Command line
 
@@ -166,6 +184,7 @@ stagetui plugins            # the add-ons you have, and the ones you can add
 uv venv && source .venv/bin/activate && uv pip install maturin pytest
 maturin develop --release
 cargo test && python -m pytest
+python scripts/screenshots.py   # the gallery pictures, from the real examples
 ```
 
 See [AGENTS.md](AGENTS.md) for the project rules. Licensed under MIT or Apache-2.0, at your option.

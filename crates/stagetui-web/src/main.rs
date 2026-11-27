@@ -264,6 +264,23 @@ fn picture(data: &str) -> Option<Frame> {
     })
 }
 
+/// The page finished loading: read the title and address together, so they always match.
+async fn finish_load(page: &Page, shared: &Arc<Mutex<Shared>>) {
+    let title = page.get_title().await.ok().flatten().unwrap_or_default();
+    let url = page.url().await.ok().flatten();
+    let mut s = lock(shared);
+    s.loading = false;
+    if let Some(url) = url {
+        s.url = url;
+    }
+    if title != s.title {
+        s.events.push(("title".into(), json!(title)));
+        s.title = title;
+    }
+    let url = s.url.clone();
+    s.events.push(("loaded".into(), json!(url)));
+}
+
 /// Everything after launch: pictures, page events, and commands from the pane.
 async fn drive(
     mut browser: Browser,
@@ -282,6 +299,7 @@ async fn drive(
         return;
     };
     let _ = screencast(&page, size.0, size.1).await;
+    let mut check = tokio::time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
             Some(f) = frames.next() => {
@@ -298,21 +316,16 @@ async fn drive(
                     s.events.push(("navigated".into(), json!(n.frame.url)));
                 }
             }
-            Some(_) = loads.next() => {
-                // Read both now, so the title and the address always match.
-                let title = page.get_title().await.ok().flatten().unwrap_or_default();
-                let url = page.url().await.ok().flatten();
-                let mut s = lock(&shared);
-                s.loading = false;
-                if let Some(url) = url {
-                    s.url = url;
+            Some(_) = loads.next() => finish_load(&page, &shared).await,
+            _ = check.tick() => {
+                // Page events come on separate streams, so a "navigated" can be handled
+                // after its "load": while we think the page is loading, ask it.
+                if lock(&shared).loading {
+                    let ready = page.evaluate("document.readyState").await.ok();
+                    if ready.and_then(|r| r.into_value::<String>().ok()).as_deref() == Some("complete") {
+                        finish_load(&page, &shared).await;
+                    }
                 }
-                if title != s.title {
-                    s.events.push(("title".into(), json!(title)));
-                    s.title = title;
-                }
-                let url = s.url.clone();
-                s.events.push(("loaded".into(), json!(url)));
             }
             cmd = rx.recv() => {
                 let Some(cmd) = cmd else { break };

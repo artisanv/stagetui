@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- A picture gallery in the README: every example, drawn by stagetui itself.
+  `python scripts/screenshots.py` makes the pictures again from the real examples.
+
+### Fixed
+- Arabic (and other right-to-left or complex text) typed after English in a text
+  box — "Sara · سارة" — now has joined letters in the right order.
+- The web add-on could keep saying "loading" after a page had loaded.
+- `examples/10_plugins.py` plays a sample clip when the Video add-on is installed,
+  instead of saying "no video given".
+
 ## [0.1.0a4] — 2026-11-27
 
 ### Added — Milestone 6c: web

@@ -54,6 +54,7 @@ python -m pytest                               # Python tests
 cargo clippy --all-targets -- -D warnings && cargo fmt --all
 cargo clippy --target x86_64-pc-windows-msvc -p stagetui-core -p stagetui-cli --all-targets -- -D warnings
 STAGETUI_UPDATE_SNAPSHOTS=1 cargo test -p stagetui-core headless   # refresh golden snapshots (review the diff!)
+python scripts/screenshots.py                  # README gallery pictures (docs/images/) from the real examples
 ```
 
 ## Operating an app as an agent

@@ -165,15 +165,34 @@ impl Widget for Input {
         // Left-to-right: scroll so the cursor stays visible.
         let offset = prefix_w.saturating_sub(inner.saturating_sub(1));
         let mut col = 0usize;
-        let mut x = x0;
-        let style = Style::new().fg(t.fg.color()).bg(t.surface.color());
+        let mut visible = String::new();
         for g in &graphemes {
             let w = text::width(g).max(1);
             if col >= offset && col + w - offset <= inner {
+                visible.push_str(g);
+            }
+            col += w;
+        }
+        if text::is_complex(&visible) {
+            // Arabic, Hindi… inside left-to-right text ("Sara · سارة"): join the letters and
+            // put right-to-left words in their visual order, like everywhere else.
+            let visual = text::bidi::visual(&text::arabic::shape(&visible), Direction::Ltr);
+            let line = text::Line {
+                width: text::width(&visual),
+                visual,
+                dir: Direction::Ltr,
+                complex: true,
+                logical: visible,
+            };
+            frame.put_line(x0, y, inner as u16, &line, t.fg, t.surface, false);
+        } else {
+            let style = Style::new().fg(t.fg.color()).bg(t.surface.color());
+            let mut x = x0;
+            for g in visible.graphemes(true) {
+                let w = text::width(g).max(1);
                 frame.put_str(x, y, g, w as u16, style);
                 x += w as u16;
             }
-            col += w;
         }
         if p.focused {
             cursor(frame, x0 + (prefix_w - offset) as u16, y, t);
