@@ -1,0 +1,20 @@
+[package]
+name = "stagetui-3d"
+description = "The 3D add-on for stagetui: look at glTF, OBJ and STL models in a pane and turn them with the mouse."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "stagetui-plugin-3d"
+path = "src/main.rs"
+
+[dependencies]
+stagetui-plugin-api = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
+
+[lints]
+workspace = true

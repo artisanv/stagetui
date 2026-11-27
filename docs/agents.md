@@ -38,6 +38,7 @@ The agent then has these tools:
 | `press` | Press a key (`"enter"`, `"tab"`, `"ctrl+s"`…) or several (`keys: [...]`) |
 | `type` | Type text into the focused widget |
 | `click` | Click a widget (`target: "#send"`) or a cell (`x`, `y`) |
+| `drag` | Drag from a widget (`target`) or a cell (`x`, `y`) to a cell (`to_x`, `to_y`): split lines, 3D models |
 | `scroll` | Mouse-wheel scrolling |
 | `resize` | Change the screen size |
 | `wait` | Let time pass (animations, live drawings) |
@@ -56,7 +57,7 @@ each one on its own line:
 echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | stagetui drive my_app.py
 ```
 
-Methods: `snapshot`, `press`, `type`, `click`, `scroll`, `resize`, `wait`,
+Methods: `snapshot`, `press`, `type`, `click`, `drag`, `scroll`, `resize`, `wait`,
 `wait_idle`, `query`, `panes`, `set_pane_type`, `shutdown`. Their parameters are
 the same as the MCP tools above. Errors come back with `what`, `why` and `fix`.
 
@@ -87,7 +88,7 @@ with Greeter().drive((60, 16)) as d:
     print(d.query("out")["text"])  # "Hello, Sara!"
 ```
 
-A driver has `press`, `type`, `click`, `scroll`, `resize`, `wait`, `wait_idle`,
+A driver has `press`, `type`, `click`, `drag`, `scroll`, `resize`, `wait`, `wait_idle`,
 `snapshot(png=False)`, `query(id)` and `panes()`. Time is virtual, so every run
 gives the same result.
 

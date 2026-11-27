@@ -91,6 +91,20 @@ def click(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
     return _screen(d)
 
 
+def drag(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
+    start: str | tuple[int, int]
+    if "target" in args:
+        start = str(args["target"])
+    elif "x" in args and "y" in args:
+        start = (int(args["x"]), int(args["y"]))
+    else:
+        raise ToolError("give where to start: 'target' (like \"#model\") or 'x' and 'y'")
+    if "to_x" not in args or "to_y" not in args:
+        raise ToolError("give where to end: 'to_x' and 'to_y'")
+    d.drag(start, (int(args["to_x"]), int(args["to_y"])))
+    return _screen(d)
+
+
 def scroll(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
     d.scroll(int(args.get("rows", 3)), args.get("target"))
     return _screen(d)
@@ -151,6 +165,7 @@ ACTIONS: dict[str, Callable[[Driver, dict[str, Any]], Any]] = {
     "press": press,
     "type": type_,
     "click": click,
+    "drag": drag,
     "scroll": scroll,
     "resize": resize,
     "wait": wait,
@@ -196,6 +211,16 @@ TOOLS: list[dict[str, Any]] = [
         "name": "click",
         "description": 'Click a widget by id (target="#send") or a cell (x, y). Returns the new screen.',
         "inputSchema": {"type": "object", "properties": {"target": _S, "x": _I, "y": _I}},
+    },
+    {
+        "name": "drag",
+        "description": 'Drag with the left mouse button from a widget (target="#id") or cell (x, y) '
+        "to a cell (to_x, to_y): split lines, sliders, 3D models. Returns the new screen.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"target": _S, "x": _I, "y": _I, "to_x": _I, "to_y": _I},
+            "required": ["to_x", "to_y"],
+        },
     },
     {
         "name": "scroll",

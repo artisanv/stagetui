@@ -29,7 +29,7 @@ ts.show("logo.png")
 
 > **Status: alpha (Milestone 6 of 6).** Chat, streaming Markdown, a prompt with
 > history, diffs, permission prompts, a real shell in a pane,
-> Blender-style panes and workspaces, add-ons (video and web pages; write your own in Python), background sessions you can detach from and
+> Blender-style panes and workspaces, add-ons (video, web pages and 3D models; write your own in Python), background sessions you can detach from and
 > attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
 > layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
 > see the [roadmap](#roadmap).
@@ -66,7 +66,7 @@ and you can write your own add-on in a few lines of Python
 |---|---|---|
 | Video | Play video files and links in a pane, with sound | `pip install stagetui-video` |
 | Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install stagetui-web` |
-| 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install "stagetui[3d]"` *(coming soon)* |
+| 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install stagetui-3d` |
 
 For pictures, video and 3D, use a terminal that can show real pictures — Ghostty,
 Kitty, WezTerm or foot (Linux), Ghostty, Kitty, WezTerm or iTerm2 (macOS),
@@ -117,10 +117,10 @@ itself. Run any of them with `python examples/<name>.py` — click a picture to 
 | [![Files, notes and a clock in three panes, with workspace tabs on top](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/workspace.png)](https://github.com/artisanv/stagetui/blob/main/examples/08_workspace.py) | [![Buttons, a text box with English and Arabic, a checkbox, a dropdown and a progress bar](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/gallery.png)](https://github.com/artisanv/stagetui/blob/main/examples/05_ui_gallery.py) |
 | `08_workspace.py` — click a pane's title to change what it shows; drag the lines; Ctrl+S saves the layout | `05_ui_gallery.py` — buttons, text boxes, tabs, tables, trees, progress, pop-ups |
 
-| Split panes you can drag | Pictures drawn with code |
+| 3D models you turn with the mouse | Pictures drawn with code |
 |---|---|
-| [![Four panes split side by side and top to bottom](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/splits.png)](https://github.com/artisanv/stagetui/blob/main/examples/06_splits.py) | [![A line chart and a glowing sun, drawn by Python code](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/canvas.png)](https://github.com/artisanv/stagetui/blob/main/examples/04_canvas.py) |
-| `06_splits.py` — press \| or - to split, x to close | `04_canvas.py` — charts and drawings, no image files |
+| [![A colorful knot in 3D over a floor grid, with notes on the side](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/3d.png)](https://github.com/artisanv/stagetui/blob/main/examples/13_3d.py) | [![A line chart and a glowing sun, drawn by Python code](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/canvas.png)](https://github.com/artisanv/stagetui/blob/main/examples/04_canvas.py) |
+| `13_3d.py` — glTF, OBJ and STL; needs `pip install stagetui-3d` | `04_canvas.py` — charts and drawings, no image files |
 
 | Every world language | Add-ons: yours, and ours |
 |---|---|
@@ -132,9 +132,10 @@ itself. Run any of them with `python examples/<name>.py` — click a picture to 
 | [![A web page shown inside a pane, with notes on the side](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/web.png)](https://github.com/artisanv/stagetui/blob/main/examples/12_web.py) | [![A video playing in a pane, with its time and volume](https://raw.githubusercontent.com/artisanv/stagetui/main/docs/images/video.png)](https://github.com/artisanv/stagetui/blob/main/examples/11_video.py) |
 | `12_web.py` — needs `pip install stagetui-web` | `11_video.py` — needs `pip install stagetui-video` |
 
-Two more: `07_harness.py` is the chat app at the top of this page (a pretend AI agent,
-diffs and a real shell), and `09_detach.py` keeps running in the background — start it
-with `stagetui start`, close the terminal, and come back with `stagetui attach`.
+And more: `07_harness.py` is the chat app at the top of this page (a pretend AI agent,
+diffs and a real shell), `06_splits.py` splits panes as you like (press | or -), and
+`09_detach.py` keeps running in the background — start it with `stagetui start`, close
+the terminal, and come back with `stagetui attach`.
 
 ## Command line
 
@@ -176,7 +177,7 @@ stagetui plugins            # the add-ons you have, and the ones you can add
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
 5. ✅ Sessions & workspaces: background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts, panes that pop out into their own terminal window and back
-6. 🚧 Add-ons: ✅ plugin system (write your own in Python or Rust), ✅ video with sound, ✅ web pages · next: 3D, then 1.0
+6. ✅ Add-ons: plugin system (write your own in Python or Rust), video with sound, web pages, 3D models · next: 1.0
 
 ## Develop
 

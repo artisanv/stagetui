@@ -356,6 +356,11 @@ impl PyApp {
         self.app.with(|s| s.click_at(x, y));
     }
 
+    /// Drag with the left button from one cell to another.
+    fn drag(&self, x0: u16, y0: u16, x1: u16, y1: u16) {
+        self.app.with(|s| s.drag((x0, y0), (x1, y1)));
+    }
+
     /// Scroll the wheel over a widget (or the middle of the screen): `rows` < 0 is up.
     #[pyo3(signature = (rows, target = None))]
     fn scroll(&self, py: Python<'_>, rows: i32, target: Option<&str>) -> PyResult<()> {

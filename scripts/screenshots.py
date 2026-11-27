@@ -81,15 +81,6 @@ def harness(d) -> None:
     settle(d, 1.5)
 
 
-def splits(d) -> None:
-    d.press("|")
-    settle(d, 0.3)
-    d.press("-")
-    settle(d, 0.3)
-    d.press("|")
-    settle(d, 0.5)
-
-
 def gallery(d) -> None:
     d.type("Sara · سارة")
     d.press("tab")
@@ -136,12 +127,12 @@ SHOTS: dict[str, tuple[str, tuple[int, int], Callable | None, list[str], str]] =
     "harness": ("07_harness.py", (120, 34), harness, [], ""),
     "gallery": ("05_ui_gallery.py", (110, 32), gallery, [], ""),
     "workspace": ("08_workspace.py", (120, 34), None, [], ""),
-    "splits": ("06_splits.py", (100, 28), splits, [], ""),
     "world": ("03_arabic_rtl.py", (70, 26), None, [], ""),
     "canvas": ("04_canvas.py", (90, 28), None, [], ""),
     "plugins": ("10_plugins.py", (100, 28), wait_pictures, [], ""),
     "web": ("12_web.py", (120, 34), wait_pictures, ["https://example.com"], "web"),
     "video": ("11_video.py", (110, 32), wait_pictures, ["<video>"], "video"),
+    "3d": ("13_3d.py", (110, 32), wait_pictures, [], "3d"),
 }
 
 

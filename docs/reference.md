@@ -78,7 +78,7 @@ Made by `app.drive()`; use it in a `with` block.
 
 | Member | Description |
 |---|---|
-| `press(key)`, `type(text)`, `click("#id" or (x, y))`, `scroll(rows, target=None)` | Act like a person |
+| `press(key)`, `type(text)`, `click("#id" or (x, y))`, `drag("#id" or (x, y), (x, y))`, `scroll(rows, target=None)` | Act like a person |
 | `wait(seconds)`, `wait_idle()`, `resize(cols, rows)`, `step({...})` | Time, size, any `run_headless` step |
 | `snapshot(*, settle=False, png=False) -> Snapshot` | The screen now |
 | `query(id) -> dict | None`, `panes()` | Look at widgets and panes |

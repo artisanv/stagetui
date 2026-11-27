@@ -109,6 +109,7 @@ assert "Hello, Sara!" in snap.text
 | `{"press": "tab"}` | Press a key (`"enter"`, `"ctrl+s"`, `"esc"`, `"f1"`…) |
 | `{"type": "hello"}` | Type text |
 | `{"click": "#id"}` | Click the middle of a widget (or `[x, y]`) |
+| `{"drag": {"from": [40, 5], "to": [60, 5]}}` | Drag with the mouse (`from` can be `"#id"`): split lines, 3D models |
 | `{"scroll": 5}` | Scroll down 5 rows (`{"scroll": {"target": "#list", "rows": -3}}` scrolls a widget up) |
 | `{"wait": 0.5}` | Let 0.5 seconds of (virtual) time pass |
 | `{"wait_idle": True}` | Let animations finish |

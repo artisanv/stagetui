@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Milestone 6d: 3D
+- **`stagetui-3d`**, the 3D add-on (its own package): `StagePane("3d", path="model.glb")`
+  shows glTF (`.glb`, `.gltf`), OBJ (with `.mtl` colors and pictures) and STL models.
+  Drag to turn, right-drag to move, the wheel zooms; Space spins, W shows the wires,
+  G the floor grid, R starts over. From code: `load`, `view`, `spin`, `wireframe`,
+  `grid`, `reset`, `save` (a PNG of the view) and `state`; the `loaded` event.
+  It draws on the computer's processor (every core) — no graphics card or driver —
+  with smooth edges once the model holds still. No new libraries.
+- `examples/13_3d.py`: a model viewer; with no file it makes a colorful knot.
+- **Drag** for tests and agents: `d.drag("#id" or (x, y), (x, y))`, the step
+  `{"drag": {"from": …, "to": …}}`, and the `drag` tool in `stagetui mcp` / `drive`.
+
 ## [0.1.0a6] — 2026-11-27
 
 (0.1.0a5 was released for the web add-on only.)

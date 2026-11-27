@@ -68,6 +68,25 @@ def test_driver_steps_and_capture():
         d.press("tab")
 
 
+def test_drag_moves_a_split_line():
+    from stagetui import StageCard, StageSplit
+
+    class Two(StageApp):
+        def compose(self):
+            return [StageSplit([StageCard("مرحبا", id="a"), StageCard("日本語 नमस्ते", id="b")])]
+
+    with Two().drive((81, 20)) as d:
+        # Arabic first: the split is mirrored (right to left), so look at whichever is on the left.
+        left = lambda: min((d.query(i)["bounds"] for i in ("#a", "#b")), key=lambda b: b["x"])["w"]
+        line = left()
+        d.drag((line, 5), (line + 20, 5))
+        assert left() == line + 20
+        d.step({"drag": {"from": [line + 20, 5], "to": [line - 10, 5]}})
+        assert left() == line - 10
+        with pytest.raises(Exception, match="No widget"):
+            d.drag("#nope", (1, 1))
+
+
 def rpc(mode, app_file, messages, size="80x24"):
     lines = "".join((m if isinstance(m, str) else json.dumps(m)) + "\n" for m in messages)
     proc = subprocess.run(
@@ -176,7 +195,7 @@ def test_mcp_protocol(app_file):
     init = by_id[1]["result"]
     assert init["serverInfo"]["name"] == "stagetui" and "tools" in init["capabilities"]
     names = {t["name"] for t in by_id[2]["result"]["tools"]}
-    assert {"snapshot", "press", "type", "click", "list_panes", "set_pane_type"} <= names
+    assert {"snapshot", "press", "type", "click", "drag", "list_panes", "set_pane_type"} <= names
     for t in by_id[2]["result"]["tools"]:
         assert t["inputSchema"]["type"] == "object" and t["description"]
     assert "Hello, Ali!" in by_id[4]["result"]["content"][0]["text"]

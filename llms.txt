@@ -11,7 +11,7 @@ Status: Milestone 5 (harness kit, Blender-style panes, workspaces, background se
 - `ts.inspect(*, headless=False, probe=True) -> dict`; `ts.fonts() -> dict`.
 - `class StageApp` — class attrs `theme`, `accent`, `dir`, `BINDINGS=[(key, action[, description])]`, `reduce_motion`; override `compose() -> list[widget]`, optional `on_mount()`, `action_<name>()`.
   - `.run()` / `await .run_async()` — interactive; q / Esc / Ctrl+C quit; handlers may be `async def`.
-  - `.run_headless((cols, rows), *, steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#id"}, {"scroll": 3}, {"wait": 0.5}, {"wait_idle": True}, {"resize": [w, h]}], cell=(16, 32), settle=True) -> Snapshot` — virtual clock, deterministic.
+  - `.run_headless((cols, rows), *, steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#id"}, {"drag": {"from": "#id" or [x, y], "to": [x, y]}}, {"scroll": 3}, {"wait": 0.5}, {"wait_idle": True}, {"resize": [w, h]}], cell=(16, 32), settle=True) -> Snapshot` — virtual clock, deterministic.
   - Snapshot: `.text` (reading order), `.tree` (nested JSON: id, type, bounds, focused, on_screen, children; app `focus`, `dir`, `scroll`, `toasts`), `.png`, `.query("#id")`, `.save("x.png|.txt|.json")`.
   - `.query("#id")`, `.focused`, `.focused_pane`, `.notify(text, icon=, accent=, timeout=)`, `.set_theme(name)`, `.mount(widget)`, `.exit()`.
 - Containers: `Stage(children, direction="vertical"|"horizontal", columns=, gap=, align=)`, `StageSplit(children, direction="horizontal", ratio=[...])` (draggable dividers), `StageTabs(children, active=, on_change=)` (page title/icon from children), `StageModal(children, title=, dismissable=, on_close=)` (hidden until `.show()`), `StageBar(text)` (status + BINDINGS hints).
@@ -23,6 +23,7 @@ Status: Milestone 5 (harness kit, Blender-style panes, workspaces, background se
 - Sessions: `app.session`, `ts.sessions()`, `app.background(coro)`. q in an attached window asks Detach / Quit app / Cancel.
 - Video add-on (`pip install stagetui-video`): `StagePane("video", path|url=..., autoplay, loop, volume, muted, start, on_ended=, on_state=)`; keys space/←→/↑↓/m/home; `pane.content.call("play"|"pause"|"toggle"|"seek", n|"volume", v|"mute", b|"state")`.
 - Web add-on (`pip install stagetui-web`): `StagePane("web", url|path=..., zoom, on_title=, on_navigated=, on_loaded=)`; uses the installed Chrome/Chromium/Edge/Brave (headless); keys go to the page, Ctrl+L address, Alt+←/→, F5; `pane.content.call("navigate", url|"back"|"forward"|"reload"|"evaluate", js|"state")`.
+- 3D add-on (`pip install stagetui-3d`): `StagePane("3d", path="model.glb|.gltf|.obj|.stl", spin=True, wireframe=False, grid=True, up="y"|"z", on_loaded=)`; drawn on the CPU; drag turns, right-drag moves, wheel zooms; keys arrows/+/-/space/w/g/f/r; `pane.content.call("load", path|"view", {yaw, pitch, distance}|"spin"|"wireframe"|"grid", bool|"reset"|"save", "view.png"|"state")`.
 - Add-ons: `StagePane("video", path=...)` / `StagePlugin(name, **opts, on_<event>=...)`; programs `stagetui-plugin-<name>` (next to Python, STAGETUI_PLUGIN_PATH, PATH); write one in Python with `stagetui.plugin.Plugin` + `serve()` (frame(t) returns a Canvas), or Rust crate `stagetui-plugin-api`; `ts.plugins()`; `stagetui plugins [install NAME]`; missing add-ons ask to install on first use; picture add-ons open in a picture terminal when the current one draws blocks.
 - Pop-out: `widget.detach()` / `.attach()` (the pane holding it opens in its own terminal window / comes back), `pane.detached`, action `pop_out`, prefix then o, header ↗; window runs `stagetui attach app:pane`; `LAUNCHER = "foot {cmd}"` or `STAGETUI_LAUNCHER`.
 - Every widget: `.update(content, **props)`, `.load(content)`, `.show()`, `.hide()`, `.focus()`, `.split(widget, direction=)`, `.remove()`, `.value`; containers `.add(widget)`.
@@ -38,9 +39,9 @@ Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black",
 Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart, send, arrow-right, arrow-left, plus, minus, dot, circle, home.
 
 ## Agent interface
-- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type), workspace, load_workspace(layout|name), save_workspace(name). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
-- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, scroll, resize, wait, wait_idle, query, panes, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
-- Python: `with App().drive((cols, rows)) as d: d.type(..); d.click("#id"); d.snapshot(png=True)`; live apps: `app.capture_text()`, `capture_tree()`, `capture_png()`.
+- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), drag(target|x,y, to_x, to_y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type), workspace, load_workspace(layout|name), save_workspace(name). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
+- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, drag, scroll, resize, wait, wait_idle, query, panes, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
+- Python: `with App().drive((cols, rows)) as d: d.type(..); d.click("#id"); d.drag((x, y), (x2, y2)); d.snapshot(png=True)`; live apps: `app.capture_text()`, `capture_tree()`, `capture_png()`.
 - pytest: fixture `stage_snapshot.assert_match(snap, name=None, png=False)`, refresh with `pytest --stage-update`.
 
 ## CLI

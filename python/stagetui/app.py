@@ -707,7 +707,7 @@ class StageApp:
             raise _error(
                 f"Can't run the step {step!r}",
                 'each step is a dict with one action, like {"press": "tab"}',
-                "use press, type, click, scroll, wait, wait_idle or resize",
+                "use press, type, click, drag, scroll, wait, wait_idle or resize",
             )
         ((action, arg),) = step.items()
         if action == "press":
@@ -726,6 +726,19 @@ class StageApp:
                 core.scroll(int(arg.get("rows", 3)), None if target is None else str(target))
             else:
                 core.scroll(int(arg))
+        elif action == "drag":
+            start, end = (arg.get("from"), arg.get("to")) if isinstance(arg, Mapping) else arg
+            if isinstance(start, str):
+                node = core.query(start if start.startswith("#") else f"#{start}")
+                if node is None:
+                    raise _error(
+                        f"No widget {start!r} to drag",
+                        "drag starts on a widget or a cell",
+                        'use {"drag": {"from": "#id" or [x, y], "to": [x, y]}}',
+                    )
+                b = json.loads(node)["bounds"]
+                start = (b["x"] + b["w"] // 2, b["y"] + b["h"] // 2)
+            core.drag(int(start[0]), int(start[1]), int(end[0]), int(end[1]))
         elif action == "wait":
             remaining = int(float(arg) * 1000)
             while remaining > 0:
@@ -743,7 +756,7 @@ class StageApp:
             raise _error(
                 f'Unknown step "{action}"',
                 "headless runs understand a fixed set of actions",
-                "use press, type, click, scroll, wait, wait_idle or resize",
+                "use press, type, click, drag, scroll, wait, wait_idle or resize",
             )
         return cols, rows
 
@@ -798,6 +811,12 @@ class Driver:
 
     def scroll(self, rows: int, target: str | None = None) -> None:
         self.step({"scroll": {"rows": rows, "target": target}})
+
+    def drag(self, start: str | tuple[int, int], end: tuple[int, int]) -> None:
+        """Drag with the left button from a widget (``"#model"``) or cell to a cell."""
+        self.step(
+            {"drag": {"from": list(start) if isinstance(start, tuple) else start, "to": list(end)}}
+        )
 
     def wait(self, seconds: float) -> None:
         """Let (virtual) time pass: animations, timers, live canvases."""

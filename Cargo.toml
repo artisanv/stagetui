@@ -7,6 +7,7 @@ members = [
     "crates/stagetui-plugin-api",
     "crates/stagetui-video",
     "crates/stagetui-web",
+    "crates/stagetui-3d",
 ]
 # The add-ons need system libraries to build (e.g. ALSA for sound): build them on purpose.
 default-members = [
@@ -54,6 +55,10 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# The 3D add-on draws on the CPU: keep it quick in test builds too.
+[profile.dev.package.stagetui-3d]
+opt-level = 3
 
 [profile.release]
 lto = "thin"

@@ -23,6 +23,9 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
 - `crates/stagetui-web` — the web add-on (`stagetui-plugin-web`; its own PyPI package): headless Chrome via
   chromiumoxide + tokio, screencast JPEG frames, CDP input. `cargo build -p stagetui-web`; test with
   `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_web.py`
+- `crates/stagetui-3d` — the 3D add-on (`stagetui-plugin-3d`; its own PyPI package): its own glTF/OBJ/STL
+  readers and a CPU renderer (bands on every core, deferred shading, 2×2 smoothing when still). No GPU,
+  no new libraries. `cargo build -p stagetui-3d`; test with `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_3d.py`
   - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
     markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
   - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "stagetui-3d"
+dynamic = ["version"]
+description = "The 3D add-on for stagetui: look at glTF, OBJ and STL models in a pane and turn them with the mouse."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+keywords = ["tui", "terminal", "3d", "gltf", "obj", "stl", "viewer", "stagetui", "add-on"]
+dependencies = ["stagetui>=0.1.0a6"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Multimedia :: Graphics :: Viewers",
+    "Topic :: Terminals",
+]
+
+[project.urls]
+Homepage = "https://github.com/artisanv/stagetui"
+Documentation = "https://github.com/artisanv/stagetui/blob/main/docs/plugins.md"
+
+[tool.maturin]
+bindings = "bin"

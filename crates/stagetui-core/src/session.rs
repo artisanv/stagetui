@@ -3559,6 +3559,35 @@ impl Session {
         }
     }
 
+    /// Drag with the left button from one cell to another, one cell at a time
+    /// (like a hand would): split lines, sliders, 3D models…
+    pub fn drag(&mut self, from: (u16, u16), to: (u16, u16)) {
+        self.handle(&Input::Mouse(Mouse {
+            kind: MouseKind::Down(Button::Left),
+            x: from.0,
+            y: from.1,
+        }));
+        let (dx, dy) = (
+            i32::from(to.0) - i32::from(from.0),
+            i32::from(to.1) - i32::from(from.1),
+        );
+        let steps = dx.abs().max(dy.abs()).max(1);
+        for i in 1..=steps {
+            let x = i32::from(from.0) + dx * i / steps;
+            let y = i32::from(from.1) + dy * i / steps;
+            self.handle(&Input::Mouse(Mouse {
+                kind: MouseKind::Drag(Button::Left),
+                x: x as u16,
+                y: y as u16,
+            }));
+        }
+        self.handle(&Input::Mouse(Mouse {
+            kind: MouseKind::Up(Button::Left),
+            x: to.0,
+            y: to.1,
+        }));
+    }
+
     /// Scroll the wheel over a cell (`rows` < 0 scrolls up).
     pub fn scroll_at(&mut self, x: u16, y: u16, rows: i32) {
         let kind = if rows < 0 {
@@ -3969,6 +3998,17 @@ mod tests {
         }));
         s.frame(81, 20);
         assert_eq!(s.tree().get("a").unwrap().rect.w, 20);
+    }
+
+    #[test]
+    fn drag_moves_a_split_line() {
+        let mut s = session(
+            r#"{"children":[{"type":"split","children":[{"type":"card","content":"a","props":{"id":"a"}},{"type":"card","content":"b","props":{"id":"b"}}]}]}"#,
+        );
+        s.frame(81, 20);
+        s.drag((40, 5), (60, 5));
+        s.frame(81, 20);
+        assert_eq!(s.tree().get("a").unwrap().rect.w, 60);
     }
 
     #[test]

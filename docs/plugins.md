@@ -9,7 +9,7 @@ only if you want them. Once installed, they appear in every pane's menu, like
 |---|---|---|
 | **Video** | Play video files and links in a pane, with sound | `pip install stagetui-video` ([below](#video)) |
 | **Web** | A real web page in a pane (uses your Chrome / Chromium) | `pip install stagetui-web` ([below](#web)) |
-| **3D** | Look at 3D models and turn them with the mouse | coming soon |
+| **3D** | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install stagetui-3d` ([below](#3d)) |
 
 `examples/10_plugins.py` shows a tiny add-on in action.
 
@@ -157,6 +157,57 @@ title = page.call("evaluate", "document.title")   # run JavaScript, get the resu
 page.call("state")                     # {"url", "title", "loading", "zoom"}
 StagePane("web", url="…", on_title=self.titled, on_navigated=self.went, on_loaded=self.ready)
 ```
+
+## 3D
+
+```python
+from stagetui import StageApp, StagePane
+
+
+class Look(StageApp):
+    def compose(self):
+        return [StagePane("3d", id="model", path="robot.glb")]
+
+
+Look().run()
+```
+
+`examples/13_3d.py` is a ready-made viewer (with no file, it makes a colorful knot).
+
+It reads the common 3D files: **glTF** (`.glb`, or `.gltf` with its `.bin` and
+pictures next to it), **OBJ** (with its `.mtl` colors and pictures) and **STL**
+(3D printing). Colors, pictures on the surface and every part of the model are
+shown. It is drawn by your computer's processor, on all its cores — no graphics
+card or driver needed.
+
+| Option | Meaning |
+|---|---|
+| `path="model.glb"` | The model to show |
+| `spin=False` | Hold still (default: it turns slowly until you touch it) |
+| `wireframe=True` | Show the triangles' edges |
+| `grid=False` | No floor grid |
+| `up="z"` | Which way is up in the file (STL files are usually `"z"`; others `"y"`) |
+
+**Mouse:** drag to turn it, right-drag to move it, the wheel zooms. **Keys** (click
+the model first): **← → ↑ ↓** turn · **+ −** zoom · **Space** spin or stop · **W**
+wires · **G** grid · **F** fit it in the pane · **R** start over.
+
+From code:
+
+<!-- not-tested -->
+```python
+model = self.query("#model").content
+model.call("load", "other.stl")           # show another model
+model.call("view", {"yaw": 90, "pitch": 20, "distance": 4})   # degrees; distance 3 ≈ fits
+model.call("spin", False)                 # also "wireframe", "grid" (True/False)
+model.call("reset")
+model.call("save", "view.png")            # what it shows, as a picture
+model.call("state")                       # {"triangles", "yaw", "pitch", "distance", "spin", …}
+StagePane("3d", path="a.glb", on_loaded=self.loaded)   # {"path", "triangles", "format"}
+```
+
+Compressed glTF files (Draco, meshopt) aren't read yet: the pane says so — export
+the model without compression.
 
 ## In your code
 
