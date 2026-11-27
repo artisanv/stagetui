@@ -63,7 +63,7 @@ and you can write your own add-on in a few lines of Python
 
 | Add-on | What it adds | Install |
 |---|---|---|
-| Video | Play video files and links in a pane, with sound | `pip install "stagetui[video]"` *(coming soon)* |
+| Video | Play video files and links in a pane, with sound | `pip install stagetui-video` *(built — on PyPI soon)* |
 | Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install "stagetui[web]"` *(coming soon)* |
 | 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install "stagetui[3d]"` *(coming soon)* |
 

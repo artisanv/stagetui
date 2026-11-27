@@ -17,6 +17,9 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
   - `launch.rs` opens a new terminal window (per terminal family) for popped-out panes; finds or installs a picture terminal
   - `plugins.rs` add-on discovery (`stagetui-plugin-*`), the official catalog, installer (pip / uv); `widgets/plugin.rs` runs one
 - `crates/stagetui-plugin-api` — the add-on protocol, `PaneSource` trait, `serve()` (no stagetui dependency)
+- `crates/stagetui-video` — the video add-on (`stagetui-plugin-video`; its own PyPI package, ffmpeg via
+  imageio-ffmpeg, sound via cpal). Not a default workspace member (needs ALSA headers on Linux):
+  `cargo build -p stagetui-video`; test with `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_video.py`
   - `widgets/` card, text, image, button, input, checkbox, select, progress, spinner, table, tree, bar,
     markdown (streaming renderer), code, diff, log, chat, prompt, tool_call (+ permission), terminal (PTY + vt100)
   - `panes.rs` Blender-style pane types, menu, built-in content; `text/highlight.rs` syntect

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Milestone 6b: video
+- **`stagetui-video`**, the video add-on (its own package): `StagePane("video", path=… or
+  url=…)` plays files and links with sound. Space pause, ← → seek (Shift: 30 s), ↑ ↓ volume,
+  M mute, Home start over; click pauses, wheel changes the volume; a status line
+  (`▶ 01:23 / 04:56 · volume 80%`). Options `autoplay`, `loop`, `volume`, `muted`, `start`;
+  calls `play`, `pause`, `toggle`, `seek`, `volume`, `mute`, `state`; events `ended`, `state`.
+- ffmpeg comes from `imageio-ffmpeg` (a dependency of the add-on); sound plays through `cpal`
+  (ALSA on Linux — the system's own library, so PipeWire/PulseAudio work — CoreAudio, WASAPI).
+  The sound is the clock; pictures follow it, decoded at the pane's size (up to 1280×720).
+- Release workflow `release-video.yml` (tags `video-v*`), CI job for the add-on on all three
+  systems, example `11_video.py`, docs: Add-ons → Video.
+- Fixed: a pane that only said "not installed" was moved to a picture terminal.
+
 ### Added — Milestone 6a: add-ons
 - **Add-ons (plugins)**: pane types served by their own program, `stagetui-plugin-<name>`,
   found next to the app's Python, in `STAGETUI_PLUGIN_PATH` or on the `PATH`. They show

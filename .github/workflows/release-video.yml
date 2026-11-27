@@ -1,0 +1,64 @@
+# Release the video add-on (stagetui-video) to PyPI on `video-v*` tags.
+# One wheel per platform: it holds the `stagetui-plugin-video` program.
+name: Release video add-on
+
+on:
+  push:
+    tags:
+      - 'video-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform.runner }} ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runner: ubuntu-22.04, target: x86_64, manylinux: auto, tag: --compatibility manylinux2014 }
+          - { runner: ubuntu-22.04-arm, target: aarch64, manylinux: auto, tag: --compatibility manylinux2014 }
+          - { runner: macos-15-intel, target: x86_64 }
+          - { runner: macos-latest, target: aarch64 }
+          - { runner: windows-latest, target: x64 }
+          - { runner: windows-11-arm, target: aarch64 }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/stagetui-video
+          target: ${{ matrix.platform.target }}
+          # Linux: the manylinux tag, but no copy of libasound (it uses the system's).
+          args: --release --out ../../dist ${{ matrix.platform.tag }}
+          manylinux: ${{ matrix.platform.manylinux }}
+          # Sound needs ALSA's headers inside the Linux build container.
+          before-script-linux: |
+            (command -v dnf && dnf install -y alsa-lib-devel) || (command -v yum && yum install -y alsa-lib-devel) || (apt-get update && apt-get install -y libasound2-dev)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: video-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
+          path: dist
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: [build]
+    permissions:
+      id-token: write
+      contents: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v7
+      - uses: actions/attest@v4
+        with:
+          subject-path: 'video-*/*'
+      - uses: astral-sh/setup-uv@v7
+      - run: uv publish --trusted-publishing always 'video-*/*'

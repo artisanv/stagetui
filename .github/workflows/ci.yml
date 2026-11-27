@@ -31,8 +31,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -p stagetui-core -p stagetui-cli --all-targets -- -D warnings
-      - run: cargo test -p stagetui-core -p stagetui-cli
+      - run: cargo clippy -p stagetui-core -p stagetui-cli -p stagetui-plugin-api --all-targets -- -D warnings
+      - run: cargo test -p stagetui-core -p stagetui-cli -p stagetui-plugin-api
 
   python:
     name: Python ${{ matrix.python }} · ${{ matrix.os }}
@@ -52,6 +52,35 @@ jobs:
       - run: uv run --no-sync maturin develop --release
       - run: uv run --no-sync python -m pytest
       - run: uv run --no-sync stagetui inspect --headless
+
+  video:
+    name: Video add-on · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sound library headers (ALSA)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p stagetui-video --all-targets -- -D warnings
+      - run: cargo test -p stagetui-video
+      - run: cargo build -p stagetui-video
+      - uses: astral-sh/setup-uv@v7
+      - run: uv venv --python 3.13
+      - run: uv pip install maturin pytest imageio-ffmpeg
+      - run: uv run --no-sync maturin develop --release
+      - name: Play a video through the add-on
+        run: uv run --no-sync python -m pytest tests/python/test_video.py
+        env:
+          STAGETUI_PLUGIN_PATH: ${{ github.workspace }}/target/debug
+          STAGETUI_VIDEO_NO_AUDIO: "1"
 
   extension-lint:
     name: PyO3 crate · clippy

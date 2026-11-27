@@ -1,6 +1,19 @@
 [workspace]
 resolver = "3"
-members = ["crates/stagetui-core", "crates/stagetui-cli", "crates/stagetui-py", "crates/stagetui-plugin-api"]
+members = [
+    "crates/stagetui-core",
+    "crates/stagetui-cli",
+    "crates/stagetui-py",
+    "crates/stagetui-plugin-api",
+    "crates/stagetui-video",
+]
+# The add-ons need system libraries to build (e.g. ALSA for sound): build them on purpose.
+default-members = [
+    "crates/stagetui-core",
+    "crates/stagetui-cli",
+    "crates/stagetui-py",
+    "crates/stagetui-plugin-api",
+]
 
 [workspace.package]
 version = "0.1.0-alpha.1"

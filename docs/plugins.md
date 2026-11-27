@@ -7,7 +7,7 @@ only if you want them. Once installed, they appear in every pane's menu, like
 
 | Add-on | What it adds | Status |
 |---|---|---|
-| **Video** | Play video files and links in a pane, with sound | coming soon |
+| **Video** | Play video files and links in a pane, with sound | built — on PyPI soon ([below](#video)) |
 | **Web** | A real web page in a pane (uses your Chrome / Chromium) | coming soon |
 | **3D** | Look at 3D models and turn them with the mouse | coming soon |
 
@@ -69,6 +69,53 @@ draws blocks:
 
 You can keep your favorite terminal as your everyday one: only the picture
 panes open elsewhere.
+
+## Video
+
+```python
+from stagetui import StageApp, StagePane
+
+
+class Cinema(StageApp):
+    def compose(self):
+        return [StagePane("video", id="movie", path="trip.mp4")]
+
+
+Cinema().run()
+```
+
+`examples/11_video.py` is a ready-made player (it even makes a test clip).
+
+| Option | Meaning |
+|---|---|
+| `path="movie.mp4"` | A file — or a link (`url="https://…/clip.mp4"`) |
+| `autoplay=False` | Wait for Space (default: plays at once) |
+| `loop=True` | Start over at the end |
+| `volume=0.5` | 0 to 1 |
+| `muted=True` | No sound |
+| `start=30` | Begin at 30 seconds |
+
+**Keys** (with the pane focused — click it): **Space** pause · **← →** seek 5 s
+(**Shift** 30 s) · **↑ ↓** volume · **M** mute · **Home** start over. Clicking the
+picture pauses; the mouse wheel changes the volume. The line at the bottom shows
+where you are: `▶ 01:23 / 04:56 · volume 80%`.
+
+From code, the pane's `content` does it too:
+
+<!-- not-tested -->
+```python
+video = self.query("#movie").content
+video.call("pause")              # also: "play", "toggle"
+video.call("seek", 90)           # seconds
+video.call("volume", 0.5)        # 0 to 1
+video.call("mute", True)
+video.call("state")              # {"position", "duration", "paused", "volume", …}
+StagePane("video", path="a.mp4", on_ended=self.next_clip, on_state=self.changed)
+```
+
+The picture and the sound are decoded by **ffmpeg**, which comes with the add-on
+(through the `imageio-ffmpeg` package) — nothing else to install. On Linux the sound
+plays through your system's ALSA library (PipeWire and PulseAudio included).
 
 ## In your code
 
