@@ -6,17 +6,18 @@
 > and the PyPI release is an early alpha. Please don't use it for real work today.
 > Follow the [roadmap](#roadmap) — version 1.0 is the first stable release.
 
-**A sophisticated terminal UI engine with Blender-like flexibility.** Split the screen
-into panes and make each one show anything — a chat, a shell, code, a diff, files —
-then rearrange, save the layout, pop a pane out into its own window, or leave the
-whole app running and come back later. With real pictures, flawless Arabic and
-every world language, and apps that AI coding agents can see and drive.
-Plain Python on top, a fast Rust engine underneath.
+**A terminal UI library with sophisticated, fun options — and Blender-like flexibility.**
+Split the screen into panes and make each one show anything — a shell, files, code,
+notes, a chat — then rearrange them, save the layout, pop a pane out into its own
+window, or leave the whole app running and come back later. Real pictures, flawless
+Arabic and every world language. Plain Python on top, a fast Rust engine underneath.
 
-> **A fun project, built for our own reasons.** We wanted a terminal UI that feels like
-> Blender — arrange everything the way *you* like — and that does Arabic right, shows
-> real pictures, and lets AI agents work with it. It is the base for our own AI coding
-> harness. We share it in case it is useful or fun for you too.
+> **A fun project with a serious goal: make the terminal a place people enjoy.**
+> We build stagetui for ourselves, because we love the terminal — and we want
+> newcomers to never be afraid of it, and everyone else to have one more reason to
+> stay in it. Build whatever you like with it: tools, dashboards, file browsers,
+> chat apps, games. AI agents can build with it too: every app can be seen and
+> tested without a human.
 
 ```python
 import stagetui as ts
@@ -25,8 +26,8 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="staget
 ts.show("logo.png")
 ```
 
-> **Status: alpha (Milestone 5 of 6).** The agent harness kit (chat, streaming
-> Markdown, prompt, diff, tool calls, permission prompts, a real shell in a pane),
+> **Status: alpha (Milestone 5 of 6).** Chat, streaming Markdown, a prompt with
+> history, diffs, permission prompts, a real shell in a pane,
 > Blender-style panes and workspaces, background sessions you can detach from and
 > attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
 > layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
@@ -37,7 +38,8 @@ ts.show("logo.png")
 - **Friendly.** One line shows a picture or a message. Errors tell you *what* went wrong, *why*, and *how to fix it*.
 - **Pictures that look right everywhere.** Kitty, Ghostty, WezTerm, iTerm2, Windows Terminal, foot… stagetui picks the best method your terminal supports, and falls back gracefully.
 - **Every language.** Arabic and Persian letters join and flow right-to-left, Hindi conjuncts form, Chinese and Japanese line up — in every terminal, with fonts built in.
-- **Made for AI agents.** Any app can be captured as plain text, a widget tree, or a PNG — no terminal needed.
+- **Friendly to newcomers.** Mouse everywhere, keys shown on screen, clear messages — the terminal without the fear.
+- **AI agents welcome.** Any app can be captured as plain text, a widget tree, or a PNG — no terminal needed.
 - **Keeps running.** Start an app in the background, close the terminal, attach again later — from any terminal, even two at once.
 - **Fast and safe.** The engine is Rust. The Python package has zero dependencies. Nothing is left running when your program exits — even after a crash.
 - **Linux, macOS and Windows.**

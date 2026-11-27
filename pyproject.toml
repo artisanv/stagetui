@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "stagetui"
 dynamic = ["version"]
-description = "A fun, sophisticated terminal UI engine with Blender-like flexibility: panes that show anything, sessions, real pictures, flawless Arabic/RTL, and apps AI agents can drive."
+description = "A fun terminal UI library with Blender-like flexibility, friendly enough that newcomers enjoy the terminal: panes that show anything, real pictures, Arabic/RTL, sessions."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT OR Apache-2.0"
