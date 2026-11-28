@@ -4,6 +4,8 @@
 > **Version 1.0 — stable.** stagetui is tested on Linux, macOS and Windows. Code
 > written for 1.0 keeps working in every 1.x version — see the [changelog](CHANGELOG.md).
 
+**[PyPI](https://pypi.org/project/stagetui/1.0.0/) · [Release notes](https://github.com/artisanv/stagetui/releases/tag/v1.0.0) · [Docs](https://github.com/artisanv/stagetui/blob/main/docs/README.md) · [All packages](#packages-and-releases)**
+
 **A terminal UI library with sophisticated, fun options — and Blender-like flexibility.**
 Split the screen into panes and make each one show anything — a shell, files, code,
 notes, a chat — then rearrange them, save the layout, pop a pane out into its own
@@ -74,6 +76,19 @@ For pictures, video and 3D, use a terminal that can show real pictures — Ghost
 Kitty, WezTerm or foot (Linux), Ghostty, Kitty, WezTerm or iTerm2 (macOS),
 WezTerm or Windows Terminal (Windows). In other terminals pictures are drawn with
 blocks; `stagetui doctor` tells you what yours can do.
+
+### Packages and releases
+
+Version 1.0.0 of every package, on PyPI and GitHub:
+
+| Package | PyPI | GitHub release | Source |
+|---|---|---|---|
+| **stagetui** — the library | [pypi.org/project/stagetui/1.0.0](https://pypi.org/project/stagetui/1.0.0/) | [v1.0.0](https://github.com/artisanv/stagetui/releases/tag/v1.0.0) | [this repository](https://github.com/artisanv/stagetui) |
+| **stagetui-3d** — 3D models | [pypi.org/project/stagetui-3d/1.0.0](https://pypi.org/project/stagetui-3d/1.0.0/) | [3d-v1.0.0](https://github.com/artisanv/stagetui/releases/tag/3d-v1.0.0) | [crates/stagetui-3d](https://github.com/artisanv/stagetui/tree/main/crates/stagetui-3d) |
+| **stagetui-video** — video with sound | [pypi.org/project/stagetui-video/1.0.0](https://pypi.org/project/stagetui-video/1.0.0/) | [video-v1.0.0](https://github.com/artisanv/stagetui/releases/tag/video-v1.0.0) | [crates/stagetui-video](https://github.com/artisanv/stagetui/tree/main/crates/stagetui-video) |
+| **stagetui-web** — web pages | [pypi.org/project/stagetui-web/1.0.0](https://pypi.org/project/stagetui-web/1.0.0/) | [web-v1.0.0](https://github.com/artisanv/stagetui/releases/tag/web-v1.0.0) | [crates/stagetui-web](https://github.com/artisanv/stagetui/tree/main/crates/stagetui-web) |
+
+Every release, newest first: [github.com/artisanv/stagetui/releases](https://github.com/artisanv/stagetui/releases).
 
 ## A full-screen app
 
