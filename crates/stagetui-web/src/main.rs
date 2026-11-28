@@ -345,7 +345,8 @@ fn press(name: &str, text: Option<&str>) -> Option<DispatchKeyEventParams> {
     p.key = Some(key);
     p.code = code;
     p.windows_virtual_key_code = Some(vk);
-    p.native_virtual_key_code = Some(vk);
+    // No native key code: it is the platform's own number (on macOS 27 is the
+    // minus key, not Esc), and Chrome builds the right event without it.
     p.unmodified_text.clone_from(&typed);
     p.text = typed;
     Some(p)
