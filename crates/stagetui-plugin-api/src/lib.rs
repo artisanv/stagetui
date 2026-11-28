@@ -122,6 +122,11 @@ pub enum ToPlugin {
     Focus {
         focused: bool,
     },
+    /// The pane went out of sight (another pane type or tab is showing) or came
+    /// back. While hidden, `serve` asks for no frames. Older plugins ignore it.
+    Shown {
+        shown: bool,
+    },
     /// The app calls a method (`pane.content.call("play")`); answer with `Reply`.
     Call {
         id: u64,
@@ -345,6 +350,12 @@ pub trait PaneSource {
 
     fn focus(&mut self, _focused: bool) {}
 
+    /// The pane went out of sight, or came back. `frame` isn't called while it's
+    /// hidden; pause what makes sound or costs work (a video, a browser).
+    /// `frame`'s `now` keeps counting while hidden, so the first one back can
+    /// jump: limit any step you take from the time between frames.
+    fn shown(&mut self, _shown: bool) {}
+
     /// A method the app calls by name.
     fn call(&mut self, method: &str, _args: &Value) -> Result<Value, String> {
         Err(format!("this plugin has no method \"{method}\""))
@@ -366,7 +377,7 @@ pub trait PaneSource {
 
 /// Run a plugin: answer `--describe`, then talk to stagetui over stdin/stdout
 /// until the pane closes. Returns the exit code for `std::process::exit`.
-pub fn serve<S: PaneSource>(mut source: S) -> i32 {
+pub fn serve<S: PaneSource>(source: S) -> i32 {
     if std::env::args().nth(1).as_deref() == Some("--describe") {
         let json = serde_json::to_string(&source.describe()).unwrap_or_default();
         println!("{json}");
@@ -390,21 +401,26 @@ pub fn serve<S: PaneSource>(mut source: S) -> i32 {
         }
         let _ = tx.send(ToPlugin::Stop);
     });
-    let mut out = BufWriter::new(io::stdout().lock());
+    run(source, rx, &mut BufWriter::new(io::stdout().lock()))
+}
+
+/// The heart of `serve`: messages from `rx`, answers and frames to `out`.
+fn run<S: PaneSource>(mut source: S, rx: mpsc::Receiver<ToPlugin>, out: &mut impl Write) -> i32 {
     let begun = Instant::now();
     let mut every = Duration::from_millis(33);
     let mut started = false;
+    let mut shown = true;
     let mut next = Instant::now();
     loop {
-        let wait = if started {
-            next.saturating_duration_since(Instant::now())
+        let msg = if started && shown {
+            match rx.recv_timeout(next.saturating_duration_since(Instant::now())) {
+                Ok(m) => Some(m),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => Some(ToPlugin::Stop),
+            }
         } else {
-            Duration::from_secs(3600)
-        };
-        let msg = match rx.recv_timeout(wait) {
-            Ok(m) => Some(m),
-            Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => Some(ToPlugin::Stop),
+            // Nothing to draw (not started, or out of sight): just wait for news.
+            Some(rx.recv().unwrap_or(ToPlugin::Stop))
         };
         let sent = match msg {
             Some(ToPlugin::Start(s)) => match source.start(&s) {
@@ -412,10 +428,10 @@ pub fn serve<S: PaneSource>(mut source: S) -> i32 {
                     every = Duration::from_secs_f64(1.0 / f64::from(ready.fps.clamp(1, 120)));
                     started = true;
                     next = Instant::now();
-                    write_json(&mut out, &FromPlugin::Ready(ready))
+                    write_json(out, &FromPlugin::Ready(ready))
                 }
                 Err(why) => write_json(
-                    &mut out,
+                    out,
                     &FromPlugin::Error {
                         what: format!("{} could not start", source.describe().title),
                         why,
@@ -446,6 +462,14 @@ pub fn serve<S: PaneSource>(mut source: S) -> i32 {
                 source.focus(focused);
                 Ok(())
             }
+            Some(ToPlugin::Shown { shown: now_shown }) => {
+                if now_shown != shown {
+                    shown = now_shown;
+                    source.shown(shown);
+                    next = Instant::now();
+                }
+                Ok(())
+            }
             Some(ToPlugin::Call { id, method, args }) => {
                 let reply = match source.call(&method, &args) {
                     Ok(value) => FromPlugin::Reply {
@@ -459,7 +483,7 @@ pub fn serve<S: PaneSource>(mut source: S) -> i32 {
                         error: Some(e),
                     },
                 };
-                write_json(&mut out, &reply)
+                write_json(out, &reply)
             }
             Some(ToPlugin::Stop) => {
                 source.stop();
@@ -468,17 +492,17 @@ pub fn serve<S: PaneSource>(mut source: S) -> i32 {
             None => {
                 next = Instant::now() + every;
                 match source.frame(begun.elapsed()) {
-                    Some(f) => write_frame(&mut out, &f),
+                    Some(f) => write_frame(out, &f),
                     None => Ok(()),
                 }
             }
         };
         let mut talk = || -> io::Result<()> {
             if let Some(text) = source.status() {
-                write_json(&mut out, &FromPlugin::Status { text })?;
+                write_json(out, &FromPlugin::Status { text })?;
             }
             for (name, value) in source.events() {
-                write_json(&mut out, &FromPlugin::Event { name, value })?;
+                write_json(out, &FromPlugin::Event { name, value })?;
             }
             Ok(())
         };
@@ -541,5 +565,126 @@ mod tests {
         );
         let d: Describe = serde_json::from_str(r#"{"name":"web","title":"Web"}"#).unwrap();
         assert!(d.pictures && d.protocol == PROTOCOL);
+    }
+
+    #[test]
+    fn shown_round_trips() {
+        let hide = ToPlugin::Shown { shown: false };
+        let show = ToPlugin::Shown { shown: true };
+        let mut buf = Vec::new();
+        write_json(&mut buf, &hide).unwrap();
+        write_json(&mut buf, &show).unwrap();
+        let exact = br#"{"t":"shown","shown":false}"#;
+        // [u32 length = kind + payload][kind][payload]
+        assert_eq!(buf[..4], ((exact.len() + 1) as u32).to_le_bytes());
+        let mut r = io::Cursor::new(buf);
+        let (kind, json) = read_message(&mut r).unwrap();
+        assert_eq!((kind, json.as_slice()), (KIND_JSON, &exact[..]));
+        assert_eq!(serde_json::from_slice::<ToPlugin>(&json).unwrap(), hide);
+        let (kind, json) = read_message(&mut r).unwrap();
+        assert_eq!(kind, KIND_JSON);
+        assert_eq!(serde_json::from_slice::<ToPlugin>(&json).unwrap(), show);
+        assert!(read_message(&mut r).is_err(), "nothing more");
+        // A message this version doesn't know fails to read, and `serve` skips it:
+        // that is how plugins built before `shown` ignore it.
+        assert!(serde_json::from_str::<ToPlugin>(r#"{"t":"someday","x":1}"#).is_err());
+    }
+
+    /// Counts frames asked for, and remembers `shown` calls.
+    struct Counter {
+        frames: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        shown: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+    }
+
+    impl PaneSource for Counter {
+        fn describe(&self) -> Describe {
+            Describe::new("count", "Count", "cube")
+        }
+        fn start(&mut self, _start: &Start) -> Result<Ready, String> {
+            Ok(Ready {
+                fps: 120,
+                ..Ready::default()
+            })
+        }
+        fn frame(&mut self, _now: Duration) -> Option<Frame> {
+            self.frames
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            None
+        }
+        fn shown(&mut self, shown: bool) {
+            self.shown.lock().unwrap().push(shown);
+        }
+    }
+
+    type Run = std::thread::JoinHandle<(i32, Vec<u8>)>;
+
+    fn counted(
+        rx: mpsc::Receiver<ToPlugin>,
+    ) -> (
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+        Run,
+    ) {
+        let frames = std::sync::Arc::default();
+        let shown = std::sync::Arc::default();
+        let source = Counter {
+            frames: std::sync::Arc::clone(&frames),
+            shown: std::sync::Arc::clone(&shown),
+        };
+        let runner = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            (run(source, rx, &mut out), out)
+        });
+        (frames, shown, runner)
+    }
+
+    #[test]
+    fn no_frames_before_start_or_while_hidden() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let settle = || std::thread::sleep(Duration::from_millis(120));
+        // Not started: no frames, and the app going away ends it.
+        let (tx, rx) = mpsc::channel();
+        let (frames, _, runner) = counted(rx);
+        settle();
+        assert_eq!(frames.load(SeqCst), 0, "not started");
+        drop(tx);
+        assert_eq!(runner.join().unwrap(), (0, Vec::new()));
+
+        // Hidden right after starting (queued before it runs, so no frame can
+        // slip in between): input still arrives, but nothing is drawn.
+        let (tx, rx) = mpsc::channel();
+        tx.send(ToPlugin::Start(Start {
+            width: 64,
+            height: 32,
+            cols: 8,
+            rows: 2,
+            args: Value::Null,
+            theme: Theme::default(),
+            protocol: PROTOCOL,
+        }))
+        .unwrap();
+        tx.send(ToPlugin::Shown { shown: false }).unwrap();
+        tx.send(ToPlugin::Shown { shown: false }).unwrap();
+        tx.send(ToPlugin::Key {
+            key: "space".into(),
+            text: None,
+        })
+        .unwrap();
+        let (frames, shown, runner) = counted(rx);
+        settle();
+        assert_eq!(frames.load(SeqCst), 0, "hidden: no frames");
+        tx.send(ToPlugin::Shown { shown: true }).unwrap();
+        settle();
+        assert!(frames.load(SeqCst) > 0, "back in sight: frames again");
+        tx.send(ToPlugin::Stop).unwrap();
+        let (code, out) = runner.join().unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(*shown.lock().unwrap(), [false, true], "only changes");
+        let (kind, json) = read_message(&mut io::Cursor::new(out)).unwrap();
+        assert_eq!(kind, KIND_JSON);
+        assert!(matches!(
+            serde_json::from_slice(&json).unwrap(),
+            FromPlugin::Ready(Ready { fps: 120, .. })
+        ));
     }
 }

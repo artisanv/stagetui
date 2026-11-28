@@ -117,6 +117,11 @@ class Plugin:
         """The app called ``pane.content.call(method, args)``."""
         raise ValueError(f'this plugin has no method "{method}"')
 
+    def shown(self, shown: bool) -> None:
+        """The pane went out of sight (``False``: another pane type or tab is
+        showing) or came back (``True``). ``frame`` isn't called while hidden:
+        pause anything that makes sound or costs work."""
+
     def stop(self) -> None:
         """The pane is closing."""
 
@@ -167,11 +172,12 @@ def serve(plugin: Plugin) -> None:
     threading.Thread(target=reader, daemon=True).start()
     begun = time.monotonic()
     started = False
+    shown = True
     every = 1 / max(1, plugin.fps)
     due = time.monotonic()
     try:
         while True:
-            wait = max(0.0, due - time.monotonic()) if started else None
+            wait = max(0.0, due - time.monotonic()) if started and shown else None
             try:
                 msg = inbox.get(timeout=wait)
             except Empty:
@@ -214,6 +220,11 @@ def serve(plugin: Plugin) -> None:
             elif kind == "mouse":
                 plugin.mouse(msg["kind"], msg["x"], msg["y"], msg.get("button"))
                 due = time.monotonic()
+            elif kind == "shown":
+                if bool(msg.get("shown", True)) != shown:
+                    shown = not shown
+                    plugin.shown(shown)
+                    due = time.monotonic()
             elif kind == "call":
                 try:
                     reply = {
@@ -224,7 +235,7 @@ def serve(plugin: Plugin) -> None:
                 except Exception as e:  # noqa: BLE001 — the caller gets the error
                     reply = {"t": "reply", "id": msg["id"], "value": None, "error": str(e)}
                 plugin._send(reply)
-            elif kind == "tick" and started:
+            elif kind == "tick" and started and shown:
                 due = time.monotonic() + every
                 pic = plugin.frame(time.monotonic() - begun)
                 if pic is not None:

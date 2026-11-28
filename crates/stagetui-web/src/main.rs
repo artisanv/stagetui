@@ -227,7 +227,34 @@ enum Cmd {
     Key(DispatchKeyEventParams),
     Text(String),
     Eval(String, std_mpsc::Sender<Result<Value, String>>),
+    /// The pane went out of sight (`false`) or came back.
+    Shown(bool),
     Stop,
+}
+
+/// The screencast follows the pane: its size, and off while it's out of sight.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Cast {
+    size: (u32, u32),
+    hidden: bool,
+}
+
+impl Cast {
+    /// The pane changed size: `true` if the screencast must restart at it.
+    fn resize(&mut self, size: (u32, u32)) -> bool {
+        self.size = size;
+        !self.hidden
+    }
+
+    /// The pane hid or came back: `Some(true)` start the screencast (at the
+    /// latest size), `Some(false)` stop it, `None` nothing changed.
+    fn shown(&mut self, shown: bool) -> Option<bool> {
+        if self.hidden != shown {
+            return None;
+        }
+        self.hidden = !shown;
+        Some(shown)
+    }
 }
 
 #[derive(Default)]
@@ -250,6 +277,44 @@ async fn screencast(page: &Page, w: u32, h: u32) -> chromiumoxide::Result<()> {
     };
     page.execute(p).await?;
     Ok(())
+}
+
+/// Out of sight: pause every playing `<video>` / `<audio>` (in same-origin frames
+/// too, and any that start while hidden), remembering which, so sound stops.
+const HUSH_MEDIA: &str = r"void (() => {
+  if (window.__stagetuiHidden) return;
+  const paused = new Set(), docs = [];
+  const hush = (m) => { if (!m.paused) { m.pause(); paused.add(m); } };
+  const onPlay = (e) => hush(e.target);
+  const walk = (doc) => {
+    docs.push(doc);
+    for (const f of doc.querySelectorAll('iframe, frame')) {
+      let inner = null;
+      try { inner = f.contentDocument; } catch (e) {}
+      if (inner) walk(inner);
+    }
+  };
+  walk(document);
+  for (const d of docs) {
+    d.querySelectorAll('video, audio').forEach((m) => hush(m));
+    d.addEventListener('play', onPlay, true);
+  }
+  window.__stagetuiHidden = { paused, docs, onPlay };
+})()";
+
+/// Back in sight: play again only what `HUSH_MEDIA` paused.
+const WAKE_MEDIA: &str = r"void (() => {
+  const h = window.__stagetuiHidden;
+  if (!h) return;
+  delete window.__stagetuiHidden;
+  for (const d of h.docs) d.removeEventListener('play', h.onPlay, true);
+  for (const m of h.paused) if (m.paused) m.play()?.catch(() => {});
+})()";
+
+/// Run page script on a best-effort basis: a busy page mustn't hold up pictures,
+/// input or events for long, and if it fails, there is nothing to do about it.
+async fn try_script(page: &Page, js: &str) {
+    let _ = tokio::time::timeout(Duration::from_millis(500), page.evaluate(js)).await;
 }
 
 fn picture(data: &str) -> Option<Frame> {
@@ -288,7 +353,7 @@ async fn drive(
     shared: Arc<Mutex<Shared>>,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Cmd>,
     zoom: f64,
-    size: (u32, u32),
+    mut cast: Cast,
 ) {
     let (Ok(mut frames), Ok(mut navs), Ok(mut loads)) = (
         page.event_listener::<EventScreencastFrame>().await,
@@ -298,25 +363,39 @@ async fn drive(
         lock(&shared).trouble = Some("the browser stopped answering".into());
         return;
     };
-    let _ = screencast(&page, size.0, size.1).await;
+    if !cast.hidden {
+        let _ = screencast(&page, cast.size.0, cast.size.1).await;
+    }
     let mut check = tokio::time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
             Some(f) = frames.next() => {
-                if let Some(pic) = picture(f.data.as_ref()) {
+                // (One may still arrive just after the screencast stopped.)
+                if !cast.hidden && let Some(pic) = picture(f.data.as_ref()) {
                     lock(&shared).frame = Some(pic);
                 }
                 let _ = page.execute(ScreencastFrameAckParams::new(f.session_id)).await;
             }
             Some(n) = navs.next() => {
                 if n.frame.parent_id.is_none() {
-                    let mut s = lock(&shared);
-                    s.url = n.frame.url.clone();
-                    s.loading = true;
-                    s.events.push(("navigated".into(), json!(n.frame.url)));
+                    {
+                        let mut s = lock(&shared);
+                        s.url = n.frame.url.clone();
+                        s.loading = true;
+                        s.events.push(("navigated".into(), json!(n.frame.url)));
+                    }
+                    // A new page while out of sight: keep it quiet too.
+                    if cast.hidden {
+                        try_script(&page, HUSH_MEDIA).await;
+                    }
                 }
             }
-            Some(_) = loads.next() => finish_load(&page, &shared).await,
+            Some(_) = loads.next() => {
+                finish_load(&page, &shared).await;
+                if cast.hidden {
+                    try_script(&page, HUSH_MEDIA).await;
+                }
+            }
             _ = check.tick() => {
                 // Page events come on separate streams, so a "navigated" can be handled
                 // after its "load": while we think the page is loading, ask it.
@@ -346,9 +425,22 @@ async fn drive(
                     Cmd::Resize(w, h) => {
                         let css = ((f64::from(w) / zoom) as i64, (f64::from(h) / zoom) as i64);
                         let _ = page.execute(SetDeviceMetricsOverrideParams::new(css.0.max(1), css.1.max(1), zoom, false)).await;
-                        let _ = page.execute(StopScreencastParams::default()).await;
-                        let _ = screencast(&page, w, h).await;
+                        if cast.resize((w, h)) {
+                            let _ = page.execute(StopScreencastParams::default()).await;
+                            let _ = screencast(&page, w, h).await;
+                        }
                     }
+                    Cmd::Shown(shown) => match cast.shown(shown) {
+                        Some(true) => {
+                            let _ = screencast(&page, cast.size.0, cast.size.1).await;
+                            try_script(&page, WAKE_MEDIA).await;
+                        }
+                        Some(false) => {
+                            try_script(&page, HUSH_MEDIA).await;
+                            let _ = page.execute(StopScreencastParams::default()).await;
+                        }
+                        None => {}
+                    },
                     Cmd::Mouse(kind, x, y, button, wheel) => {
                         let mut p = DispatchMouseEventParams::new(kind.clone(), x, y);
                         if let Some(b) = button {
@@ -404,6 +496,8 @@ struct Web {
     status: String,
     status_due: Instant,
     resize_at: Option<Instant>,
+    /// Out of sight: no pictures are made.
+    hidden: bool,
 }
 
 impl Default for Web {
@@ -420,6 +514,7 @@ impl Default for Web {
             status: String::new(),
             status_due: Instant::now(),
             resize_at: None,
+            hidden: false,
         }
     }
 }
@@ -555,8 +650,11 @@ impl PaneSource for Web {
         })?;
         let (tx, rx) = unbounded_channel();
         let shared = Arc::clone(&self.shared);
-        let size = self.size;
-        self.task = Some(rt.spawn(drive(launched.0, launched.1, shared, rx, zoom, size)));
+        let cast = Cast {
+            size: self.size,
+            hidden: self.hidden,
+        };
+        self.task = Some(rt.spawn(drive(launched.0, launched.1, shared, rx, zoom, cast)));
         self.rt = Some(rt);
         self.tx = Some(tx);
         self.profile = Some(profile);
@@ -658,6 +756,17 @@ impl PaneSource for Web {
             _ => return,
         };
         self.send(cmd);
+    }
+
+    /// Out of sight, the browser stops sending pictures; back, it starts again
+    /// (at the size the pane has now).
+    fn shown(&mut self, shown: bool) {
+        self.hidden = !shown;
+        if shown && self.resize_at.take().is_some() {
+            // Resized while hidden (`frame` isn't called then): size it first.
+            self.send(Cmd::Resize(self.size.0, self.size.1));
+        }
+        self.send(Cmd::Shown(shown));
     }
 
     fn paste(&mut self, text: &str) {
@@ -768,5 +877,20 @@ mod tests {
         assert_eq!(file_url("/home/me/a.html"), "file:///home/me/a.html");
         assert_eq!(key_code("enter").map(|k| k.2), Some(13));
         assert!(key_code("q").is_none());
+    }
+
+    #[test]
+    fn screencast_stops_while_hidden() {
+        let mut cast = Cast {
+            size: (800, 600),
+            hidden: false,
+        };
+        assert!(cast.resize((640, 480)), "shown: restart at the new size");
+        assert_eq!(cast.shown(true), None, "already shown");
+        assert_eq!(cast.shown(false), Some(false), "hide: stop");
+        assert_eq!(cast.shown(false), None);
+        assert!(!cast.resize((1024, 768)), "hidden: no restart");
+        assert_eq!(cast.shown(true), Some(true), "back: start");
+        assert_eq!(cast.size, (1024, 768), "at the size it has now");
     }
 }

@@ -68,6 +68,9 @@ and you can write your own add-on in a few lines of Python
 | Web | A real web page in a pane (uses your installed Chrome / Chromium) | `pip install stagetui-web` |
 | 3D | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install stagetui-3d` |
 
+All three are on PyPI. You can also install one together with stagetui:
+`pip install "stagetui[3d]"` (or `[video]`, `[web]`, or several: `"stagetui[video,web,3d]"`).
+
 For pictures, video and 3D, use a terminal that can show real pictures — Ghostty,
 Kitty, WezTerm or foot (Linux), Ghostty, Kitty, WezTerm or iTerm2 (macOS),
 WezTerm or Windows Terminal (Windows). In other terminals pictures are drawn with

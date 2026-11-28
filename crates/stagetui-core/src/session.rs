@@ -663,6 +663,7 @@ impl Session {
             &mut self.root_scroll,
         );
         self.prepass(cols, rows);
+        self.sync_shown();
         self.check_installs();
         self.collect_widget_events();
         self.offer_pictures();
@@ -693,6 +694,18 @@ impl Session {
         self.dirty = false;
         self.tick();
         frame
+    }
+
+    /// Tell add-on panes whether they can be seen: a hidden video pauses, a
+    /// hidden 3D model stops drawing.
+    fn sync_shown(&self) {
+        for (i, n) in self.tree.nodes.iter().enumerate() {
+            if let Kind::Plugin(p) = &n.kind
+                && n.alive
+            {
+                p.set_shown(self.tree.shown(i));
+            }
+        }
     }
 
     /// Bounds, birth times and hit regions from the fresh layout.
@@ -1497,7 +1510,8 @@ impl Session {
 
     /// Install an add-on: its output shows in the pane, then the pane switches to it.
     fn install_plugin(&mut self, pane: usize, plugin: &str) {
-        let Some(k) = crate::plugins::known(plugin) else {
+        // Only published add-ons install by name (an unpublished name could be anyone's).
+        let Some(k) = crate::plugins::known(plugin).filter(|k| k.available) else {
             return;
         };
         match crate::plugins::installer(k.package) {
@@ -1882,12 +1896,18 @@ impl Session {
             .parent
             .is_some_and(|p| matches!(self.tree.nodes[p].kind, Kind::Split(_)));
         if !in_split {
-            let _ = self.notify(
-                "This is the last pane",
-                Some("info"),
-                None,
-                Duration::from_secs(2),
-            );
+            if self.tree.pane_count() <= 1 {
+                // Closing the last pane closes the app (an attached window asks
+                // first; a pop-out window puts the pane back).
+                self.user_quit();
+            } else {
+                let _ = self.notify(
+                    "This pane can't close: it isn't in a split",
+                    Some("info"),
+                    None,
+                    Duration::from_secs(2),
+                );
+            }
             return;
         }
         let id = self.tree.nodes[pane].id.clone();
@@ -4182,10 +4202,54 @@ mod tests {
         s.press("x").unwrap();
         s.frame(80, 24);
         assert_eq!(panes(&s), 1);
+        assert!(
+            !s.quit_requested(),
+            "closing one of two panes keeps the app"
+        );
         s.press("ctrl+space").unwrap();
         s.press("x").unwrap();
-        assert_eq!(panes(&s), 1, "the last pane stays");
-        assert!(s.tree_json(80, 24)["toasts"][0] == "This is the last pane");
+        assert_eq!(panes(&s), 1, "the last pane stays on screen…");
+        assert!(s.quit_requested(), "…and the app closes");
+    }
+
+    #[test]
+    fn the_last_panes_close_button_closes_the_app() {
+        let mut s = session(
+            r#"{"children":[{"type":"split","children":[
+            {"type":"pane","content":"markdown","props":{"id":"a"},"children":[{"type":"markdown","content":"a"}]},
+            {"type":"pane","content":"markdown","props":{"id":"b"},"children":[{"type":"markdown","content":"b"}]}]}]}"#,
+        );
+        let close = |s: &mut Session, id: &str| {
+            let i = s.tree().find(&format!("#{id}")).unwrap();
+            let x = s.pane_header(i).1[3]; // ⊞ ⊟ ↗ ×
+            s.click_at(x.x + 1, x.y);
+            s.frame(80, 24);
+        };
+        s.frame(80, 24);
+        close(&mut s, "a");
+        assert!(s.tree().get("a").is_none(), "pane a closed");
+        assert!(!s.quit_requested());
+        close(&mut s, "b");
+        assert!(s.quit_requested(), "× on the last pane closes the app");
+    }
+
+    #[test]
+    fn hidden_panes_are_not_shown() {
+        let s = session(
+            r##"{"children":[{"type":"tabs","children":[
+            {"type":"pane","content":"markdown","props":{"id":"a","title":"One"},"children":[
+                {"type":"markdown","content":"# Notes","props":{"id":"notes"}},
+                {"type":"log","props":{"id":"logs"}}]},
+            {"type":"card","content":"two","props":{"id":"two","title":"Two"}}]}]}"##,
+        );
+        let t = s.tree();
+        let shown = |id: &str| t.shown(t.find(&format!("#{id}")).unwrap());
+        assert!(
+            shown("a") && shown("notes"),
+            "the active tab and the pane's type"
+        );
+        assert!(!shown("logs"), "stashed under another pane type");
+        assert!(!shown("two"), "a tab you're not looking at");
     }
 
     #[cfg(unix)]

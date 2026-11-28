@@ -1110,6 +1110,12 @@ impl Tree {
         let mut stack = vec![idx];
         while let Some(i) = stack.pop() {
             self.nodes[i].alive = false;
+            // What runs inside (an add-on, a shell) stops now, not when the app quits.
+            match &mut self.nodes[i].kind {
+                Kind::Plugin(p) => p.release(),
+                Kind::Terminal(t) => t.release(),
+                _ => {}
+            }
             stack.extend(self.nodes[i].children.iter().copied());
         }
         match parent {
@@ -1166,6 +1172,48 @@ impl Tree {
         }
         self.nodes[split].alive = false;
         self.nodes[split].children.clear();
+    }
+
+    /// Whether a node can be seen: alive, visible, and on the page its tabs
+    /// and panes show — not stashed under another pane type, not in another tab.
+    /// (A popped-out pane counts as seen: it is, in its own window.)
+    pub fn shown(&self, i: usize) -> bool {
+        let live = |n: usize| self.nodes[n].alive && self.nodes[n].visible;
+        if !live(i) {
+            return false;
+        }
+        let mut c = i;
+        while let Some(p) = self.nodes[c].parent {
+            if !live(p) {
+                return false;
+            }
+            let on_page = match &self.nodes[p].kind {
+                Kind::Pane(pb) => crate::layout::pane_child(self, p, pb) == Some(c),
+                Kind::Tabs(t) => {
+                    let pages: Vec<usize> = self.nodes[p]
+                        .children
+                        .iter()
+                        .copied()
+                        .filter(|k| live(*k))
+                        .collect();
+                    pages.get(t.active.min(pages.len().saturating_sub(1))) == Some(&c)
+                }
+                _ => true,
+            };
+            if !on_page {
+                return false;
+            }
+            c = p;
+        }
+        true
+    }
+
+    /// How many panes the app has (StagePane widgets still open).
+    pub fn pane_count(&self) -> usize {
+        self.nodes
+            .iter()
+            .filter(|n| n.alive && matches!(n.kind, Kind::Pane(_)))
+            .count()
     }
 
     /// Cards directly inside a split or tabs are panes: they take focus.

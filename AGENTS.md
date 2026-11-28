@@ -15,8 +15,10 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
   - `ipc.rs` sessions: private runtime folder, token, framing, registry, `attach` client
   - `workspace.rs` layouts of splits/panes: capture, apply (re-using nodes by id), JSON files
   - `launch.rs` opens a new terminal window (per terminal family) for popped-out panes; finds or installs a picture terminal
-  - `plugins.rs` add-on discovery (`stagetui-plugin-*`), the official catalog, installer (pip / uv); `widgets/plugin.rs` runs one
-- `crates/stagetui-plugin-api` — the add-on protocol, `PaneSource` trait, `serve()` (no stagetui dependency)
+  - `plugins.rs` add-on discovery (`stagetui-plugin-*`), the official catalog (`KNOWN`; `available: false` = never installed by name; tests use `pretend_known`), installer (pip / uv); `widgets/plugin.rs` runs one
+- `crates/stagetui-plugin-api` — the add-on protocol, `PaneSource` trait, `serve()` (no stagetui dependency).
+  Hidden panes (switched away, background tab) get `{"t": "shown", "shown": false}` → `PaneSource::shown(false)`
+  and no `frame` calls; add-ons pause sound/work there. Add-ons ignore messages they don't know, so older ones keep working.
 - `crates/stagetui-video` — the video add-on (`stagetui-plugin-video`; its own PyPI package, ffmpeg via
   imageio-ffmpeg, sound via cpal). Not a default workspace member (needs ALSA headers on Linux):
   `cargo build -p stagetui-video`; test with `STAGETUI_PLUGIN_PATH=$PWD/target/debug pytest tests/python/test_video.py`

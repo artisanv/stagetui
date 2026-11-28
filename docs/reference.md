@@ -24,7 +24,8 @@ Bundled fonts and which writing systems have fonts available.
 
 ### `ts.plugins(*, refresh=False) -> list[dict]`
 Add-ons: installed ones and the official ones you can install — `name`, `title`,
-`installed`, `package`, `about`. Same as `stagetui plugins --json` ([Add-ons](plugins.md)).
+`installed`, `package`, `about`, `available` (it can be installed now). Same as
+`stagetui plugins --json` ([Add-ons](plugins.md)).
 
 ### `stagetui.plugin.Plugin` / `serve(plugin)`
 Write an add-on in Python: override `start`, `frame`, `key`, `mouse`, `call`; use
@@ -70,8 +71,9 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 | `workspaces(*, path=None) -> list[str]` | Names of the saved layouts |
 
 Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`,
-`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane`, `pop_out` (open the
-focused pane in its own window, or bring it back), `detach`.
+`pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane` (on the last pane it
+closes the app, like `quit`), `pop_out` (open the focused pane in its own window, or
+bring it back), `detach`.
 
 ### `class Driver`
 Made by `app.drive()`; use it in a `with` block.

@@ -56,7 +56,14 @@ impl Drop for Inner {
 fn stop(inner: &Inner) {
     if let Some(mut child) = lock(&inner.child).take() {
         let _ = child.kill();
-        let _ = child.try_wait();
+        if !matches!(child.try_wait(), Ok(Some(_))) {
+            // Collect it once it has gone (no zombie left), without making the screen wait.
+            let _ = std::thread::Builder::new()
+                .name("stagetui-pty-wait".into())
+                .spawn(move || {
+                    let _ = child.wait();
+                });
+        }
     }
     if let Some(pid) = lock(&inner.pid).take() {
         let _ = crate::reaper::global().untrack_pid(pid);
@@ -124,6 +131,11 @@ impl Terminal {
                 pid: Mutex::new(None),
             }),
         }
+    }
+
+    /// The pane closed: end its program now, not when the app quits.
+    pub fn release(&mut self) {
+        stop(&self.inner);
     }
 
     /// Keep the same running program when the widget is updated.

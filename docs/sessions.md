@@ -40,7 +40,8 @@ Everything it did while you were away is on screen.
 
 ## Leaving: detach or quit?
 
-When you press **q** (or **Ctrl+C**) in an attached window, stagetui asks first:
+When you press **q** (or **Ctrl+C**) in an attached window — or close its last
+pane with **×** (or **Ctrl+Space** then **x**) — stagetui asks first:
 
 ```
 ╭─ Leave "night-shift"? ─────────────────────────╮

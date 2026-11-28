@@ -55,8 +55,20 @@ The first argument is the **pane type**. Extra options go to that type:
 - Drag the line between two panes to resize them.
 - The focused pane's header is highlighted.
 
+**Closing a pane stops what runs in it** — a shell, or an add-on such as a video —
+right away, instead of when the app quits.
+
+**Closing the last pane closes the app**, the same as pressing **q**:
+
+- in a window [attached to a running session](sessions.md#leaving-detach-or-quit),
+  stagetui first asks whether to *Detach* (the app keeps running) or *Quit* it;
+- in a pane's [own window](#open-a-pane-in-its-own-window), closing it puts the
+  pane back where it came from instead.
+
 **Switching keeps things running.** When you switch a pane from *Terminal* to
 *Notes*, the shell keeps running in the background; switch back and it's all there.
+Add-ons (video, web, 3D) rest while you can't see them: a video pauses, and plays
+on when you switch back (see [Add-ons](plugins.md#out-of-sight-an-add-on-rests)).
 
 ## From the keyboard
 
@@ -67,7 +79,7 @@ Press the **prefix key**, **Ctrl+Space**, then:
 | **Space** or **Enter** | Open the pane menu (then ↑ ↓ Enter) |
 | **\|** | Split side by side |
 | **-** | Split top / bottom |
-| **x** | Close the pane |
+| **x** | Close the pane (the last one: close the app, like **×**) |
 | **Tab** / arrows | Move to the next pane |
 | **o** | Open the pane in its own window (again: bring it back) |
 | **1**-**9** | Switch workspace (with [workspace tabs](#workspaces-whole-layouts-like-blenders-tabs)) |

@@ -11,6 +11,15 @@ only if you want them. Once installed, they appear in every pane's menu, like
 | **Web** | A real web page in a pane (uses your Chrome / Chromium) | `pip install stagetui-web` ([below](#web)) |
 | **3D** | Look at 3D models (glTF, OBJ, STL) and turn them with the mouse | `pip install stagetui-3d` ([below](#3d)) |
 
+All three are ready to install. You can also ask for them together with stagetui
+itself — the name in the square brackets is the add-on (the quotes keep your shell
+from reading the brackets):
+
+```bash
+pip install "stagetui[3d]"          # stagetui and the 3D add-on
+pip install "stagetui[video,web]"   # stagetui, video and web
+```
+
 `examples/10_plugins.py` shows a tiny add-on in action.
 
 ## Using an add-on
@@ -49,6 +58,20 @@ pane turns into the add-on. Or install ahead of time:
 stagetui plugins                  # what is installed, what you can add
 stagetui plugins install video    # install one
 ```
+
+### Out of sight, an add-on rests
+
+An add-on works only while you can see its pane. Switch the pane to another type
+(say, from *Video* to *Notes*) or go to another tab, and stagetui tells the add-on
+it is hidden: a video pauses its sound and picture, a web page stops sending
+pictures, and 3D stops drawing — so nothing plays where you can't hear it, and
+your computer doesn't work for nothing. Come back and it carries on (a video that
+was playing plays on).
+
+**Closing** the pane — **×** in its header, or **Ctrl+Space** then **x** — stops
+the add-on's program right away. See
+[Panes → The pane header](panes.md#the-pane-header) for what happens when it is
+the last pane.
 
 ## Real pictures
 
@@ -174,6 +197,9 @@ Look().run()
 
 `examples/13_3d.py` is a ready-made viewer (with no file, it makes a colorful knot).
 
+Install it with `pip install stagetui-3d` (or `pip install "stagetui[3d]"`) — or
+just open a 3D pane and say yes when stagetui asks.
+
 It reads the common 3D files: **glTF** (`.glb`, or `.gltf` with its `.bin` and
 pictures next to it), **OBJ** (with its `.mtl` colors and pictures) and **STL**
 (3D printing). Colors, pictures on the surface and every part of the model are
@@ -283,12 +309,70 @@ STAGETUI_PLUGIN_PATH=. python my_app.py      # or put it anywhere on your PATH
 | `key(key, text)` | A key from `keys` (`text = True` gets every key) |
 | `mouse(kind, x, y, button)` | Clicks, drags, moves and the wheel, in pixels |
 | `call(method, args)` | The app called `pane.content.call(...)` |
+| `shown(shown)` | The pane went out of sight (`False`) or came back (`True`); `frame` isn't called while hidden |
 | `self.status(text)` | Show a line at the bottom of the pane |
 | `self.event(name, value)` | Tell the app (`on_<name>` handlers) |
 
-For speed (video, 3D), write it in Rust with the `stagetui-plugin-api` crate: the
-same idea — implement `PaneSource` and call `serve(...)`. Under the hood both
-speak a tiny protocol over stdin/stdout: JSON messages and raw RGBA frames.
+### In Rust
+
+For speed (video, web, 3D), write it in Rust with the `stagetui-plugin-api` crate:
+the same idea — implement `PaneSource` and call `serve(...)`. Build it as a program
+named `stagetui-plugin-<name>`.
+
+```rust
+use stagetui_plugin_api::{Describe, Frame, PaneSource, Ready, Start, serve};
+use std::time::Duration;
+
+struct Gradient { w: u32, h: u32 }
+
+impl PaneSource for Gradient {
+    fn describe(&self) -> Describe {
+        Describe::new("gradient", "Gradient", "sparkles")
+    }
+    fn start(&mut self, s: &Start) -> Result<Ready, String> {
+        (self.w, self.h) = (s.width, s.height);
+        Ok(Ready::default())
+    }
+    fn resize(&mut self, width: u32, height: u32) {
+        (self.w, self.h) = (width, height);
+    }
+    fn frame(&mut self, now: Duration) -> Option<Frame> {
+        let shift = (now.as_secs_f32() * 60.0) as u32;
+        Some(Frame::from_fn(self.w, self.h, |x, _| [((x + shift) % 256) as u8, 80, 200, 255]))
+    }
+    fn shown(&mut self, shown: bool) {
+        // false: out of sight, and `frame` isn't called until it's back.
+        // Pause sound or other work here (true: carry on).
+        let _ = shown;
+    }
+}
+
+fn main() {
+    std::process::exit(serve(Gradient { w: 1, h: 1 }));
+}
+```
+
+`describe`, `start` and `frame` are required; the others do nothing unless you
+write them:
+
+| Method | When |
+|---|---|
+| `describe()` | Its name, title and icon (for `--describe` and the pane menu) |
+| `start(&Start)` | The pane opened: its size and options (`args`); return `Ready` (or an error message) |
+| `frame(now)` | Draw: return a `Frame` when the picture changed, or `None` |
+| `resize(width, height)` | The pane changed size (pixels) |
+| `key(key, text)` / `mouse(&Mouse)` / `paste(text)` | Keys, clicks and pasted text |
+| `focus(bool)` | The pane got or lost the keyboard |
+| `shown(bool)` | The pane went **out of sight** (`false`: its type was switched, or it is in a tab you aren't looking at) or came back (`true`). `frame` isn't called while it's hidden — pause sound and other work here, like the video, web and 3D add-ons do |
+| `call(method, args)` | The app called `pane.content.call(...)` |
+| `status()` | The line at the bottom of the pane (`None`: unchanged) |
+
+Under the hood both Python and Rust add-ons speak a tiny protocol over
+stdin/stdout: JSON messages and raw RGBA frames. stagetui sends `{"t": "start", …}`,
+`{"t": "key", …}`, `{"t": "shown", "shown": false}` and so on; an add-on that doesn't
+know a message simply ignores it, so older add-ons keep working. (The Python
+`Plugin` helper above doesn't pass `shown` on yet: a Python add-on keeps drawing
+while hidden.)
 
 ## Good to know
 

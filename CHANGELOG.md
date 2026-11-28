@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0a7] — 2026-11-28
+
+The 3D add-on is out: `pip install stagetui-3d` (or `pip install "stagetui[3d]"`).
 
 ### Added — Milestone 6d: 3D
 - **`stagetui-3d`**, the 3D add-on (its own package): `StagePane("3d", path="model.glb")`
@@ -17,6 +19,30 @@ All notable changes to this project are documented here. The format follows
 - `examples/13_3d.py`: a model viewer; with no file it makes a colorful knot.
 - **Drag** for tests and agents: `d.drag("#id" or (x, y), (x, y))`, the step
   `{"drag": {"from": …, "to": …}}`, and the `drag` tool in `stagetui mcp` / `drive`.
+
+### Changed
+- **The 3D add-on is on PyPI**: `pip install stagetui-3d` or `pip install "stagetui[3d]"`.
+  Picking *3D* in a pane's menu now offers to install it (it no longer says "coming
+  soon"), and so does `stagetui plugins install 3d`. The `video` and `web` extras ask
+  for version 0.1.0a7 of those add-ons.
+- **Clicking × on the last pane closes the app.** In a window attached to a running
+  session it asks *Detach* or *Quit* first; in a pane's own pop-out window it puts the
+  pane back where it came from. **Ctrl+Space** then **x** on the last pane does the same.
+  (Before, the last pane stayed and a message said "This is the last pane".)
+- **Hidden panes pause.** When an add-on's pane is switched to another type, or sits in
+  a tab you aren't looking at, the add-on is told with a new `shown` message: video
+  pauses its sound and picture (and plays on when you come back, if it was playing),
+  the web page pauses its videos and sounds and stops sending pictures, and 3D stops
+  drawing. Older add-ons simply ignore the message and keep going as before.
+- Add-on API (`stagetui-plugin-api`): `PaneSource::shown(bool)` and the
+  `{"t": "shown", "shown": true | false}` message; `serve()` asks for no frames while
+  the pane is hidden. Python add-ons get `Plugin.shown(shown)` the same way.
+
+### Fixed
+- Closing a pane stops what runs in it right away — an add-on (video, web, 3D) or a
+  shell — instead of when the app quits. The screen doesn't wait for it, and no
+  finished process is left behind.
+- An add-on that isn't published yet can never be installed by name, from any path.
 
 ## [0.1.0a6] — 2026-11-27
 

@@ -39,6 +39,9 @@ class Dot(Plugin):
         self.n += 1
         self.event("pressed", {{"key": key, "n": self.n}})
 
+    def shown(self, shown):
+        self.event("shown", shown)
+
     def call(self, method, args):
         if method == "count":
             return self.n
@@ -75,7 +78,8 @@ def settle(d, until, seconds: float = 10.0) -> bool:
 def test_add_ons_are_found_and_listed(addons: Path) -> None:
     found = {p["name"]: p for p in ts.plugins(refresh=True)}
     assert found["dot"]["installed"] and found["dot"]["title"] == "Dot"
-    assert found["3d"]["package"] == "stagetui-3d" and not found["3d"]["installed"]
+    # Official add-ons are listed even when they aren't installed, and all are on PyPI.
+    assert found["3d"]["package"] == "stagetui-3d" and found["3d"]["available"]
 
 
 def test_an_add_on_draws_talks_and_restarts(addons: Path) -> None:
@@ -121,6 +125,30 @@ def test_an_add_on_draws_talks_and_restarts(addons: Path) -> None:
         assert dot.call("count") == 0, "a fresh start"
 
 
+def test_a_hidden_add_on_rests(addons: Path) -> None:
+    ts.plugins(refresh=True)  # this test's add-on folder
+    seen: list[bool] = []
+
+    class App(StageApp):
+        def compose(self):
+            return [StagePane("dot", id="p", label="مَرْحَبًا 日本語 नमस्ते", on_shown=seen.append)]
+
+    with App().drive((60, 16)) as d:
+        pane = d.app.query("#p")
+        node = lambda: next(c for c in d.query("#p")["children"] if c.get("plugin") == "dot")
+        assert settle(d, lambda: node()["frames"] > 0)
+        pane.switch("markdown")  # the add-on is stashed: still running, out of sight
+        assert settle(d, lambda: seen == [False]), "it hears it's hidden"
+        frames = node()["frames"]
+        d.wait(0.4)
+        time.sleep(0.3)
+        d.wait(0.1)
+        assert node()["frames"] <= frames + 1, "hidden: no frames"
+        pane.switch("dot")
+        assert settle(d, lambda: seen == [False, True]), "…and that it's back"
+        assert settle(d, lambda: node()["frames"] > frames + 1), "drawing again"
+
+
 def test_an_add_on_can_refuse_to_start(addons: Path) -> None:
     ts.plugins(refresh=True)
 
@@ -133,21 +161,36 @@ def test_an_add_on_can_refuse_to_start(addons: Path) -> None:
         assert "asked to fail: no file" in d.snapshot().text
 
 
-def test_official_add_ons_say_when_they_are_coming(addons: Path) -> None:
-    ts.plugins(refresh=True)
+def test_official_add_ons_offer_to_install(addons: Path) -> None:
+    found = {p["name"]: p for p in ts.plugins(refresh=True)}
+    if found["3d"]["installed"]:
+        pytest.skip("the 3D add-on is installed here")
 
     class Wants(StageApp):
         def compose(self):
-            return [StageSplit([StagePane("3d", id="v"), StagePane("empty", id="e")])]
+            return [
+                StageSplit(
+                    [
+                        StagePane("3d", id="v"),
+                        StagePane("empty", id="e"),
+                        StagePane("markdown", id="m", text="مَرْحَبًا Hello 日本語 नमस्ते"),
+                    ]
+                )
+            ]
 
-    with Wants().drive((90, 20)) as d:
+    with Wants().drive((120, 20)) as d:
         d.wait(0.1)
-        assert "3D is coming soon" in d.snapshot().text
+        assert "3D isn't installed yet" in d.snapshot().text
+        # A click asks first; nothing is installed until you say yes.
+        d.click("#v")
+        assert "Install 3D?" in d.snapshot().text, d.snapshot().text
+        d.press("esc")
+        assert "Install 3D?" not in d.snapshot().text
         d.click("#e")
         d.press("ctrl+space")
         d.press("space")  # the pane menu lists every add-on
         menu = d.snapshot().text
-        assert "Dot" in menu and "3D  (coming soon)" in menu, menu
+        assert "Dot" in menu and "3D  (install…)" in menu, menu
 
 
 def test_writing_a_plugin_describes_itself(addons: Path) -> None:

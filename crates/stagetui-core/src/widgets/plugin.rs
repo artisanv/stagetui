@@ -60,6 +60,8 @@ struct Inner {
     frames: AtomicU64,
     started: AtomicBool,
     stopping: AtomicBool,
+    /// Out of sight (stashed under another pane type, or in another tab).
+    hidden: AtomicBool,
     stderr: Mutex<VecDeque<String>>,
 }
 
@@ -143,6 +145,26 @@ impl PluginView {
     pub fn carry(&mut self, old: &PluginView) {
         if old.name == self.name {
             self.inner = Arc::clone(&old.inner);
+        }
+    }
+
+    /// The pane closed: stop the program now, not when the app quits. It gets
+    /// a moment to clean up (a browser closing) on a thread of its own, so the
+    /// screen doesn't wait.
+    pub fn release(&mut self) {
+        let old = std::mem::take(&mut self.inner);
+        old.stopping.store(true, Ordering::SeqCst);
+        // If no thread can start, the closure (and the program with it) is dropped here.
+        let _ = std::thread::Builder::new()
+            .name("stagetui-plugin-stop".into())
+            .spawn(move || drop(old));
+    }
+
+    /// Tell the program whether its pane can be seen. Hidden, it stops drawing
+    /// (and a video pauses); it only hears about changes.
+    pub fn set_shown(&self, shown: bool) {
+        if self.inner.hidden.swap(!shown, Ordering::SeqCst) == shown {
+            self.inner.send(&ToPlugin::Shown { shown });
         }
     }
 
@@ -238,6 +260,10 @@ impl PluginView {
             protocol: api::PROTOCOL,
         });
         self.inner.send(&start);
+        if self.inner.hidden.load(Ordering::SeqCst) {
+            // Hidden before it started (or while it restarted): it begins out of sight.
+            self.inner.send(&ToPlugin::Shown { shown: false });
+        }
         let title = self.title();
         let weak = Arc::downgrade(&self.inner);
         std::thread::Builder::new()
@@ -508,6 +534,8 @@ impl Widget for PluginView {
             "running": lock(&self.inner.stdin).is_some(),
             "status": *lock(&self.inner.status),
             "frames": self.inner.frames.load(Ordering::SeqCst),
+            "pid": lock(&self.inner.child).as_ref().map(TrackedChild::id),
+            "shown": !self.inner.hidden.load(Ordering::SeqCst),
             "error": problem.as_ref().map(|p| format!("{} — {}", p.what, p.why)),
         }))
     }

@@ -485,6 +485,9 @@ struct Video {
     /// The sound ran out early: follow the plain clock from here.
     sound_gone: bool,
     resize_at: Option<Instant>,
+    /// Out of sight (another pane type or tab is showing): `Some(play when back)`.
+    /// Nothing plays, and no sound is heard, while it's hidden.
+    hidden: Option<bool>,
     status: String,
     status_due: Instant,
     events: Vec<(String, Value)>,
@@ -512,6 +515,7 @@ impl Default for Video {
             fresh: true,
             sound_gone: false,
             resize_at: None,
+            hidden: None,
             status: String::new(),
             status_due: Instant::now(),
             events: Vec::new(),
@@ -575,7 +579,17 @@ impl Video {
         self.status_due = Instant::now();
     }
 
+    /// Playing, or will be once it's back in sight.
+    fn playing(&self) -> bool {
+        self.hidden.unwrap_or(!self.paused)
+    }
+
     fn set_paused(&mut self, paused: bool) {
+        if let Some(resume) = &mut self.hidden {
+            // Out of sight: stay quiet; play (or not) once it's back.
+            *resume = !paused;
+            return;
+        }
         if paused == self.paused {
             return;
         }
@@ -686,7 +700,11 @@ impl PaneSource for Video {
                 self.quiet = Some("turned off".into());
             } else {
                 match Sound::open(self.gain()) {
-                    Ok(s) => self.sound = Some(s),
+                    Ok(s) => {
+                        // Already paused if the pane was hidden before it started.
+                        s.shared.paused.store(self.paused, Ordering::SeqCst);
+                        self.sound = Some(s);
+                    }
                     Err(why) => self.quiet = Some(why),
                 }
             }
@@ -806,7 +824,7 @@ impl PaneSource for Video {
     fn key(&mut self, key: &str, _text: Option<&str>) -> bool {
         let pos = self.position();
         match key {
-            "space" => self.set_paused(!self.paused),
+            "space" => self.set_paused(self.playing()),
             "left" => self.seek(pos - 5.0),
             "right" => self.seek(pos + 5.0),
             "shift+left" => self.seek(pos - 30.0),
@@ -822,9 +840,28 @@ impl PaneSource for Video {
 
     fn mouse(&mut self, m: &Mouse) {
         match m.kind.as_str() {
-            "down" if m.button.as_deref() == Some("left") => self.set_paused(!self.paused),
+            "down" if m.button.as_deref() == Some("left") => self.set_paused(self.playing()),
             "scroll_up" => self.set_volume(self.volume + 0.05),
             "scroll_down" => self.set_volume(self.volume - 0.05),
+            _ => {}
+        }
+    }
+
+    /// Out of sight, a playing video pauses (sound too); back in sight, it plays
+    /// on. One the user paused stays paused.
+    fn shown(&mut self, shown: bool) {
+        match (shown, self.hidden) {
+            (false, None) => {
+                let playing = !self.paused;
+                self.set_paused(true);
+                self.hidden = Some(playing);
+            }
+            (true, Some(resume)) => {
+                self.hidden = None;
+                if resume {
+                    self.set_paused(false);
+                }
+            }
             _ => {}
         }
     }
@@ -837,7 +874,7 @@ impl PaneSource for Video {
         match method {
             "play" => self.set_paused(false),
             "pause" => self.set_paused(true),
-            "toggle" => self.set_paused(!self.paused),
+            "toggle" => self.set_paused(self.playing()),
             "seek" => self.seek(
                 number(args)
                     .or_else(|| args.get("seconds").and_then(Value::as_f64))
@@ -911,5 +948,48 @@ At least one output file must be specified";
         assert_eq!(mm_ss(83.45), "01:23");
         assert_eq!(mm_ss(3725.0), "1:02:05");
         assert_eq!(clock_seconds("00:01:23.45"), Some(83.45));
+    }
+
+    fn states(v: &mut Video) -> Vec<Value> {
+        v.events()
+            .into_iter()
+            .filter(|(name, _)| name == "state")
+            .map(|(_, value)| value)
+            .collect()
+    }
+
+    #[test]
+    fn hidden_pauses_and_comes_back() {
+        // Playing when hidden: pauses, and plays on when it's back.
+        let mut v = Video::default();
+        v.shown(false);
+        assert!(v.paused);
+        assert_eq!(states(&mut v), [json!("paused")]);
+        v.shown(false);
+        assert!(states(&mut v).is_empty(), "only changes count");
+        v.shown(true);
+        assert!(!v.paused);
+        assert_eq!(states(&mut v), [json!("playing")]);
+
+        // Paused by the user: stays paused.
+        v.set_paused(true);
+        v.shown(false);
+        v.shown(true);
+        assert!(v.paused);
+        assert_eq!(states(&mut v), [json!("paused")]);
+
+        // The app asks while it's hidden: quiet now, done when it's back.
+        v.shown(false);
+        assert_eq!(v.call("play", &Value::Null).unwrap()["paused"], json!(true));
+        v.shown(true);
+        assert!(!v.paused, "play waited for the pane");
+        v.shown(false);
+        v.call("toggle", &Value::Null).unwrap();
+        assert!(v.paused && v.hidden == Some(false));
+        v.call("toggle", &Value::Null).unwrap();
+        assert!(v.paused && v.hidden == Some(true), "toggle flips the wish");
+        v.call("pause", &Value::Null).unwrap();
+        v.shown(true);
+        assert!(v.paused, "paused while hidden stays paused");
     }
 }

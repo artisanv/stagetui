@@ -537,6 +537,23 @@ mod tests {
     }
 
     #[test]
+    fn back_from_hiding_turns_a_little() {
+        // While hidden no frames are asked for; the next one, an hour later,
+        // turns by one short step, not by an hour of spinning.
+        let f = cube_file("hidden");
+        let mut v = started(&f);
+        assert!(v.frame(Duration::ZERO).is_some());
+        let yaw = v.state()["yaw"].as_f64().unwrap();
+        assert!(v.frame(Duration::from_secs(3600)).is_some());
+        let turned = v.state()["yaw"].as_f64().unwrap() - yaw;
+        assert!(
+            turned > 0.0 && turned <= f64::from(SPIN * 0.1).to_degrees() + 1e-3,
+            "{turned}"
+        );
+        std::fs::remove_dir_all(f.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn calls() {
         let f = cube_file("calls");
         let mut v = started(&f);
