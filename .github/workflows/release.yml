@@ -5,7 +5,9 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      # Only version tags (v1.0.0): 'v*' would also match the video add-on's
+      # 'video-v…' tags and publish stagetui by accident.
+      - 'v[0-9]*'
   workflow_dispatch:
 
 permissions:
