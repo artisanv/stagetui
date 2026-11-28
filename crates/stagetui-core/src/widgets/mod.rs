@@ -274,7 +274,10 @@ pub(crate) fn draw_box(
         } else {
             crate::text::Direction::Ltr
         };
-        let line = crate::text::layout(h, usize::from(room), dir).swap_remove(0);
+        // Too long: cut it with "…" (the start — an icon — stays), never drop it all.
+        let h = h.replace('\n', " ");
+        let fitted = crate::text::ellipsize(&h, usize::from(room));
+        let line = crate::text::layout(&fitted, usize::MAX / 2, dir).swap_remove(0);
         let hw = (line.width as u16).min(room);
         let x = if rtl { r.saturating_sub(2 + hw) } else { l + 3 };
         frame.cells[(x - 1, t)].set_symbol(" ").set_style(style);
@@ -319,4 +322,57 @@ pub(crate) fn scrollbar(
 /// Clamp a scroll offset.
 pub(crate) fn clamp_scroll(offset: i64, total: usize, visible: usize) -> usize {
     offset.clamp(0, total.saturating_sub(visible) as i64) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_box_titles_are_cut_with_an_ellipsis_not_dropped() {
+        let theme = crate::style::THEMES[0];
+        let area = Rect::new(0, 0, 20, 3);
+        for (title, rtl) in [
+            ("❯ definitely-not-a-program-xyz · couldn't start", false),
+            ("✦ مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج", true),
+            ("✦ مَرْحَباً بِكُمْ فِي تِيرْم سْتِيج", false),
+            ("✦ Hello مرحبا world and more", false),
+            ("❯ こんにちは世界こんにちは世界", false),
+            ("❯ 你好世界你好世界你好世界", false),
+            ("❯ नमस्ते दुनिया नमस्ते दुनिया", false),
+        ] {
+            let mut frame = Frame::new(area, theme.bg, theme.fg);
+            draw_box(
+                &mut frame,
+                area,
+                true,
+                theme.border,
+                theme.bg,
+                Some(title),
+                theme.accent,
+                rtl,
+            );
+            let top = frame.text().lines().next().unwrap_or_default().to_string();
+            let fitted = crate::text::ellipsize(title, 14);
+            assert!(
+                fitted.ends_with('…') && fitted.chars().count() > 3,
+                "{fitted}"
+            );
+            assert!(top.contains(fitted.as_ref()), "{title}: {top:?}");
+            assert!(top.starts_with('╭') && top.ends_with('╮'), "{top:?}");
+        }
+        // Short titles are untouched.
+        let mut frame = Frame::new(area, theme.bg, theme.fg);
+        draw_box(
+            &mut frame,
+            area,
+            true,
+            theme.border,
+            theme.bg,
+            Some("✦ عربي"),
+            theme.accent,
+            false,
+        );
+        assert!(frame.text().starts_with("╭─ ✦ عربي ─"), "{}", frame.text());
+    }
 }

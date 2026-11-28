@@ -1,6 +1,8 @@
 """Add-ons: pane types that live in their own program (video, web, 3D, your own).
 
-Run:   STAGETUI_PLUGIN_PATH=examples/plugins python examples/10_plugins.py
+Run:   python examples/10_plugins.py
+       (with your virtual environment active: the add-on is a Python script that
+       starts `python3`, and that Python needs stagetui too)
 Try:   the left pane is "pulse", a tiny add-on written in Python
        (examples/plugins/stagetui-plugin-pulse): click it or press space
        the right pane is the Video add-on: if it isn't installed yet, press
@@ -8,11 +10,19 @@ Try:   the left pane is "pulse", a tiny add-on written in Python
        click any pane's title to see every add-on in the menu
 """
 
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 from stagetui import StageApp, StageBar, StagePane, StageSplit
+
+# stagetui looks for add-ons in STAGETUI_PLUGIN_PATH too: add the folder next to
+# this file, where the "pulse" add-on lives.
+PLUGINS = Path(__file__).resolve().parent / "plugins"
+os.environ["STAGETUI_PLUGIN_PATH"] = os.pathsep.join(
+    p for p in (str(PLUGINS), os.environ.get("STAGETUI_PLUGIN_PATH")) if p
+)
 
 
 def sample_video() -> str | None:
@@ -45,7 +55,7 @@ class AddOns(StageApp):
                     StagePane("video", id="video", path=sample_video()),
                 ]
             ),
-            StageBar("Click the heart · the right pane is the Video add-on (Enter installs it)"),
+            StageBar("Click the heart · right: the Video add-on (missing? Enter installs it)"),
         ]
 
     def colored(self, color):

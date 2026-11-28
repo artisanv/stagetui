@@ -90,16 +90,29 @@ STAGETUI_TEXT_MODE=auto python my_app.py     # default: pictures wherever the te
 
 ## Fonts
 
-stagetui carries its own fonts, so pictures and PNG snapshots look the same on
-every computer — even inside a minimal Docker container:
+**In your terminal, every language uses your terminal's own fonts** — Chinese,
+Japanese and Korean included — so apps look right with no setup.
 
-- **Noto Sans** — Latin, Greek, Cyrillic
-- **Noto Sans Arabic** — Arabic, Persian, Urdu
-- **Noto Sans Devanagari** — Hindi, Marathi, Nepali
-- **DejaVu Sans Mono** — the monospace font for terminal-style snapshots
+**Pictures of text** (Arabic and Hindi in terminals that show pictures, and PNG
+snapshots) are drawn by stagetui itself. For those it carries fonts inside the
+package, so they look the same on every computer — even in a minimal Docker container:
 
-Chinese, Japanese and Korean fonts are very large, so stagetui uses the ones
-already on your computer (macOS and Windows always have them). To check:
+- **Noto Sans** — Latin (including Vietnamese), Greek, Cyrillic
+- **Noto Sans Arabic** — Arabic, Persian, Urdu, Pashto, Kurdish, Sindhi, Uyghur
+- **Noto Sans Devanagari** — Hindi, Marathi, Nepali, Sanskrit
+- **DejaVu Sans Mono** — the monospace font for terminal-style snapshots (also Armenian and Georgian)
+
+Every other script — Chinese, Japanese, Korean, Hebrew, Thai, Bengali, Tamil,
+emoji… — uses the fonts already on your computer (macOS and Windows have
+Chinese, Japanese and Korean fonts built in; many Linux setups don't). A character
+no font has shows as an empty box in pictures, and stagetui says so once on the
+terminal's error output, for example:
+
+```text
+stagetui: no font for Chinese/Japanese text on this computer — it shows as empty boxes in pictures. Install Noto Sans CJK (Linux: fonts-noto-cjk / noto-fonts-cjk).
+```
+
+To check which scripts have a font:
 
 ```python
 import stagetui as ts
@@ -109,5 +122,8 @@ for script in report["scripts"]:
     print(script["script"], "✓" if script["covered"] else "missing")
 ```
 
-If CJK shows as missing on Linux, install Noto CJK — for example
-`sudo apt install fonts-noto-cjk` or `sudo pacman -S noto-fonts-cjk`.
+`report["missing_in_pictures"]` lists the scripts that have already been drawn as
+empty boxes in this program, and `stagetui doctor` mentions missing fonts too.
+
+If Chinese, Japanese or Korean shows as missing on Linux, install Noto CJK — for
+example `sudo apt install fonts-noto-cjk` or `sudo pacman -S noto-fonts-cjk`.

@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import _core
 from .widgets import Animate, Dir, Handler, Size, Theme, _error, _text, _Widget
 
 # ----- helpers ------------------------------------------------------------------
@@ -740,16 +742,45 @@ def _plain(args: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _unknown_pane_type(name: str, addons: list[dict[str, Any]]) -> _core.StageError:
+    """Say which pane types there are, and how an add-on becomes one."""
+    broken = next((p["broken"] for p in addons if p["name"] == name and p.get("broken")), None)
+    if broken is not None:
+        return _error(
+            f'The add-on "{name}" was found but didn\'t answer',
+            f"{broken['path']} --describe failed: {broken['why']}",
+            f"run `{broken['path']} --describe` to see the whole error. If it is a Python "
+            "script, its first line (#!…) must start a Python where stagetui is installed "
+            f"(this app runs on {sys.executable})",
+        )
+    builtin = [n for n, t in _PANE_TYPES.items() if t.builtin]
+    custom = [n for n, t in _PANE_TYPES.items() if not t.builtin]
+    installed = [p["name"] for p in addons if p.get("installed")]
+    known = ", ".join(builtin)
+    if custom:
+        known += "; yours (@ts.pane_type): " + ", ".join(custom)
+    known += "; add-ons installed here: " + (", ".join(installed) or "none")
+    return _error(
+        f'Unknown pane type "{name}"',
+        f"this app knows these pane types: {known}",
+        "check the spelling. For an add-on: `stagetui plugins` lists the ones found; "
+        f"install it with `pip install stagetui-{name}` into the Python that runs this "
+        f"app ({sys.executable}), or add the folder holding `stagetui-plugin-{name}` to "
+        "STAGETUI_PLUGIN_PATH. Is that file there but not listed? If it is a Python "
+        "script, its first line (#!…) must start a Python where stagetui is installed",
+    )
+
+
 def _build_pane_content(name: str, args: Mapping[str, Any]) -> _Widget:
     t = _PANE_TYPES.get(name)
-    if t is None and any(p["name"] == name for p in _addons()):
+    addons = _addons() if t is None else []
+    # Installed, or an official one (its pane offers to install it).
+    if t is None and any(
+        p["name"] == name and (p.get("installed") or p.get("package")) for p in addons
+    ):
         return StagePlugin(name, **args)
     if t is None:
-        raise _error(
-            f'Unknown pane type "{name}"',
-            "pane types are the built-in ones plus those you register with @ts.pane_type",
-            "use one of: " + ", ".join(_PANE_TYPES),
-        )
+        raise _unknown_pane_type(name, addons)
     widget = t.build(**args)
     if not isinstance(widget, _Widget):
         raise TypeError(f"pane type {name!r} must return a stagetui widget, got {widget!r}")
@@ -837,7 +868,14 @@ class StagePane(_Widget):
         widget = _build_pane_content(type, args)
         assert self._app is not None
         self._app._bind(widget)
-        core.pane_set(self._key, type, json.dumps(widget._spec(), ensure_ascii=False), True)
+        core.pane_set(
+            self._key,
+            type,
+            json.dumps(widget._spec(), ensure_ascii=False),
+            True,
+            # Kept with the pane, so a saved layout brings the options back.
+            json.dumps(_plain(args), ensure_ascii=False),
+        )
         self._content = type
         return widget
 

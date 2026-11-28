@@ -90,6 +90,10 @@ While the prefix is pressed, the status bar lists these keys. The prefix works
 everywhere — even inside a terminal pane, which otherwise receives every key.
 Change it with `PREFIX = "ctrl+a"` on your app.
 
+Every key in this table except the arrows and 1-9 can be renamed or turned off
+with `KEYS` on your app — `KEYS = {"close_pane": "w", "pane_menu": None}` — or
+by each person for every app in their own `keys.json`. See [Keys](keys.md).
+
 ## Control panes from code
 
 ```python

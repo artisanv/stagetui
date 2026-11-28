@@ -100,6 +100,32 @@ pub fn split_graphemes(s: &str, max: usize) -> Vec<String> {
     out
 }
 
+/// `s` cut to at most `max` cells, ending in `…` when it had to be cut.
+///
+/// Cuts in reading order (right-to-left text keeps its beginning, like any other)
+/// and never inside a grapheme, so harakat stay with their letters.
+pub fn ellipsize(s: &str, max: usize) -> std::borrow::Cow<'_, str> {
+    if width(s) <= max {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for g in s.graphemes(true) {
+        let w = width(g);
+        if used + w + 1 > max {
+            break;
+        }
+        out.push_str(g);
+        used += w;
+    }
+    if max == 0 {
+        return std::borrow::Cow::Owned(out);
+    }
+    let mut out = out.trim_end().to_string();
+    out.push('…');
+    std::borrow::Cow::Owned(out)
+}
+
 /// Plain word-wrap (no shaping) to `max` cells. Respects `\n`.
 pub fn wrap(text: &str, max: usize) -> Vec<String> {
     layout(text, max, Direction::Ltr)
@@ -150,6 +176,36 @@ mod tests {
         for line in wrap(JAPANESE, 5) {
             assert!(width(&line) <= 5, "{line}");
         }
+    }
+
+    #[test]
+    fn ellipsis_cuts_by_cells_and_graphemes() {
+        assert_eq!(ellipsize("short", 10), "short");
+        assert_eq!(ellipsize("❯ definitely-not-a-program", 12), "❯ definitel…");
+        assert_eq!(
+            ellipsize("one two three", 8),
+            "one two…",
+            "no space before …"
+        );
+        assert_eq!(ellipsize("abc", 1), "…");
+        assert_eq!(ellipsize("abc", 0), "");
+        for s in [ARABIC, MIXED, JAPANESE, "你好世界你好世界", HINDI] {
+            for max in 1..width(s) {
+                let cut = ellipsize(s, max);
+                assert!(width(&cut) <= max, "{s} at {max}: {cut}");
+                assert!(cut.ends_with('…'), "{s} at {max}: {cut}");
+                let kept = cut.trim_end_matches('…');
+                assert!(s.starts_with(kept), "{s}: keeps the beginning");
+                // Whole graphemes only: harakat stay with their letters.
+                assert!(s[kept.len()..].graphemes(true).next().is_some());
+                assert!(
+                    !s[kept.len()..]
+                        .starts_with(['\u{064E}', '\u{0652}', '\u{064B}', '\u{0650}', '\u{064F}'])
+                );
+            }
+        }
+        // A wide character never straddles the limit.
+        assert_eq!(ellipsize("日本語", 4), "日…");
     }
 
     #[test]

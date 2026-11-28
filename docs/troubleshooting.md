@@ -57,6 +57,13 @@ stagetui doctor
   Terminal.app…), where your terminal font draws the letters. Use a font with
   Arabic "presentation forms", such as **DejaVu Sans Mono**, at least as a fallback.
 
+**Chinese, Japanese or Korean shows as empty boxes in a picture or PNG**
+: Your terminal draws these with its own fonts, but pictures of text and PNG
+  snapshots need a font on your computer, and none was found (stagetui prints a
+  warning saying so). Install Noto Sans CJK — `sudo apt install fonts-noto-cjk` or
+  `sudo pacman -S noto-fonts-cjk` — and don't set `STAGETUI_SYSTEM_FONTS=0`.
+  `stagetui doctor` and `ts.fonts()` show which scripts have a font.
+
 **Arabic is reversed**
 : Please report it with the output of `stagetui inspect`. As a workaround, try
   `STAGETUI_TEXT_MODE=cells`.
@@ -125,7 +132,7 @@ stagetui doctor
 | `STAGETUI_NO_PROBE=1` | Never ask the terminal questions |
 | `STAGETUI_PROBE_TIMEOUT_MS=250` | How long to wait for the terminal's answers |
 | `STAGETUI_TEXT_MODE=auto\|cells\|pixels` | How Arabic and other complex scripts are drawn |
-| `STAGETUI_SYSTEM_FONTS=0` | Use only stagetui's bundled fonts (identical PNGs everywhere) |
+| `STAGETUI_SYSTEM_FONTS=0` | Use only stagetui's bundled fonts in pictures (identical PNGs everywhere; Latin, Greek, Cyrillic, Arabic and Devanagari only) |
 | `STAGETUI_REDUCE_MOTION=1` | Turn off animations |
 | `STAGETUI_NO_SESSION=1` | Don't let other terminals attach to apps run with `python app.py` |
 | `STAGETUI_SESSION=name` | The session name to use ([Sessions](sessions.md)) |
@@ -135,6 +142,7 @@ stagetui doctor
 | `STAGETUI_VIDEO_NO_AUDIO=1` | Videos play without sound |
 | `STAGETUI_CHROME=/path/to/chrome` | The browser the web add-on uses |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How a pane opens in its own window ([Panes](panes.md#open-a-pane-in-its-own-window)) |
+| `STAGETUI_KEYS=path/keys.json` | Your own keys for every app, from this file instead of the settings folder ([Keys](keys.md)) |
 
 ## Your terminal is always restored
 

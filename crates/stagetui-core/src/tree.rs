@@ -75,6 +75,12 @@ pub struct AppSpec {
     /// The key that reaches the app from inside a shell pane (default `ctrl+space`).
     #[serde(default)]
     pub prefix: Option<String>,
+    /// Built-in keys renamed or turned off: `{"quit": "ctrl+q", "close_pane": null}`.
+    #[serde(default)]
+    pub keys: Option<Value>,
+    /// Ask "Quit?" before quitting from the keyboard or the last pane's ×.
+    #[serde(default)]
+    pub confirm_quit: Option<bool>,
     /// Pane types offered in the pane menu: `[{"name", "title", "icon"}]`.
     #[serde(default)]
     pub pane_types: Vec<PaneTypeSpec>,
@@ -362,6 +368,9 @@ pub struct PaneBox {
     /// Popped out into its own terminal window: the content is shown there,
     /// this spot shows a placeholder.
     pub detached: bool,
+    /// Options the app gave a type when it switched to it (`set_type("code",
+    /// text=…)`), kept so a saved layout brings them back.
+    pub args: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -626,6 +635,8 @@ pub struct Tree {
     pub dir: Direction,
     pub bindings: Vec<Binding>,
     pub reduce_motion: bool,
+    /// Ask before quitting (`CONFIRM_QUIT`).
+    pub confirm_quit: bool,
     /// Pane types offered in the pane menu.
     pub pane_types: Vec<PaneTypeSpec>,
     counters: HashMap<&'static str, usize>,
@@ -693,6 +704,7 @@ impl Tree {
             bindings,
             reduce_motion: spec.reduce_motion.unwrap_or(false)
                 || std::env::var("STAGETUI_REDUCE_MOTION").is_ok_and(|v| v == "1"),
+            confirm_quit: spec.confirm_quit.unwrap_or(false),
             pane_types: crate::panes::with_plugins(if spec.pane_types.is_empty() {
                 crate::panes::builtin_types()
             } else {
@@ -1130,7 +1142,21 @@ impl Tree {
                 }
                 if let (Kind::Split(s), Some(pos)) = (&mut self.nodes[p].kind, pos) {
                     if pos < s.ratios.len() {
-                        s.ratios.remove(pos);
+                        // Its space goes to the smaller neighbour — the pane it was
+                        // split from — so split-then-close puts the sizes back.
+                        let freed = s.ratios.remove(pos);
+                        let before = pos
+                            .checked_sub(1)
+                            .and_then(|i| s.ratios.get(i).map(|r| (i, *r)));
+                        let after = s.ratios.get(pos).map(|r| (pos, *r));
+                        let to = match (before, after) {
+                            (Some((i, a)), Some((j, b))) => Some(if b < a { j } else { i }),
+                            (Some((i, _)), None) | (None, Some((i, _))) => Some(i),
+                            (None, None) => None,
+                        };
+                        if let Some(r) = to.and_then(|i| s.ratios.get_mut(i)) {
+                            *r += freed;
+                        }
                     }
                     let sum: f32 = s.ratios.iter().sum();
                     if sum > 0.0 {
@@ -1151,6 +1177,21 @@ impl Tree {
         let only = self.nodes[split].children[0];
         let grand = self.nodes[split].parent;
         self.nodes[only].parent = grand;
+        // A workspace tab is named by its page: the pane left keeps that name.
+        if self.nodes[only].spec.props.title.is_none()
+            && matches!(self.nodes[only].kind, Kind::Pane(_) | Kind::Split(_))
+        {
+            let (title, icon) = {
+                let p = &self.nodes[split].spec.props;
+                (p.title.clone(), p.icon.clone())
+            };
+            if title.is_some() {
+                self.nodes[only].spec.props.title = title;
+                if self.nodes[only].spec.props.icon.is_none() {
+                    self.nodes[only].spec.props.icon = icon;
+                }
+            }
+        }
         if self.nodes[only].layout == LayoutProps::default() {
             self.nodes[only].layout = self.nodes[split].layout;
         }
@@ -1650,6 +1691,7 @@ fn build_kind(kind: &str, spec: &NodeSpec) -> Result<Kind> {
                 .collect::<String>(),
             types: Vec::new(),
             detached: false,
+            args: HashMap::new(),
         }),
         "markdown" => {
             let mut m = Markdown::new(text_content(spec));

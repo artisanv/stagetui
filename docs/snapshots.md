@@ -135,7 +135,13 @@ look at the diff before committing. Picture comparisons allow a tiny difference
 doesn't fail the test.
 
 For byte-identical PNGs across different machines, use only stagetui's bundled
-fonts: set the environment variable `STAGETUI_SYSTEM_FONTS=0`.
+fonts: set the environment variable `STAGETUI_SYSTEM_FONTS=0`. The bundled fonts
+cover Latin, Greek, Cyrillic, Arabic (and Persian, Urdu) and Devanagari (Hindi).
+Text in other scripts — Chinese, Japanese, Korean, Hebrew, Thai, emoji… — then
+shows as empty boxes, and stagetui prints a warning saying which script. To snapshot
+those, leave system fonts on and install the same font on every machine that runs
+the tests (for Chinese/Japanese/Korean: Noto Sans CJK, `fonts-noto-cjk` /
+`noto-fonts-cjk`). See [Fonts](world-languages.md#fonts).
 
 ## From the command line
 

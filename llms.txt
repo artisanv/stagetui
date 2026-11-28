@@ -2,14 +2,14 @@
 
 > Rust-first TUI engine with a thin, typed Python API. Built for coding agents to build, see and test terminal apps (agent harnesses first), and for humans to get friendly terminal UIs. Linux, macOS, Windows. Zero Python runtime dependencies.
 
-Status: alpha, Milestone 6 of 6 (harness kit, Blender-style panes, workspaces, background sessions, pop-out pane windows, agent interface, add-ons: video, web, 3D). APIs below exist today.
+Status: 1.0, stable (all milestones: harness kit, Blender-style panes, workspaces, background sessions, pop-out pane windows, agent interface, add-ons: video, web, 3D, customizable keys). APIs below exist today and keep working through 1.x.
 
 ## Python API
 - `import stagetui as ts`
 - `ts.show(content, *, title, icon, dir, theme, accent, width, height, fit)` — inline text card or picture (path, bytes, Canvas).
 - `ts.draw(fn=None, *, size=(640,360), background=None, out=None, show=True) -> Canvas` — draw with code.
 - `ts.inspect(*, headless=False, probe=True) -> dict`; `ts.fonts() -> dict`.
-- `class StageApp` — class attrs `theme`, `accent`, `dir`, `BINDINGS=[(key, action[, description])]`, `reduce_motion`; override `compose() -> list[widget]`, optional `on_mount()`, `action_<name>()`.
+- `class StageApp` — class attrs `theme`, `accent`, `dir`, `BINDINGS=[(key, action[, description])]` (come before built-in keys: `("q", "save")` takes q), `KEYS={name: key|[keys]|None}` (rename/turn off built-in keys), `CONFIRM_QUIT=True` (ask before quitting), `reduce_motion`; override `compose() -> list[widget]`, optional `on_mount()`, `action_<name>()`.
   - `.run()` / `await .run_async()` — interactive; q / Esc / Ctrl+C quit; handlers may be `async def`.
   - `.run_headless((cols, rows), *, steps=[{"press": "tab"}, {"type": "hi"}, {"click": "#id"}, {"drag": {"from": "#id" or [x, y], "to": [x, y]}}, {"scroll": 3}, {"wait": 0.5}, {"wait_idle": True}, {"resize": [w, h]}], cell=(16, 32), settle=True) -> Snapshot` — virtual clock, deterministic.
   - Snapshot: `.text` (reading order), `.tree` (nested JSON: id, type, bounds, focused, on_screen, children; app `focus`, `dir`, `scroll`, `toasts`), `.png`, `.query("#id")`, `.save("x.png|.txt|.json")`.
@@ -21,6 +21,7 @@ Status: alpha, Milestone 6 of 6 (harness kit, Blender-style panes, workspaces, b
 - Panes: `StagePane(type, **options)` types chat, terminal(command, cwd), files(root), diff(old, new, path), code(path|text, language), markdown(text), log, empty; header menu (click title / prefix+Space), ⊞ ⊟ × buttons (× / prefix+x closes the pane and stops what runs in it; on the last pane it quits like q — an attached window asks Detach/Quit, a pop-out window puts the pane back); switched-away and background-tab add-on panes pause; `.set_type(type, **o)`, `.switch(type)` (restores stashed), `.type`, `.content`; `app.panes()`; `@ts.pane_type(name, title=, icon=)`; prefix key `PREFIX="ctrl+space"` then Space | - x Tab q, d (detach), 1-9 (workspace).
 - Workspaces: `StageWorkspaces({"Code": layout, ...})` tabs; `app.workspace()` → layout dict `{"split": "horizontal", "ratio": [..], "children": [{"pane": type, "id": id, "args": {...}} | {"keep": id} | split]}`; `app.save_workspace(name=None, path=None)`, `app.load_workspace(name_or_layout=None, path=None)` (re-uses panes by id), `app.workspaces()`; files in ~/.config/stagetui/workspaces/<app>.json.
 - Sessions: `app.session`, `ts.sessions()`, `app.background(coro)`. q in an attached window asks Detach / Quit app / Cancel.
+- Keys: built-in names (defaults) quit (q, esc, ctrl+c), prefix (ctrl+space), focus_next (tab), focus_previous (shift+tab), next_tab (ctrl+pagedown), previous_tab (ctrl+pageup); after the prefix: pane_menu (space, enter), split_right (|, \), split_down (-), close_pane (x), pop_out (o), detach (d); arrows and 1-9 after the prefix are fixed. `KEYS = {"quit": "ctrl+q", "close_pane": "w", "pane_menu": None}`; rules (StageError at start): always a quit key, prefix can't be off, one key one job (after-prefix group counted separately), names must exist. A person's `keys.json` (`STAGETUI_KEYS`, else `$XDG_CONFIG_HOME`|`~/.config`|`%APPDATA%` + `/stagetui/keys.json`; not read headless) applies after KEYS, never over BINDINGS; bad entries are skipped with one toast. `app.keys()` / `Driver.keys()` / `ts.keys()` → `{keys: [{name, keys, labels, after_prefix, about}], shortcuts, confirm_quit, file, problems}`. Esc steps back first (dialog, then focus); Ctrl/Alt quit keys work in text boxes; shell panes get every key but the prefix.
 - Video add-on (`pip install stagetui-video`): `StagePane("video", path|url=..., autoplay, loop, volume, muted, start, on_ended=, on_state=)`; keys space/←→/↑↓/m/home; `pane.content.call("play"|"pause"|"toggle"|"seek", n|"volume", v|"mute", b|"state")`.
 - Web add-on (`pip install stagetui-web`): `StagePane("web", url|path=..., zoom, on_title=, on_navigated=, on_loaded=)`; uses the installed Chrome/Chromium/Edge/Brave (headless); keys go to the page, Ctrl+L address, Alt+←/→, F5; `pane.content.call("navigate", url|"back"|"forward"|"reload"|"evaluate", js|"state")`.
 - 3D add-on (`pip install stagetui-3d` or `pip install "stagetui[3d]"`; also extras `[video]`, `[web]`): `StagePane("3d", path="model.glb|.gltf|.obj|.stl", spin=True, wireframe=False, grid=True, up="y"|"z", on_loaded=)`; drawn on the CPU; drag turns, right-drag moves, wheel zooms; keys arrows/+/-/space/w/g/f/r; `pane.content.call("load", path|"view", {yaw, pitch, distance}|"spin"|"wireframe"|"grid", bool|"reset"|"save", "view.png"|"state")`.
@@ -39,8 +40,8 @@ Colors (canvas): "#rgb", "#rrggbb", "#rrggbbaa", accent names, "white", "black",
 Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, terminal, star, bolt, info, warning, folder, file, chat, code, gear, heart, send, arrow-right, arrow-left, plus, minus, dot, circle, home.
 
 ## Agent interface
-- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), drag(target|x,y, to_x, to_y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, set_pane_type(pane, type), workspace, load_workspace(layout|name), save_workspace(name). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
-- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, drag, scroll, resize, wait, wait_idle, query, panes, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
+- `stagetui mcp app.py [--size 100x30]` — MCP server (stdio). Tools: snapshot(png?, settle?), press(key|keys), type(text), click(target|x,y), drag(target|x,y, to_x, to_y), scroll(rows, target?), resize(cols, rows), wait(seconds), query(id), list_panes, keys, set_pane_type(pane, type), workspace, load_workspace(layout|name), save_workspace(name). Each action returns the new screen text. Add to Claude Code: `claude mcp add my-app -- stagetui mcp /path/app.py`.
+- `stagetui drive app.py` — JSON-RPC 2.0, one JSON per line; methods snapshot, press, type, click, drag, scroll, resize, wait, wait_idle, query, panes, keys, set_pane_type, workspace, load_workspace, save_workspace, shutdown.
 - Python: `with App().drive((cols, rows)) as d: d.type(..); d.click("#id"); d.drag((x, y), (x2, y2)); d.snapshot(png=True)`; live apps: `app.capture_text()`, `capture_tree()`, `capture_png()`.
 - pytest: fixture `stage_snapshot.assert_match(snap, name=None, png=False)`, refresh with `pytest --stage-update`.
 
@@ -50,12 +51,13 @@ Icons: sparkles, check, x, play, pause, stop, globe, book, cube, sun, moon, term
 - `stagetui inspect [--compact] [--headless] [--no-probe]` — JSON capabilities
 - `stagetui doctor` — plain-English report with fixes
 - `stagetui drive app.py` / `stagetui mcp app.py` — agent interface (above)
+- `stagetui keys [app.py] [--json]` — every key by name, an app's shortcuts, your keys file
 - `stagetui start app.py [--name N] [-d] [-- args]`, `stagetui sessions [--json]`, `stagetui attach [name[:pane]]`, `stagetui stop [name]` — background sessions; Ctrl+Space d detaches
 - `python -m stagetui …` — same CLI
 
 ## Docs
 - [Docs index](docs/README.md)
-- [Layouts](docs/layout.md) · [Interaction](docs/events.md) · [Motion](docs/motion.md) · [Harness](docs/harness.md) · [Panes](docs/panes.md) · [Sessions](docs/sessions.md) · [Agents](docs/agents.md)
+- [Layouts](docs/layout.md) · [Interaction](docs/events.md) · [Keys](docs/keys.md) · [Motion](docs/motion.md) · [Harness](docs/harness.md) · [Panes](docs/panes.md) · [Sessions](docs/sessions.md) · [Agents](docs/agents.md)
 - [Snapshots for agents](docs/snapshots.md)
 - [Reference](docs/reference.md)
 - [Spec](termstage-SPEC-v8.0.md)

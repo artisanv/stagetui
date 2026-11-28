@@ -1,6 +1,5 @@
 """Milestone 4a: harness widgets, terminal panes and Blender-style pane types."""
 
-import json
 import sys
 import time
 
@@ -174,15 +173,15 @@ def test_terminal_runs_commands():
         def on_mount(self):
             self.query("#term").send("echo hello-$((40+2))\n")
 
-    app = App()
-    snap = app.run_headless((60, 14))
-    deadline = time.monotonic() + 5
-    screen = snap.query("term")["screen"]
-    # The shell answers on its own thread; poll the live app until it prints.
-    while "hello-42" not in screen and time.monotonic() < deadline:
-        time.sleep(0.05)
-        screen = json.loads(snap._core.query("#term"))["screen"]
-    assert "hello-42" in screen
+    # The shell answers on its own thread: drive the live app until it prints.
+    # (A finished run_headless() stops its shells, so it can't be polled after.)
+    with App().drive((60, 14)) as d:
+        deadline = time.monotonic() + 5
+        screen = lambda: d.query("#term")["screen"]
+        while "hello-42" not in screen() and time.monotonic() < deadline:
+            time.sleep(0.05)
+            d.wait(0.05)
+        assert "hello-42" in screen()
 
 
 class Workspace(StageApp):

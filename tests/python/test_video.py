@@ -99,10 +99,12 @@ def test_a_video_plays_pauses_seeks_and_ends(clip: Path) -> None:
         d.press("m")
         assert until(d, lambda: video.call("state")["muted"])
         assert "no sound" in info()["status"]  # turned off for tests
-        # Play to the end: an "ended" event.
+        # Play to the end: an "ended" event, and the clock shows all of it.
         video.call("play")
         assert until(d, lambda: ("ended", str(clip)) in events), events
         assert video.call("state")["ended"]
+        assert until(d, lambda: info()["status"].startswith("■ 00:02 / 00:02")), info()
+        assert "space ▶" in info()["status"], "paused: space offers to play"
         assert ("state", "paused") in events
         with pytest.raises(ts.StageError, match="no method"):
             video.call("explode")
@@ -120,14 +122,62 @@ def test_loop_and_autoplay(clip: Path) -> None:
         assert not any(e[0] == "ended" for e in events)
 
 
+def test_keys_can_be_renamed(clip: Path) -> None:
+    app, _ = cinema(path=str(clip), autoplay=False, keys={"mute": "x", "play_pause": None})
+    with app.drive((90, 24)) as d:
+        video = d.app.query("#v").content
+        info = lambda: d.query("#v")["children"][0]
+        assert until(d, lambda: "x mute" in (info()["status"] or "")), info()
+        assert "space ‖" not in info()["status"], "turned off: not shown"
+        d.click("#v")  # focus (a click plays: it was waiting)
+        video.call("pause")
+        d.press("m")  # its old key: not sent on any more
+        d.press("space")  # turned off
+        d.wait(0.3)
+        time.sleep(0.2)
+        d.wait(0.1)
+        state = video.call("state")
+        assert state["muted"] is False and state["paused"] is True
+        d.press("x")
+        assert until(d, lambda: video.call("state")["muted"])
+    app, _ = cinema(path=str(clip), keys={"pause": "p"})
+    with app.drive((90, 16)) as d:
+        error = lambda: d.query("#v")["children"][0]["error"] or ""
+        assert until(d, lambda: '"pause"' in error(), seconds=10), error()
+        assert "play_pause" in error()
+
+
 def test_friendly_problems(clip: Path) -> None:
     for options, message in [
-        ({"path": "nope.mp4"}, "was not found"),
-        ({}, "no video given"),
+        ({"path": "nope.mp4"}, '"nope.mp4" was not found — press Enter to type another path'),
+        ({}, "No video yet — press Enter to type a file path"),
     ]:
         app, _ = cinema(**options)
-        with app.drive((80, 16)) as d:
-            assert until(d, lambda m=message: m in d.snapshot().text, seconds=10), (
-                message,
-                d.snapshot().text,
-            )
+        with app.drive((90, 16)) as d:
+            status = lambda: d.query("#v")["children"][0]["status"] or ""
+            assert until(d, lambda m=message, s=status: m in s(), seconds=10), (message, status())
+            assert "could not start" not in d.snapshot().text
+
+
+def test_a_pane_without_a_video_asks_for_one(clip: Path) -> None:
+    """What a video pane picked from a pane's menu does: ask for a file, right there."""
+    app, events = cinema()
+    with app.drive((90, 16)) as d:
+        video = d.app.query("#v").content
+        node = lambda: d.query("#v")["children"][0]
+        status = lambda: node()["status"] or ""
+        assert until(d, lambda: "No video yet" in status()), status()
+        assert until(d, lambda: node()["frames"] > 0), "a quiet picture, not 'Starting…'"
+        d.click("#v")
+        d.press("o")
+        assert until(d, lambda: status().startswith("Open a video: █")), status()
+        d.type("nope.mp4")
+        d.press("enter")
+        assert until(d, lambda: '"nope.mp4" was not found' in status()), status()
+        assert "nope.mp4█" in status(), "the line stays open"
+        d.press("ctrl+u")
+        d.type(str(clip))
+        d.press("enter")
+        assert until(d, lambda: status().startswith("▶")), status()
+        assert video.call("state")["path"] == str(clip)
+        assert until(d, lambda: ("ended", str(clip)) in events), "it plays to the end"

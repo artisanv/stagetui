@@ -8,7 +8,7 @@ Rust, so you never have to think about it.
 It is also made for **AI coding agents**: every screen can be captured as text,
 as a list of widgets, or as a PNG picture — no human needed.
 
-> stagetui is young (Milestone 6 of 6). Everything on these pages works today.
+> This is stagetui 1.0, the stable release. Everything on these pages works today.
 > Features that are planned but not built yet are clearly marked *coming soon*.
 
 ## Start here
@@ -21,6 +21,7 @@ as a list of widgets, or as a PNG picture — no human needed.
 | Build a full-screen app | [Apps & widgets](apps.md) |
 | Put things side by side, split the screen, add tabs or pop-ups | [Layouts](layout.md) |
 | Add buttons, text boxes, lists and keyboard shortcuts | [Making apps interactive](events.md) |
+| Change which keys quit, split panes… (or turn them off) | [Keys](keys.md) |
 | Animate things, or draw live graphics | [Motion](motion.md) |
 | Build a chat app for an AI coding agent | [Build an AI agent harness](harness.md) |
 | Let people switch what each pane shows, run a shell in a pane | [Panes](panes.md) |

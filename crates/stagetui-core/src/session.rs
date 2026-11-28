@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use crate::frame::Frame;
 use crate::gfx::Image;
 use crate::input::{Button, Code, Input, Key, Mouse, MouseKind};
+use crate::keymap::Keymap;
 use crate::layout::{self, Laid, MARGIN};
 use crate::motion::{self, Effect};
 use crate::style::{self, Rgb};
@@ -49,6 +50,8 @@ enum Ask {
     Install { pane: usize, plugin: String },
     /// Install a terminal that shows real pictures?
     Pictures { pane: usize },
+    /// Quit? (the app set CONFIRM_QUIT)
+    Quit,
 }
 
 #[derive(Debug, Clone)]
@@ -175,7 +178,10 @@ pub struct Session {
     autofocused: bool,
     /// The prefix key (default Ctrl+Space) was pressed: the next key is for the app.
     prefix_armed: bool,
-    prefix: Key,
+    /// Built-in keys by name (defaults, the app's KEYS, the person's keys.json).
+    keys: Keymap,
+    key_file: Option<std::path::PathBuf>,
+    key_problems: Vec<String>,
     /// Text waiting to be copied to the system clipboard (OSC 52).
     clipboard: Option<String>,
     /// The open pane menu.
@@ -200,8 +206,31 @@ impl Session {
 
     /// Build from a typed app description (Rust users).
     pub fn from_spec(spec: &AppSpec) -> Result<Self> {
-        Ok(Self {
-            tree: Tree::build(spec)?,
+        let tree = Tree::build(spec)?;
+        let mut keys = Keymap::default();
+        if let Some(p) = &spec.prefix {
+            keys.apply(&json!({ "prefix": p }), "PREFIX")?;
+        }
+        if let Some(k) = &spec.keys {
+            keys.apply(k, "KEYS")?;
+        }
+        keys.check()?;
+        if let Some(b) = tree.bindings.iter().find(|b| keys.is("prefix", &b.key)) {
+            return Err(Error::friendly(
+                format!("{} is the prefix key", b.key.label()),
+                format!("the shortcut for \"{}\" could never be pressed", b.action),
+                "give it another key in BINDINGS, or move the prefix with KEYS = {\"prefix\": …}",
+            ));
+        }
+        // A person's own keys: a problem there is explained, never fatal.
+        let taken: Vec<Key> = tree.bindings.iter().map(|b| b.key).collect();
+        let key_file = crate::keymap::user_file();
+        let problems = key_file
+            .as_ref()
+            .map(|path| crate::keymap::apply_user_file(&mut keys, path, &taken))
+            .unwrap_or_default();
+        let mut s = Self {
+            tree,
             cx: Cx::default(),
             margin: MARGIN,
             now: Duration::ZERO,
@@ -234,11 +263,77 @@ impl Session {
             modal_return: Vec::new(),
             autofocused: false,
             prefix_armed: false,
-            prefix: Key::parse(spec.prefix.as_deref().unwrap_or("ctrl+space"))?,
+            keys,
+            key_file,
+            key_problems: problems.clone(),
             clipboard: None,
             menu: None,
             hover_pane_button: None,
+        };
+        if !problems.is_empty() {
+            let n = problems.len();
+            let what = if n == 1 {
+                "1 of your keys was"
+            } else {
+                "some of your keys were"
+            };
+            let text = format!("{what} skipped — run `stagetui keys` to see why");
+            let _ = s.notify(&text, Some("warning"), None, Duration::from_secs(8));
+        }
+        Ok(s)
+    }
+
+    /// Stop every add-on and shell now (a headless run is over; a snapshot of
+    /// it may live on, but nothing should keep running behind it).
+    pub fn release_processes(&mut self) {
+        for n in &mut self.tree.nodes {
+            match &mut n.kind {
+                Kind::Plugin(p) => p.release(),
+                Kind::Terminal(t) => t.release(),
+                _ => {}
+            }
+        }
+    }
+
+    /// The built-in keys in effect (`stagetui keys`, agents, docs).
+    pub fn keymap(&self) -> &Keymap {
+        &self.keys
+    }
+
+    /// Every key this app answers to, as JSON: built-in keys, the app's own
+    /// shortcuts, the person's keys file and any problem in it.
+    pub fn keys_json(&self) -> Value {
+        json!({
+            "keys": self.keys.to_json(),
+            "shortcuts": self.tree.bindings.iter().map(|b| json!({
+                "key": b.key.name(),
+                "label": b.key.label(),
+                "action": b.action,
+                "description": b.description,
+            })).collect::<Vec<_>>(),
+            "confirm_quit": self.tree.confirm_quit,
+            "file": self.key_file.as_ref().map(|p| p.display().to_string()),
+            "problems": self.key_problems,
         })
+    }
+
+    /// The same, as a table people read (`stagetui keys app.py`).
+    pub fn keys_text(&self) -> String {
+        let shortcuts: Vec<(String, String)> = self
+            .tree
+            .bindings
+            .iter()
+            .map(|b| {
+                let what = b.description.clone().unwrap_or_else(|| b.action.clone());
+                (b.key.label(), what)
+            })
+            .collect();
+        crate::keymap::text(
+            &self.keys,
+            &shortcuts,
+            self.key_file.as_deref(),
+            &self.key_problems,
+        )
     }
 
     /// Text the app asked to copy, if any (the terminal view sends it as OSC 52).
@@ -422,12 +517,13 @@ impl Session {
         self.dialog.as_ref().is_some_and(|d| d.ask == Ask::Leave)
     }
 
-    /// The open question, if any (`"leave"`, `"install"`, `"pictures"`).
+    /// The open question, if any (`"leave"`, `"install"`, `"pictures"`, `"quit"`).
     pub fn dialog_open(&self) -> Option<&'static str> {
         self.dialog.as_ref().map(|d| match d.ask {
             Ask::Leave => "leave",
             Ask::Install { .. } => "install",
             Ask::Pictures { .. } => "pictures",
+            Ask::Quit => "quit",
         })
     }
 
@@ -467,6 +563,14 @@ impl Session {
                 &["Detach", "Quit app", "Cancel"],
                 "d detach · q quit · Esc cancel · ← → choose",
             );
+        } else if self.tree.confirm_quit && !self.quit {
+            self.ask(
+                Ask::Quit,
+                "Quit this app?".to_string(),
+                vec!["It stops, and its windows close.".into()],
+                &["Quit", "Cancel"],
+                "Enter or y quit · Esc or n cancel",
+            );
         } else {
             self.request_quit();
         }
@@ -481,12 +585,18 @@ impl Session {
             (Ask::Leave, 'd') => Some(0),
             (Ask::Leave, 'q') => Some(1),
             (Ask::Leave, 'c' | 'n') => Some(2),
+            (Ask::Quit, 'q') => Some(0),
             (_, 'i' | 'y') => Some(0),
             (_, 'n') => Some(last),
             _ => None,
         };
         let choice = match k.code {
-            Code::Char('c') if k.mods.ctrl => Some(if d.ask == Ask::Leave { 1 } else { last }),
+            // Ctrl+C again: quit (a second Ctrl+C is a clear "yes, really").
+            Code::Char('c') if k.mods.ctrl => Some(match d.ask {
+                Ask::Leave => 1,
+                Ask::Quit => 0,
+                _ => last,
+            }),
             Code::Enter | Code::Char(' ') => Some(sel),
             Code::Esc => Some(last),
             Code::Char(c) => shortcut(c),
@@ -519,7 +629,7 @@ impl Session {
         self.dirty = true;
         match (d.ask, choice) {
             (Ask::Leave, 0) => self.detach = true,
-            (Ask::Leave, 1) => self.request_quit(),
+            (Ask::Leave, 1) | (Ask::Quit, 0) => self.request_quit(),
             (Ask::Install { pane, plugin }, 0) => self.install_plugin(pane, &plugin),
             (Ask::Pictures { pane }, 0) => self.install_picture_terminal(pane),
             _ => {}
@@ -537,7 +647,8 @@ impl Session {
             .max()
             .unwrap_or(0);
         let w = (widest + 8).clamp(50, 72).min(screen.width);
-        let h = (d.lines.len() as u16 + 7).min(screen.height);
+        let lines = self.dialog_lines(w).len() as u16;
+        let h = (lines + 7).min(screen.height);
         let rect = Rect::new(
             screen.x + (screen.width - w) / 2,
             screen.y + (screen.height - h) / 2,
@@ -551,13 +662,25 @@ impl Session {
             .collect();
         let total: u16 = widths.iter().sum::<u16>() + 2 * (widths.len() as u16).saturating_sub(1);
         let mut x = rect.x + rect.width.saturating_sub(total) / 2;
-        let y = (rect.y + 3 + d.lines.len() as u16).min(rect.bottom().saturating_sub(3));
+        let y = (rect.y + 3 + lines).min(rect.bottom().saturating_sub(3));
         let mut buttons = Vec::new();
         for w in widths {
             buttons.push(Rect::new(x, y, w, 1).intersection(rect));
             x += w + 2;
         }
         Some((rect, buttons))
+    }
+
+    /// A dialog's lines wrapped to its width (never cut off).
+    fn dialog_lines(&self, width: u16) -> Vec<text::Line> {
+        let Some(d) = &self.dialog else {
+            return Vec::new();
+        };
+        let inner = usize::from(width.saturating_sub(6)).max(1);
+        d.lines
+            .iter()
+            .flat_map(|l| text::layout(l, inner, self.tree.dir))
+            .collect()
     }
 
     fn paint_dialog(&self, frame: &mut Frame) {
@@ -580,10 +703,13 @@ impl Session {
             false,
         );
         let inner = rect.width.saturating_sub(6);
-        let text = Style::new().fg(t.fg.color()).bg(t.surface.color());
         let muted = Style::new().fg(t.muted.color()).bg(t.surface.color());
-        for (k, line) in d.lines.iter().enumerate() {
-            frame.put_str(rect.x + 3, rect.y + 2 + k as u16, line, inner, text);
+        for (k, line) in self.dialog_lines(rect.width).iter().enumerate() {
+            let y = rect.y + 2 + k as u16;
+            if y + 4 >= rect.bottom() {
+                break;
+            }
+            frame.put_line(rect.x + 3, y, inner, line, t.fg, t.surface, false);
         }
         for (k, (b, label)) in buttons.iter().zip(&d.buttons).enumerate() {
             let (fg, bg) = if k == d.selected {
@@ -955,37 +1081,45 @@ impl Session {
         let pane = self.tree.nodes.get(m.pane)?;
         let (cols, rows) = self.size;
         let screen = Rect::new(0, 0, cols, rows);
-        let w = m
+        let w = (m
             .items
             .iter()
             .map(|i| text::width(&i.label))
             .max()
             .unwrap_or(10) as u16
-            + 6;
-        let h = m.items.len() as u16 + 3;
-        let x = pane.rect.x.max(0) as u16;
+            + 6)
+        .min(cols);
+        let h = (menu_rows(m) as u16 + 2).min(rows);
+        // Kept on screen: shifted left at the right edge, up at the bottom.
+        let x = (pane.rect.x.max(0) as u16).min(cols.saturating_sub(w));
         let below = (pane.rect.y + 1).max(0) as u16;
         let y = if below + h <= rows {
             below
         } else {
             rows.saturating_sub(h)
         };
-        Some(Rect::new(x, y, w.min(cols), h).intersection(screen))
+        Some(Rect::new(x, y, w, h).intersection(screen))
+    }
+
+    /// The first content row shown: the menu scrolls so the highlight is seen.
+    fn menu_scroll(&self, rect: Rect) -> usize {
+        let Some(m) = self.menu.as_ref() else {
+            return 0;
+        };
+        let visible = usize::from(rect.height.saturating_sub(2)).max(1);
+        let row = menu_row_of(m, m.hover);
+        (row + 1).saturating_sub(visible)
     }
 
     /// Menu row → item index (the separator row has none).
     fn menu_item_at(&self, row: u16) -> Option<usize> {
         let m = self.menu.as_ref()?;
-        let sep = m.first_action();
+        let rect = self.menu_rect()?;
         let r = usize::from(row.checked_sub(1)?);
-        let idx = if r < sep {
-            r
-        } else if r == sep {
+        if r >= usize::from(rect.height.saturating_sub(2)) {
             return None;
-        } else {
-            r - 1
-        };
-        (idx < m.items.len()).then_some(idx)
+        }
+        menu_item_of_row(m, r + self.menu_scroll(rect))
     }
 
     fn paint_menu(&self, frame: &mut Frame) {
@@ -1006,19 +1140,19 @@ impl Session {
             t.muted,
             false,
         );
-        let sep = m.first_action();
-        let mut y = rect.y + 1;
-        for (k, item) in m.items.iter().enumerate() {
-            if k == sep {
+        let scroll = self.menu_scroll(rect);
+        let visible = usize::from(rect.height.saturating_sub(2));
+        let total = menu_rows(m);
+        for r in scroll..(scroll + visible).min(total) {
+            let y = rect.y + 1 + (r - scroll) as u16;
+            let Some(k) = menu_item_of_row(m, r) else {
                 let rule = Style::new().fg(t.border.color()).bg(t.surface.color());
                 for x in rect.x + 1..rect.right().saturating_sub(1) {
                     frame.cells[(x, y)].set_symbol("─").set_style(rule);
                 }
-                y += 1;
-            }
-            if y >= rect.bottom().saturating_sub(1) {
-                break;
-            }
+                continue;
+            };
+            let item = &m.items[k];
             let on = k == m.hover;
             let bg = if on {
                 t.accent.mix(t.surface, 0.55)
@@ -1049,7 +1183,17 @@ impl Session {
                 bg,
                 item.current,
             );
-            y += 1;
+        }
+        // More above or below: say so on the border.
+        let mark = Style::new().fg(t.accent.color()).bg(t.surface.color());
+        let x = rect.right().saturating_sub(3);
+        if scroll > 0 && rect.width > 4 {
+            frame.cells[(x, rect.y)].set_symbol("▲").set_style(mark);
+        }
+        if scroll + visible < total && rect.width > 4 && rect.height > 1 {
+            frame.cells[(x, rect.bottom() - 1)]
+                .set_symbol("▼")
+                .set_style(mark);
         }
     }
 
@@ -1374,9 +1518,15 @@ impl Session {
             return Vec::new();
         }
         let label = self.pane_label(i);
+        let room = usize::from(r.h - 5).min(4);
+        let width = usize::from(r.w - 4);
         let message = format!("{} is open in its own window", label.trim_end_matches(" ▾"));
-        let mut lines = text::layout(&message, usize::from(r.w - 4), Direction::Ltr);
-        lines.truncate(usize::from(r.h - 5).min(2));
+        let mut lines = text::layout(&message, width, Direction::Ltr);
+        if lines.len() > room {
+            // Too narrow for all of it: a shorter message, never a cut one.
+            lines = text::layout("In its own window", width, Direction::Ltr);
+        }
+        lines.truncate(room);
         lines
     }
 
@@ -1740,10 +1890,25 @@ impl Session {
     pub fn load_workspace(&mut self, target: Option<&str>, layout: &Layout) -> Result<()> {
         let root = self.workspace_root(target)?;
         let applied = self.tree.apply_layout(root, layout)?;
-        for (pane, kind) in &applied.switch {
-            self.switch_pane(*pane, kind);
+        let mut build = applied.fresh.clone();
+        for (pane, kind, args) in &applied.switch {
+            let plain = args.is_null() || args.as_object().is_some_and(|o| o.is_empty());
+            let stashed = match &self.tree.nodes[*pane].kind {
+                Kind::Pane(pb) => self.tree.nodes[*pane]
+                    .children
+                    .iter()
+                    .zip(&pb.types)
+                    .any(|(c, t)| t == kind && self.tree.nodes[*c].alive),
+                _ => false,
+            };
+            if plain || stashed {
+                self.switch_pane(*pane, kind);
+            } else {
+                // With its options: built like a new pane of that type.
+                build.push((*pane, kind.clone(), args.clone()));
+            }
         }
-        for (pane, kind, args) in &applied.fresh {
+        for (pane, kind, args) in &build {
             let custom = self
                 .tree
                 .pane_types
@@ -1852,6 +2017,19 @@ impl Session {
         Ok(self.tree.nodes[c].id.clone())
     }
 
+    /// Remember the options the app gave a pane type (saved with the layout).
+    pub fn pane_args(&mut self, target: &str, name: &str, args: Value) -> Result<()> {
+        let pane = self.target(target)?;
+        if let Kind::Pane(pb) = &mut self.tree.nodes[pane].kind {
+            if args.is_null() || args.as_object().is_some_and(|o| o.is_empty()) {
+                pb.args.remove(name);
+            } else {
+                pb.args.insert(name.to_string(), args);
+            }
+        }
+        Ok(())
+    }
+
     /// Move the focus into a pane's content (or onto the pane itself) — only if
     /// the focus was in that pane or nowhere, so code switching a pane doesn't
     /// pull the user away from what they are typing.
@@ -1950,22 +2128,27 @@ impl Session {
                 .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
                 .collect();
         }
+        let label = |name: &str| self.keys.label(name);
         if self.prefix_armed {
-            return [
-                ("Tab", "Next pane"),
-                ("|", "Split →"),
-                ("-", "Split ↓"),
-                ("x", "Close pane"),
-                ("Space", "Pane type"),
-                ("o", "Pop out"),
-                ("d", "Detach"),
-                ("1-9", "Workspace"),
-                ("q", "Quit"),
+            let mut out: Vec<(String, String)> = [
+                ("focus_next", "Next pane"),
+                ("split_right", "Split →"),
+                ("split_down", "Split ↓"),
+                ("close_pane", "Close pane"),
+                ("pane_menu", "Pane type"),
+                ("pop_out", "Pop out"),
+                ("detach", "Detach"),
             ]
             .iter()
-            .filter(|(k, _)| *k != "1-9" || self.workspace_tabs().is_some())
-            .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
+            .filter_map(|(name, what)| Some((label(name)?, (*what).to_string())))
             .collect();
+            if self.workspace_tabs().is_some() {
+                out.push(("1-9".into(), "Workspace".into()));
+            }
+            if let Some(q) = self.quit_label(true) {
+                out.push((q, "Quit".into()));
+            }
+            return out;
         }
         // A shell keeps every key: say how to get out.
         let in_shell = self.focus.is_some_and(|f| {
@@ -1973,12 +2156,24 @@ impl Session {
                 .widget()
                 .is_some_and(Widget::captures_keys)
         });
+        let prefix = label("prefix").unwrap_or_default();
         if in_shell {
-            let prefix = self.prefix.label();
-            return vec![
-                (format!("{prefix} Tab"), "Leave the shell".into()),
-                (format!("{prefix} q"), "Quit".into()),
-            ];
+            let shell = self
+                .focus
+                .is_some_and(|f| matches!(self.tree.nodes[f].kind, Kind::Terminal(_)));
+            let leave = if shell {
+                "Leave the shell"
+            } else {
+                "Leave this pane"
+            };
+            let mut out = Vec::new();
+            if let Some(next) = label("focus_next") {
+                out.push((format!("{prefix} {next}"), leave.into()));
+            }
+            if let Some(q) = self.quit_label(true) {
+                out.push((format!("{prefix} {q}"), "Quit".into()));
+            }
+            return out;
         }
         let mut out: Vec<(String, String)> = self
             .tree
@@ -1986,11 +2181,35 @@ impl Session {
             .iter()
             .filter_map(|b| Some((b.key.label(), b.description.clone()?)))
             .collect();
-        if !self.focusables().is_empty() {
-            out.push(("Tab".into(), "Next".into()));
+        if !self.focusables().is_empty()
+            && let Some(next) = label("focus_next")
+        {
+            out.push((next, "Next".into()));
         }
-        out.push(("q".into(), "Quit".into()));
+        if let Some(q) = self.quit_label(false) {
+            out.push((q, "Quit".into()));
+        }
         out
+    }
+
+    /// The quit key to show: the first one that really quits right now — not
+    /// one an app shortcut takes, not Esc after the prefix, and not a letter
+    /// (or Esc) while a text box has the focus (it would type, or step back).
+    fn quit_label(&self, after_prefix: bool) -> Option<String> {
+        let typing = !after_prefix
+            && self
+                .focus
+                .and_then(|f| self.tree.nodes[f].widget())
+                .is_some_and(Widget::takes_text);
+        self.keys
+            .keys("quit")
+            .iter()
+            .find(|k| {
+                !(after_prefix && k.is(Code::Esc))
+                    && !(typing && (k.text().is_some() || k.is(Code::Esc)))
+                    && !self.tree.bindings.iter().any(|b| b.key == **k)
+            })
+            .map(Key::label)
     }
 
     fn paint(&self, cols: u16, rows: u16) -> Frame {
@@ -2036,11 +2255,12 @@ impl Session {
                 w.paint_popup(popup, &mut frame, &self.pcx(i, 0.0, &hints));
             }
         }
-        self.paint_menu(&mut frame);
         for &m in &self.laid.modals {
             self.paint_modal(m, &mut frame, &hints);
         }
         self.paint_toasts(&mut frame);
+        // The open pane menu is what the person is using: above messages.
+        self.paint_menu(&mut frame);
         self.paint_dialog(&mut frame);
         frame
     }
@@ -2718,7 +2938,7 @@ impl Session {
             self.prefixed(k);
             return;
         }
-        if k == self.prefix {
+        if self.keys.is("prefix", &k) {
             self.prefix_armed = true;
             self.dirty = true;
             return;
@@ -2738,7 +2958,8 @@ impl Session {
             }
             return;
         }
-        if k.mods.ctrl && k.code == Code::Char('c') {
+        // A quit key with Ctrl/Alt (Ctrl+C) works even in a text box.
+        if (k.mods.ctrl || k.mods.alt || k.mods.sup) && self.keys.is("quit", &k) {
             self.user_quit();
             return;
         }
@@ -2761,24 +2982,31 @@ impl Session {
             self.action(&b.action);
             return;
         }
-        // 3. Built-in keys.
+        // 3. Built-in keys (named in the keymap, so an app can move them).
+        if self.keys.is("focus_next", &k) {
+            return self.move_focus(true);
+        }
+        if self.keys.is("focus_previous", &k) {
+            return self.move_focus(false);
+        }
+        if self.keys.is("next_tab", &k) || self.keys.is("previous_tab", &k) {
+            return self.switch_tab(self.keys.is("next_tab", &k));
+        }
+        // Esc steps back first: a dialog, then the focused widget.
+        if k.is(Code::Esc) {
+            if self.close_top_modal() {
+                return;
+            }
+            if self.focus.is_some() {
+                return self.set_focus(None);
+            }
+        }
+        if self.keys.is("quit", &k) {
+            return self.user_quit();
+        }
         let rtl = self.tree.dir == Direction::Rtl;
         let plain = k.mods == Default::default();
         match k.code {
-            Code::Tab => self.move_focus(!k.mods.shift),
-            Code::Esc if plain => {
-                if !self.close_top_modal() {
-                    if self.focus.is_some() {
-                        self.set_focus(None);
-                    } else {
-                        self.user_quit();
-                    }
-                }
-            }
-            Code::Char('q') if plain => self.user_quit(),
-            Code::PageDown | Code::PageUp if k.mods.ctrl => {
-                self.switch_tab(k.code == Code::PageDown)
-            }
             Code::Up | Code::Down | Code::Left | Code::Right if plain && self.focus.is_some() => {
                 let forward = match k.code {
                     Code::Down => true,
@@ -2813,20 +3041,39 @@ impl Session {
             return;
         }
         let rtl = self.tree.dir == Direction::Rtl;
+        let is = |name: &str| self.keys.is(name, &k);
+        let pane_action = [
+            ("pane_menu", "pane_menu"),
+            ("split_right", "split_pane_right"),
+            ("split_down", "split_pane_down"),
+            ("close_pane", "close_pane"),
+            ("pop_out", "pop_out"),
+            ("detach", "detach"),
+        ]
+        .into_iter()
+        .find(|(name, _)| is(name))
+        .map(|(_, act)| act);
+        if let Some(act) = pane_action {
+            return self.action(act);
+        }
+        if is("focus_next") {
+            return self.move_focus(true);
+        }
+        if is("focus_previous") {
+            return self.move_focus(false);
+        }
+        if is("quit") && !k.is(Code::Esc) {
+            return self.user_quit();
+        }
+        if k.mods != Default::default() {
+            return;
+        }
         match k.code {
-            Code::Tab => self.move_focus(!k.mods.shift),
             Code::Down => self.move_focus(true),
             Code::Up => self.move_focus(false),
             Code::Right => self.move_focus(!rtl),
             Code::Left => self.move_focus(rtl),
-            Code::Char('|') | Code::Char('\\') => self.action("split_pane_right"),
-            Code::Char('-') => self.action("split_pane_down"),
-            Code::Char('x') => self.action("close_pane"),
-            Code::Char('d') => self.action("detach"),
-            Code::Char('o') => self.action("pop_out"),
             Code::Char(c @ '1'..='9') => self.select_workspace(c as usize - '1' as usize),
-            Code::Char(' ') | Code::Enter => self.action("pane_menu"),
-            Code::Char('q') => self.user_quit(),
             _ => {}
         }
     }
@@ -3651,6 +3898,31 @@ impl Session {
     }
 }
 
+/// Content rows in a pane menu: its items, and one rule before the actions.
+fn menu_rows(m: &crate::panes::Menu) -> usize {
+    m.items.len() + usize::from(m.first_action() < m.items.len())
+}
+
+/// The content row an item is drawn on.
+fn menu_row_of(m: &crate::panes::Menu, k: usize) -> usize {
+    let sep = m.first_action();
+    k + usize::from(sep < m.items.len() && k >= sep)
+}
+
+/// The item on a content row (`None` for the rule).
+fn menu_item_of_row(m: &crate::panes::Menu, r: usize) -> Option<usize> {
+    let sep = m.first_action();
+    let k = if sep < m.items.len() && r >= sep {
+        if r == sep {
+            return None;
+        }
+        r - 1
+    } else {
+        r
+    };
+    (k < m.items.len()).then_some(k)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4231,6 +4503,205 @@ mod tests {
         assert!(!s.quit_requested());
         close(&mut s, "b");
         assert!(s.quit_requested(), "× on the last pane closes the app");
+    }
+
+    const TWO_PANES: &str = r#""children":[{"type":"split","children":[
+        {"type":"pane","content":"markdown","props":{"id":"a"},"children":[{"type":"markdown","content":"مَرْحَبًا Hello 日本語 नमस्ते"}]},
+        {"type":"pane","content":"markdown","props":{"id":"b"},"children":[{"type":"markdown","content":"b"}]}]}]"#;
+
+    #[test]
+    fn keys_can_be_renamed_and_turned_off() {
+        let mut s = session(&format!(
+            r#"{{"keys":{{"quit":"ctrl+q","prefix":"ctrl+a","close_pane":"w","pane_menu":null}},{TWO_PANES}}}"#
+        ));
+        s.frame(80, 24);
+        s.press("q").unwrap();
+        s.press("esc").unwrap();
+        s.press("ctrl+c").unwrap();
+        assert!(!s.quit_requested(), "the old quit keys are free now");
+        assert!(s.hints().iter().any(|(k, d)| k == "Ctrl+Q" && d == "Quit"));
+        s.focus("#a").unwrap();
+        s.press("ctrl+space").unwrap();
+        assert!(!s.prefix_armed(), "Ctrl+Space isn't the prefix any more");
+        s.press("ctrl+a").unwrap();
+        let hints = s.hints();
+        assert!(
+            hints.iter().any(|(k, d)| k == "w" && d == "Close pane"),
+            "{hints:?}"
+        );
+        assert!(
+            !hints.iter().any(|(_, d)| d == "Pane type"),
+            "turned off: not shown"
+        );
+        s.press("x").unwrap();
+        s.frame(80, 24);
+        assert!(s.tree().get("a").is_some(), "x does nothing now");
+        s.press("ctrl+a").unwrap();
+        s.press("space").unwrap();
+        assert!(s.menu.is_none(), "the pane menu key is off");
+        s.press("ctrl+a").unwrap();
+        s.press("w").unwrap();
+        s.frame(80, 24);
+        assert!(s.tree().get("a").is_none(), "w closes the pane");
+        s.press("ctrl+a").unwrap();
+        s.press("ctrl+q").unwrap();
+        assert!(
+            s.quit_requested(),
+            "the quit key works after the prefix too"
+        );
+    }
+
+    #[test]
+    fn keys_that_would_lock_people_in_or_clash_are_refused() {
+        let err = |keys: &str, bindings: &str| {
+            Session::from_json(&format!(
+                r#"{{"keys":{keys},"bindings":{bindings},{TWO_PANES}}}"#
+            ))
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default()
+        };
+        assert!(err(r#"{"quit":null}"#, "[]").contains("way to quit"));
+        assert!(err(r#"{"prefix":null}"#, "[]").contains("prefix key can't be turned off"));
+        assert!(err(r#"{"focus_next":"q"}"#, "[]").contains("two jobs"));
+        assert!(err(r#"{"quitt":"q"}"#, "[]").contains("no key called"));
+        assert!(
+            err("{}", r#"[{"key":"ctrl+space","action":"save"}]"#).contains("is the prefix key")
+        );
+        // An app's own shortcut may take a built-in key on purpose.
+        assert!(err("{}", r#"[{"key":"q","action":"save"}]"#).is_empty());
+    }
+
+    #[test]
+    fn an_app_can_ask_before_quitting() {
+        let mut s = session(&format!(r#"{{"confirm_quit":true,{TWO_PANES}}}"#));
+        s.frame(80, 24);
+        s.press("q").unwrap();
+        assert_eq!(s.dialog_open(), Some("quit"));
+        assert!(!s.quit_requested());
+        s.press("esc").unwrap();
+        assert_eq!(s.dialog_open(), None, "Esc says no");
+        assert!(!s.quit_requested());
+        s.press("ctrl+c").unwrap();
+        assert_eq!(s.dialog_open(), Some("quit"));
+        s.press("ctrl+c").unwrap();
+        assert!(s.quit_requested(), "a second Ctrl+C says yes");
+        // The app quitting itself (app.exit()) doesn't ask.
+        let mut s = session(&format!(r#"{{"confirm_quit":true,{TWO_PANES}}}"#));
+        s.request_quit();
+        assert!(s.quit_requested());
+    }
+
+    #[test]
+    fn split_then_close_puts_the_sizes_back() {
+        let mut s = session(&format!("{{{TWO_PANES}}}"));
+        s.frame(100, 24);
+        let ratios = |s: &Session| match &s.tree().nodes[s.tree().find("#a").unwrap()]
+            .parent
+            .map(|p| s.tree().nodes[p].kind.clone())
+        {
+            Some(Kind::Split(sb)) => sb.ratios.clone(),
+            _ => vec![],
+        };
+        s.focus("#a").unwrap();
+        s.press("ctrl+space").unwrap();
+        s.press("|").unwrap();
+        s.frame(100, 24);
+        assert_eq!(ratios(&s).len(), 3);
+        // Close the new pane (the focus moved into it).
+        s.press("ctrl+space").unwrap();
+        s.press("x").unwrap();
+        s.frame(100, 24);
+        let r = ratios(&s);
+        assert!(
+            (r[0] - 0.5).abs() < 1e-3 && (r[1] - 0.5).abs() < 1e-3,
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn a_workspace_tab_keeps_its_name_when_panes_close() {
+        let mut s = session(
+            r#"{"children":[{"type":"workspaces","children":[
+            {"type":"split","props":{"title":"Layout"},"children":[
+                {"type":"pane","content":"markdown","props":{"id":"a"},"children":[{"type":"markdown","content":"a"}]},
+                {"type":"pane","content":"markdown","props":{"id":"b"},"children":[{"type":"markdown","content":"b"}]}]},
+            {"type":"pane","content":"markdown","props":{"id":"c","title":"Notes"},"children":[{"type":"markdown","content":"c"}]}]}]}"#,
+        );
+        s.frame(100, 24);
+        assert_eq!(s.workspace_name(), "Layout");
+        s.focus("#a").unwrap();
+        s.press("ctrl+space").unwrap();
+        s.press("x").unwrap();
+        s.frame(100, 24);
+        assert_eq!(
+            s.workspace_name(),
+            "Layout",
+            "the pane left keeps the tab's name"
+        );
+    }
+
+    #[test]
+    fn the_pane_menu_stays_on_screen_and_scrolls() {
+        let mut s = session(&format!("{{{TWO_PANES}}}"));
+        s.frame(60, 10);
+        let b = s.tree().find("#b").unwrap();
+        s.open_menu(b);
+        let f = s.frame(60, 10);
+        let rect = s.menu_rect().unwrap();
+        assert!(rect.right() <= 60 && rect.bottom() <= 10, "{rect:?}");
+        assert!(f.text().contains('▼'), "more below: says so");
+        // Move to the last item: the menu scrolls to show it.
+        let n = s.menu.as_ref().unwrap().items.len();
+        s.menu.as_mut().unwrap().hover = n - 2;
+        s.press("down").unwrap();
+        s.frame(60, 10);
+        assert_eq!(s.menu.as_ref().unwrap().hover, n - 1);
+        let m = s.menu.as_ref().unwrap();
+        let last = m.items[m.hover].label.clone();
+        let hit = (1..rect.height - 1).any(|row| s.menu_item_at(row) == Some(m.hover));
+        assert!(hit, "the highlighted {last:?} is on screen");
+        assert!(s.frame(60, 10).text().contains('▲'), "more above: says so");
+    }
+
+    #[test]
+    fn the_bar_offers_a_quit_key_that_works() {
+        let mut s = session(
+            r#"{"children":[{"type":"input","props":{"id":"i"}},{"type":"button","content":"ok"}]}"#,
+        );
+        s.frame(80, 20);
+        s.focus("#i").unwrap();
+        let quit = |s: &Session| {
+            s.hints()
+                .into_iter()
+                .find(|(_, d)| d == "Quit")
+                .map(|(k, _)| k)
+        };
+        assert_eq!(
+            quit(&s).as_deref(),
+            Some("Ctrl+C"),
+            "q would type into the box"
+        );
+        s.press("esc").unwrap();
+        assert_eq!(quit(&s).as_deref(), Some("q"));
+    }
+
+    #[test]
+    fn long_dialog_lines_wrap_instead_of_being_cut() {
+        let mut s = session(&format!("{{{TWO_PANES}}}"));
+        s.frame(70, 24);
+        let long = "مَرْحَبًا — this add-on plays video files and links from the web, with sound, \
+                    日本語 नमस्ते";
+        s.ask(
+            Ask::Quit,
+            "Check".into(),
+            vec![long.into()],
+            &["OK", "Cancel"],
+            "Esc",
+        );
+        let text = s.frame(70, 24).text();
+        assert!(text.contains("with sound"), "{text}");
+        assert!(text.contains("नमस्ते"), "the end of the line is there too");
     }
 
     #[test]

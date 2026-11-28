@@ -1,9 +1,8 @@
 # stagetui
 
 > [!NOTE]
-> **Alpha.** stagetui works and is tested on Linux, macOS and Windows. Names and
-> options may still change before version 1.0, the first stable release — see the
-> [roadmap](#roadmap).
+> **Version 1.0 — stable.** stagetui is tested on Linux, macOS and Windows. Code
+> written for 1.0 keeps working in every 1.x version — see the [changelog](CHANGELOG.md).
 
 **A terminal UI library with sophisticated, fun options — and Blender-like flexibility.**
 Split the screen into panes and make each one show anything — a shell, files, code,
@@ -27,18 +26,18 @@ ts.show("Hello! مرحبا! नमस्ते! こんにちは!", title="staget
 ts.show("logo.png")
 ```
 
-> **Status: alpha (Milestone 6 of 6).** Chat, streaming Markdown, a prompt with
+> **Status: 1.0 (all 6 milestones done).** Chat, streaming Markdown, a prompt with
 > history, diffs, permission prompts, a real shell in a pane,
 > Blender-style panes and workspaces, add-ons (video, web pages and 3D models; write your own in Python), background sessions you can detach from and
 > attach to (`stagetui start` / `attach`), agent access (`stagetui mcp` / `drive`),
-> layouts, the mouse, animations, Arabic/RTL and headless snapshots work today —
+> layouts, the mouse, keys you can rename, animations, Arabic/RTL and headless snapshots work today —
 > see the [roadmap](#roadmap).
 
 ## Why stagetui?
 
 - **Friendly.** One line shows a picture or a message. Errors tell you *what* went wrong, *why*, and *how to fix it*.
 - **Pictures that look right everywhere.** Kitty, Ghostty, WezTerm, iTerm2, Windows Terminal, foot… stagetui picks the best method your terminal supports, and falls back gracefully.
-- **Every language.** Arabic and Persian letters join and flow right-to-left, Hindi conjuncts form, Chinese and Japanese line up — in every terminal, with fonts built in.
+- **Every language.** Arabic and Persian letters join and flow right-to-left, Hindi conjuncts form, Chinese and Japanese line up — in every terminal. Fonts for Latin, Arabic and Hindi are built in.
 - **Friendly to newcomers.** Mouse everywhere, keys shown on screen, clear messages — the terminal without the fear.
 - **AI agents welcome.** Any app can be captured as plain text, a widget tree, or a PNG — no terminal needed.
 - **Keeps running.** Start an app in the background, close the terminal, attach again later — from any terminal, even two at once.
@@ -161,6 +160,7 @@ stagetui plugins            # the add-ons you have, and the ones you can add
 | [Apps & widgets](docs/apps.md) | Cards, text, images, canvases, themes, icons |
 | [Layouts](docs/layout.md) | Rows, grids, split panes, tabs, pop-ups, scrolling |
 | [Making apps interactive](docs/events.md) | Buttons, inputs, lists, shortcuts, mouse, `async` |
+| [Keys](docs/keys.md) | Rename or turn off any key (`KEYS`), your own `keys.json`, `stagetui keys` |
 | [Motion](docs/motion.md) | Animations and live drawings |
 | [Agent harness](docs/harness.md) | Chat, prompt, diffs, tool calls, permissions, shell |
 | [Panes](docs/panes.md) | Blender-style panes: switch, split, close, workspaces, own windows |
@@ -180,7 +180,8 @@ stagetui plugins            # the add-ons you have, and the ones you can add
 3. ✅ Layouts & interaction: taffy layout, split panes, tabs, modals, buttons, inputs, tables, trees, mouse, themes, animations, live canvas, async handlers
 4. ✅ Agent harness kit: streaming Markdown, code, diffs, prompt, chat, tool cards, permissions, embedded shell, Blender-style panes, `drive`/`mcp`, pytest plugin
 5. ✅ Sessions & workspaces: background sessions (`start` / `attach` / detach), several windows on one app, workspace tabs, save/restore layouts, panes that pop out into their own terminal window and back
-6. ✅ Add-ons: plugin system (write your own in Python or Rust), video with sound, web pages, 3D models · next: 1.0
+6. ✅ Add-ons: plugin system (write your own in Python or Rust), video with sound, web pages, 3D models
+7. ✅ 1.0, the stable release: keys you can rename or turn off (`KEYS`, your own `keys.json`, every add-on's keys too), `stagetui keys`
 
 ## Develop
 

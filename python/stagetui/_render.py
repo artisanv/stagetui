@@ -10,6 +10,8 @@ import argparse
 import json
 import runpy
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from ._core import StageError
@@ -28,7 +30,23 @@ def _size(text: str, flag: str) -> tuple[int, int]:
         ) from None
 
 
+@contextmanager
+def app_argv(path: str | Path) -> Iterator[None]:
+    """While the app runs, ``sys.argv`` is what ``python my_app.py`` would give it
+    (``[my_app.py]``), not ``stagetui``'s own words (``drive``, ``mcp``…)."""
+    saved = sys.argv
+    sys.argv = [str(path)]
+    try:
+        yield
+    finally:
+        sys.argv = saved
+
+
 def find_app(path: Path) -> type[StageApp]:
+    """Load the file (without its ``__main__`` block) and return its last ``StageApp``.
+
+    It runs with the current ``sys.argv``: the command-line tools wrap it in
+    :func:`app_argv`, scripts may set their own."""
     sys.path.insert(0, str(path.resolve().parent))
     namespace = runpy.run_path(str(path), run_name=RUN_NAME)
     apps = [
@@ -58,8 +76,11 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     try:
-        app = find_app(Path(a.target))()
-        snap = app.run_headless(_size(a.size, "--size"), cell=_size(a.cell, "--cell"))
+        with app_argv(a.target):  # compose() and on_mount() see it too
+            app = find_app(Path(a.target))()
+            # Like run_headless(), but the picture is made while the app still runs.
+            with app.drive(_size(a.size, "--size"), cell=_size(a.cell, "--cell")) as d:
+                snap = d.snapshot(settle=True, png=bool(a.out))
         written = []
         if a.out:
             Path(a.out).write_bytes(snap.png)

@@ -153,6 +153,43 @@ def test_turn_zoom_and_switch_models(models: dict[str, Path], tmp_path: Path) ->
             model.call("explode")
 
 
+def test_keys_can_be_renamed(models: dict[str, Path]) -> None:
+    class Viewer(StageApp):
+        def compose(self):
+            return [
+                StagePane(
+                    "3d",
+                    id="m",
+                    path=str(models["obj"]),
+                    spin=False,
+                    keys={"wires": "x", "grid": None},
+                ),
+                StagePane("3d", id="bad", path=str(models["obj"]), keys={"wire": "x"}),
+            ]
+
+    with Viewer().drive((100, 24)) as d:
+        node = lambda: d.query("#m")["children"][0]
+        model = d.app.query("#m").content
+        assert until(d, lambda: node()["frames"] > 0), "a picture arrived"
+        # The status line shows the new key, and not the turned-off grid's.
+        assert until(d, lambda: "x wires" in (node()["status"] or "")), node()["status"]
+        assert "w wires" not in node()["status"]
+        d.click("#m")
+        d.press("w")  # its old key: not sent on any more
+        d.press("g")  # turned off
+        d.wait(0.3)
+        time.sleep(0.2)
+        d.wait(0.1)
+        state = model.call("state")
+        assert state["wireframe"] is False and state["grid"] is True
+        d.press("x")
+        assert until(d, lambda: model.call("state")["wireframe"] is True)
+        # A name that isn't an action: the pane says so, and lists the real ones.
+        error = lambda: d.query("#bad")["children"][0]["error"] or ""
+        assert until(d, lambda: '"wire"' in error()), error()
+        assert "could not start" in error() and "wires" in error() and "turn_left" in error()
+
+
 def test_problems_are_explained(models: dict[str, Path], tmp_path: Path) -> None:
     odd = tmp_path / "model.fbx"
     odd.write_bytes(b"x")
@@ -162,8 +199,43 @@ def test_problems_are_explained(models: dict[str, Path], tmp_path: Path) -> None
             return [StagePane("3d", id="a", path=str(odd)), StagePane("3d", id="b")]
 
     with Viewer().drive((100, 24)) as d:
-        # The pane says what went wrong (long temporary paths wrap on screen, so read its data).
-        error = lambda pane: d.query(pane)["children"][0]["error"] or ""
-        assert until(d, lambda: "export it as one of those" in error("#a"))
-        assert until(d, lambda: 'path="model.glb"' in error("#b"))
-        assert "could not start" in d.snapshot().text
+        # The pane says what went wrong and how to go on (read its data: long
+        # temporary paths don't fit on screen).
+        status = lambda pane: d.query(pane)["children"][0]["status"] or ""
+        assert until(d, lambda: "export it as one of those" in status("#a")), status("#a")
+        assert "press Enter to type another path" in status("#a")
+        assert until(d, lambda: "No model yet — press Enter to type a file path" in status("#b"))
+        assert d.query("#a")["children"][0]["error"] is None, "the pane stays usable"
+        assert "could not start" not in d.snapshot().text
+
+
+def test_a_pane_without_a_model_asks_for_one(models: dict[str, Path]) -> None:
+    """What a 3D pane picked from a pane's menu does: ask for a file, right there."""
+
+    class Viewer(StageApp):
+        def compose(self):
+            return [StagePane("3d", id="m")]
+
+    with Viewer().drive((100, 24)) as d:
+        node = lambda: d.query("#m")["children"][0]
+        status = lambda: node()["status"] or ""
+        model = d.app.query("#m").content
+        assert until(d, lambda: "No model yet" in status()), status()
+        assert until(d, lambda: node()["frames"] > 0), "a quiet picture, not 'Starting…'"
+        d.click("#m")
+        d.press("enter")
+        assert until(d, lambda: status().startswith("Open a model: █")), status()
+        # A wrong path: the reason shows, and the line stays open to fix it.
+        d.type("nope.glb")
+        d.press("enter")
+        assert until(d, lambda: '"nope.glb" was not found' in status()), status()
+        assert "nope.glb█" in status()
+        # The right one (a name in several scripts): it loads.
+        d.press("ctrl+u")
+        d.type(str(models["obj"]))
+        d.press("enter")
+        assert until(d, lambda: "12 triangles" in status()), status()
+        assert model.call("state")["path"] == str(models["obj"])
+        # Its usual keys are back.
+        d.press("w")
+        assert until(d, lambda: model.call("state")["wireframe"] is True)

@@ -99,10 +99,10 @@ impl Diff {
                         tag: change.tag(),
                         old: change.old_index(),
                         new: change.new_index(),
-                        text: change
-                            .value()
-                            .trim_end_matches(['\n', '\r'])
-                            .replace('\t', "    "),
+                        text: text::paragraph::expand_tabs(
+                            change.value().trim_end_matches(['\n', '\r']),
+                        )
+                        .into_owned(),
                     });
                 }
             }
@@ -342,10 +342,9 @@ impl Widget for Diff {
                         c.modifier.insert(Modifier::BOLD);
                     }
                     let x = inner.x + gw;
-                    let laid = text::layout(line, usize::MAX / 2, Direction::Ltr);
-                    if let Some(l) = laid.first() {
-                        frame.put_line(x, y, inner.right().saturating_sub(x), l, fg, lbg, false);
-                    }
+                    let v = text::paragraph::verbatim(line, None);
+                    let room = inner.right().saturating_sub(x);
+                    super::code::put_verbatim(frame, x, y, room, &v, fg, lbg, false);
                 }
             }
         }
@@ -517,5 +516,37 @@ mod tests {
         d.key(&Key::plain(Code::Char('r')), area);
         assert_eq!(d.decisions, vec![Decision::Accepted, Decision::Rejected]);
         assert_eq!(d.value()["pending"], 0);
+    }
+
+    #[test]
+    fn lines_keep_their_indentation() {
+        let old = "def f(x):\n    return x\n\tpass\n";
+        let new = "def f(x: int) -> int:\n    return x + 1\n\tpass\n  t = \"مَرْحَباً بِكُمْ\"\n  Hello مرحبا world\n    こんにちは 世界 你好\n    नमस्ते दुनिया\n    مَرْحَباً بِكُمْ.\n";
+        let (frame, cells) = crate::widgets::code::tests::render(
+            json!({"type": "diff", "content": [old, new], "props": {"path": "x.py"}}),
+            70,
+            16,
+        );
+        let text = frame.text();
+        for want in [
+            "- def f(x):",
+            "-     return x",
+            "+ def f(x: int) -> int:",
+            "+     return x + 1",
+            "      pass",
+            "+   t = \"مَرْحَباً بِكُمْ\"",
+            "+   Hello مرحبا world",
+            "+     こんにちは 世界 你好",
+            "+     नमस्ते दुनिया",
+            "+     مَرْحَباً بِكُمْ.",
+        ] {
+            assert!(text.contains(want), "{want:?} missing in\n{text}");
+        }
+        // An Arabic sentence reads right to left (its full stop on the left), and its
+        // indentation stays on the left of the cells.
+        let v = text::paragraph::verbatim("    مَرْحَباً بِكُمْ.", None);
+        assert!(v.line.visual.starts_with('.'));
+        let shown = format!("+ {}{}", " ".repeat(v.lead), v.line.visual);
+        assert!(cells.iter().any(|r| r.contains(&shown)), "{cells:#?}");
     }
 }

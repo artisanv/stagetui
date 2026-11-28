@@ -18,16 +18,16 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0-alpha.7"
+version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 keywords = ["tui", "terminal", "kitty", "rtl", "agents"]
 categories = ["command-line-interface"]
 
 [workspace.dependencies]
-stagetui-core = { path = "crates/stagetui-core", version = "0.1.0-alpha.7" }
-stagetui-cli = { path = "crates/stagetui-cli", version = "0.1.0-alpha.7" }
-stagetui-plugin-api = { path = "crates/stagetui-plugin-api", version = "0.1.0-alpha.7" }
+stagetui-core = { path = "crates/stagetui-core", version = "1.0.0" }
+stagetui-cli = { path = "crates/stagetui-cli", version = "1.0.0" }
+stagetui-plugin-api = { path = "crates/stagetui-plugin-api", version = "1.0.0" }
 clap = { version = "4.6", features = ["derive"] }
 crossterm = "0.29"
 ratatui-core = { version = "0.1", default-features = false, features = ["std"] }

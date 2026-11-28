@@ -7,7 +7,8 @@ Try:   Ctrl+Space, then o   the focused pane opens in its own terminal window
        Ctrl+Space, then d   you get your terminal back; the agent keeps working
        stagetui sessions    it is listed as "night-shift"
        stagetui attach      come back: everything it did meanwhile is there
-       q                    asks: detach, or quit the app for good
+       Ctrl+Space, then q   asks: detach, or quit the app for good
+                            (plain q types into the shell when it has the focus)
 
 `python examples/09_detach.py` works too, but then the app lives in that
 terminal and can't be detached (panes still pop out).
@@ -42,7 +43,7 @@ class NightShift(StageApp):
                 ratio=[3, 2],
                 grow=1,
             ),
-            StageBar("Ctrl+Space o — pop a pane out · Ctrl+Space d — detach · q — leave"),
+            StageBar("Ctrl+Space, then: o pop a pane out · d detach · q leave"),
         ]
 
     @property

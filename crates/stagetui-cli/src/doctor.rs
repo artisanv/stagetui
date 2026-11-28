@@ -51,6 +51,9 @@ pub fn report(c: &Capabilities, fonts: Option<&Coverage>) -> String {
             INFO,
             &format!("{}×{} cells (virtual)", c.size.cols, c.size.rows),
         );
+        if let Some(fonts) = fonts {
+            font_rows(&mut s, &mut fixes, fonts);
+        }
         let _ = writeln!(
             s,
             "\n  Headless mode renders apps offscreen (text + JSON tree) for CI and agents."
@@ -59,6 +62,7 @@ pub fn report(c: &Capabilities, fonts: Option<&Coverage>) -> String {
             s,
             "  Run `stagetui doctor` inside a terminal to check that terminal."
         );
+        suggestions(&mut s, fixes, false);
         return s;
     }
 
@@ -178,38 +182,7 @@ pub fn report(c: &Capabilities, fonts: Option<&Coverage>) -> String {
     }
 
     if let Some(fonts) = fonts {
-        let missing: Vec<&str> = fonts
-            .scripts
-            .iter()
-            .filter(|s| !s.covered)
-            .map(|s| s.script)
-            .collect();
-        if missing.is_empty() {
-            row(
-                &mut s,
-                "Fonts",
-                OK,
-                "bundled Noto + DejaVu; every common script covered",
-            );
-        } else {
-            row(
-                &mut s,
-                "Fonts",
-                INFO,
-                &format!(
-                    "bundled Noto + DejaVu; no system font for: {}",
-                    missing.join(", ")
-                ),
-            );
-            if missing
-                .iter()
-                .any(|m| matches!(*m, "chinese" | "japanese" | "korean"))
-            {
-                fixes.push(
-                    "For Chinese/Japanese/Korean in pictures, install Noto CJK (e.g. `apt install fonts-noto-cjk`, `pacman -S noto-fonts-cjk`).".into(),
-                );
-            }
-        }
+        font_rows(&mut s, &mut fixes, fonts);
     }
 
     let remote = match (c.remote.ssh, c.remote.tmux, c.remote.screen) {
@@ -253,15 +226,72 @@ pub fn report(c: &Capabilities, fonts: Option<&Coverage>) -> String {
         _ => row(&mut s, "Probe", INFO, "skipped"),
     }
 
+    suggestions(&mut s, fixes, true);
+    s
+}
+
+fn suggestions(s: &mut String, fixes: Vec<String>, praise: bool) {
     if fixes.is_empty() {
-        let _ = writeln!(s, "\n  Everything looks great.");
+        if praise {
+            let _ = writeln!(s, "\n  Everything looks great.");
+        }
     } else {
         let _ = writeln!(s, "\n  Suggestions:");
         for f in fixes {
             let _ = writeln!(s, "   → {f}");
         }
     }
-    s
+}
+
+/// Fonts for pictures (PNG snapshots, pixel text): which scripts would show as boxes.
+fn font_rows(s: &mut String, fixes: &mut Vec<String>, fonts: &Coverage) {
+    let missing: Vec<&str> = fonts
+        .scripts
+        .iter()
+        .filter(|s| !s.covered)
+        .map(|s| s.script)
+        .collect();
+    let source = if fonts.system_fonts {
+        "bundled Noto + DejaVu and your system's fonts"
+    } else {
+        "bundled Noto + DejaVu only (STAGETUI_SYSTEM_FONTS=0)"
+    };
+    let _ = writeln!(
+        s,
+        "  {:<13} {} {}",
+        "Fonts",
+        if missing.is_empty() { OK } else { INFO },
+        if missing.is_empty() {
+            format!("{source}; every common script covered")
+        } else {
+            format!(
+                "{source}; none for {} — empty boxes in pictures (terminals use their own fonts)",
+                missing.join(", ")
+            )
+        }
+    );
+    let cjk = missing
+        .iter()
+        .any(|m| matches!(*m, "chinese" | "japanese" | "korean"));
+    if cjk {
+        fixes.push(
+            "For Chinese/Japanese/Korean in pictures, install Noto Sans CJK (e.g. `sudo apt install fonts-noto-cjk`, `sudo pacman -S noto-fonts-cjk`).".into(),
+        );
+    }
+    let other: Vec<&str> = missing
+        .iter()
+        .copied()
+        .filter(|m| !matches!(*m, "chinese" | "japanese" | "korean"))
+        .collect();
+    if !other.is_empty() {
+        fixes.push(format!(
+            "For {} in pictures, install its Noto font (e.g. `sudo apt install fonts-noto`, `sudo pacman -S noto-fonts`).",
+            other.join(", ")
+        ));
+    }
+    if !missing.is_empty() && !fonts.system_fonts {
+        fixes.push("Or let pictures use your system's fonts: unset STAGETUI_SYSTEM_FONTS.".into());
+    }
 }
 
 #[cfg(test)]
@@ -338,5 +368,68 @@ mod tests {
         );
         let r = report(&c, None);
         assert!(r.contains("headless") && r.contains("80×24"), "{r}");
+        assert!(!r.contains("Suggestions"), "{r}");
+    }
+
+    fn fonts(missing: &[&'static str], system_fonts: bool) -> Coverage {
+        Coverage {
+            bundled: vec!["NotoSans-Regular.ttf"],
+            system_fonts,
+            faces: 7,
+            scripts: ["latin", "arabic", "devanagari", "chinese", "hebrew"]
+                .into_iter()
+                .map(|script| stagetui_core::text::fonts::ScriptCoverage {
+                    script,
+                    sample: 'x',
+                    covered: !missing.contains(&script),
+                })
+                .collect(),
+            missing_in_pictures: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn missing_picture_fonts_are_reported_with_a_fix() {
+        let c = caps(
+            &[],
+            b"\x1bP>|kitty(0.39.1)\x1b\\\x1b_Gi=31;OK\x1b\\\x1b[?62c",
+        );
+        let r = report(&c, Some(&fonts(&["chinese", "hebrew"], false)));
+        assert!(
+            r.contains("none for chinese, hebrew — empty boxes in pictures"),
+            "{r}"
+        );
+        assert!(r.contains("install Noto Sans CJK"), "{r}");
+        assert!(
+            r.contains("For hebrew in pictures, install its Noto font"),
+            "{r}"
+        );
+        assert!(r.contains("unset STAGETUI_SYSTEM_FONTS"), "{r}");
+        let r = report(&c, Some(&fonts(&[], true)));
+        assert!(r.contains("every common script covered"), "{r}");
+        assert!(r.contains("Everything looks great"), "{r}");
+        // Headless (where PNGs are made) reports fonts too.
+        let h = resolve(
+            &Env::default(),
+            TtyInfo {
+                stdin: false,
+                stdout: false,
+            },
+            Some("no TTY".into()),
+            &parse::Replies::default(),
+            Grid {
+                cols: 80,
+                rows: 24,
+                width_px: 0,
+                height_px: 0,
+            },
+            ProbeInfo::default(),
+        );
+        let r = report(&h, Some(&fonts(&["chinese"], true)));
+        assert!(
+            r.contains("none for chinese") && r.contains("Suggestions"),
+            "{r}"
+        );
+        assert!(!r.contains("unset STAGETUI_SYSTEM_FONTS"), "{r}");
     }
 }

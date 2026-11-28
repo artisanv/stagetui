@@ -21,9 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TextIO
 
-from . import __version__
+from . import __version__, _core
 from ._core import StageError
-from ._render import _size, find_app
+from ._render import _size, app_argv, find_app
 from .app import Driver
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -133,6 +133,10 @@ def panes(d: Driver, args: dict[str, Any]) -> Any:
     return d.panes()
 
 
+def keys(d: Driver, args: dict[str, Any]) -> Any:
+    return d.keys()
+
+
 def set_pane_type(d: Driver, args: dict[str, Any]) -> dict[str, Any]:
     pane = str(_need(args, "pane", str))
     kind = str(_need(args, "type", str))
@@ -172,6 +176,7 @@ ACTIONS: dict[str, Callable[[Driver, dict[str, Any]], Any]] = {
     "wait_idle": wait_idle,
     "query": query,
     "panes": panes,
+    "keys": keys,
     "set_pane_type": set_pane_type,
     "workspace": workspace,
     "load_workspace": load_workspace,
@@ -196,7 +201,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "press",
         "description": 'Press a key, like "enter", "tab", "esc", "ctrl+s", "up", "f1", or several '
-        'with keys=[...]. Prefix key for pane commands: "ctrl+space". Returns the new screen.',
+        'with keys=[...]. Prefix key for pane commands: "ctrl+space" (an app may move it: '
+        "see the keys tool). Returns the new screen.",
         "inputSchema": {
             "type": "object",
             "properties": {"key": _S, "keys": {"type": "array", "items": _S}},
@@ -252,6 +258,13 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "keys",
+        "description": "Every key this app answers to: built-in keys by name (quit, prefix, "
+        "close_pane…, with the keys that do them now — an app or its user may have renamed "
+        "them), the app's own shortcuts, and whether quitting asks first.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "set_pane_type",
         "description": 'Switch what a pane shows, e.g. pane="#right", type="terminal". '
         "Types: chat, terminal, files, diff, code, markdown, log, empty, or app-defined ones.",
@@ -284,6 +297,11 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 _TOOL_ACTIONS = {t["name"]: t["name"] for t in TOOLS} | {"list_panes": "panes"}
+
+QUIT_NOTE = (
+    "The app has quit (q, Ctrl+Space then q, or the last pane's ×). Only snapshot still "
+    "answers, with the last screen; start stagetui again to use the app."
+)
 
 
 # ----- servers -----------------------------------------------------------------------
@@ -330,6 +348,17 @@ class Server:
     def dispatch(self, id: Any, method: str, params: dict[str, Any], notification: bool) -> None:
         raise NotImplementedError
 
+    def act(self, name: str, args: dict[str, Any]) -> Any:
+        """Run one action. Once the app has quit, only ``snapshot`` still answers
+        (the last screen); every result says ``"quit": true``."""
+        d = self.driver
+        if d.has_quit and name != "snapshot":
+            raise d._quit_error()
+        result = ACTIONS[name](d, args)
+        if d.has_quit and isinstance(result, dict):
+            result = {**result, "quit": True}
+        return result
+
 
 class DriveServer(Server):
     """Plain JSON-RPC: one method per action."""
@@ -340,24 +369,22 @@ class DriveServer(Server):
             if not notification:
                 self.reply(id, {})
             return
-        action = ACTIONS.get(method)
-        if action is None:
+        if method not in ACTIONS:
             if not notification:
                 self.error(
                     id, -32601, f"Unknown method {method!r}", {"methods": [*ACTIONS, "shutdown"]}
                 )
             return
         try:
-            result = action(self.driver, params)
+            result = self.act(method, params)
         except ToolError as e:
             if not notification:
                 self.error(id, -32602, str(e))
             return
         except Exception as e:  # noqa: BLE001 — every app error goes back to the caller
             if not notification:
-                self.error(
-                    id, -32000, str(e).splitlines()[0] if str(e) else type(e).__name__, _err(e)
-                )
+                data = _err(e) | ({"quit": True} if self.driver.has_quit else {})
+                self.error(id, -32000, str(e).splitlines()[0] if str(e) else type(e).__name__, data)
             return
         if not notification:
             self.reply(id, result)
@@ -383,7 +410,9 @@ class McpServer(Server):
                     "instructions": (
                         f"Tools to see and operate the terminal app {self.app_name!r}. "
                         "Start with `snapshot` to read the screen (text plus widget ids), then "
-                        "`click`, `type`, `press` to act — each returns the new screen."
+                        "`click`, `type`, `press` to act — each returns the new screen. "
+                        "Keys like q quit the app: after that every result says "
+                        '"The app has quit" (and "quit": true) and only `snapshot` answers.'
                     ),
                 },
             )
@@ -397,20 +426,22 @@ class McpServer(Server):
             self.error(id, -32601, f"Unknown method {method!r}")
 
     def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        action = ACTIONS.get(_TOOL_ACTIONS.get(name, ""))
-        if action is None:
+        action = _TOOL_ACTIONS.get(name, "")
+        if action not in ACTIONS:
             return {
                 "content": [{"type": "text", "text": f"Unknown tool {name!r}"}],
                 "isError": True,
             }
         try:
-            result = action(self.driver, args)
+            result = self.act(action, args)
         except Exception as e:  # noqa: BLE001 — errors are shown to the agent
             info = _err(e)
             text = info["what"] + (f"\nwhy: {info['why']}" if info["why"] else "")
             text += f"\nfix: {info['fix']}" if info["fix"] else ""
             return {"content": [{"type": "text", "text": text}], "isError": True}
         content: list[dict[str, Any]] = []
+        if self.driver.has_quit:
+            content.append({"type": "text", "text": QUIT_NOTE})
         if isinstance(result, dict) and "text" in result:
             content.append({"type": "text", "text": result["text"]})
             if "png" in result:
@@ -424,26 +455,58 @@ class McpServer(Server):
 
 
 def serve(mode: str, app_path: str, size: tuple[int, int], stdin: TextIO, out: TextIO) -> int:
-    app = find_app(Path(app_path))()
-    with app.drive(size) as driver:
-        server: Server
-        if mode == "mcp":
-            server = McpServer(driver, out, Path(app_path).name)
-        else:
-            server = DriveServer(driver, out)
-        for line in stdin:
-            server.handle_line(line)
-            if not server.running:
-                break
+    # The app sees `sys.argv == [app.py]`, as with `python app.py` — not `drive` / `mcp`.
+    with app_argv(app_path):
+        app = find_app(Path(app_path))()
+        with app.drive(size) as driver:
+            server: Server
+            if mode == "mcp":
+                server = McpServer(driver, out, Path(app_path).name)
+            else:
+                server = DriveServer(driver, out)
+            for line in stdin:
+                server.handle_line(line)
+                if not server.running:
+                    break
+    return 0
+
+
+def print_keys(app_path: str, *, as_json: bool) -> int:
+    """``stagetui keys app.py``: the app's keys, without showing it."""
+    # Headless runs read only STAGETUI_KEYS; this one is for the person, so it
+    # reads their keys file too, like plain `stagetui keys` does.
+    if not os.environ.get("STAGETUI_KEYS"):
+        file = json.loads(_core.keys()).get("file")
+        if file:
+            os.environ["STAGETUI_KEYS"] = file
+    os.environ["STAGETUI_HEADLESS"] = "1"
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    try:
+        with app_argv(app_path):
+            app = find_app(Path(app_path))()
+            with app.drive((100, 30)) as d:
+                print(
+                    json.dumps(d.keys(), ensure_ascii=False)
+                    if as_json
+                    else d.core.keys(True).rstrip()
+                )
+    except StageError as e:
+        print(f"stagetui: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="stagetui")
-    p.add_argument("mode", choices=["drive", "mcp"])
+    p.add_argument("mode", choices=["drive", "mcp", "keys"])
     p.add_argument("app")
     p.add_argument("--size", default="100x30")
+    p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
+    if a.mode == "keys":
+        return print_keys(a.app, as_json=a.json)
     # Windows pipes default to a legacy code page; stagetui always speaks UTF-8.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):

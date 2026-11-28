@@ -196,8 +196,9 @@ impl PyApp {
             .map(|v| v.to_string())
     }
 
-    /// Set what a pane shows; returns the content widget's id.
-    #[pyo3(signature = (target, pane_type, spec_json, replace = true))]
+    /// Set what a pane shows; returns the content widget's id. `args_json` are
+    /// the options it was made with (kept with saved layouts).
+    #[pyo3(signature = (target, pane_type, spec_json, replace = true, args_json = None))]
     fn pane_set(
         &self,
         py: Python<'_>,
@@ -205,9 +206,20 @@ impl PyApp {
         pane_type: &str,
         spec_json: &str,
         replace: bool,
+        args_json: Option<&str>,
     ) -> PyResult<String> {
         let spec = spec(py, spec_json)?;
-        self.run(py, |s| s.pane_set(target, pane_type, &spec, replace))
+        let args = match args_json {
+            Some(a) => json(py, a)?,
+            None => serde_json::Value::Null,
+        };
+        self.run(py, |s| {
+            let id = s.pane_set(target, pane_type, &spec, replace)?;
+            if args_json.is_some() {
+                s.pane_args(target, pane_type, args)?;
+            }
+            Ok(id)
+        })
     }
 
     /// Switch a pane to another type (restoring stashed content if any).
@@ -275,6 +287,22 @@ impl PyApp {
         let s = self.app.session();
         let (c, r) = s.size();
         s.tree_json(c, r).to_string()
+    }
+
+    /// Stop every add-on and shell pane's program (a headless run is over).
+    fn release(&self) {
+        self.app.session().release_processes();
+    }
+
+    /// Every key the app answers to (JSON); `text=True` for a table people read.
+    #[pyo3(signature = (text = false))]
+    fn keys(&self, text: bool) -> String {
+        let s = self.app.session();
+        if text {
+            s.keys_text()
+        } else {
+            s.keys_json().to_string()
+        }
     }
 
     fn set_theme(&self, py: Python<'_>, name: &str) -> PyResult<()> {

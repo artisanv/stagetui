@@ -62,6 +62,9 @@ struct Inner {
     stopping: AtomicBool,
     /// Out of sight (stashed under another pane type, or in another tab).
     hidden: AtomicBool,
+    /// Which start of the program this is: a reader thread of an earlier one
+    /// (before a restart) must not touch the new one.
+    run: AtomicU64,
     stderr: Mutex<VecDeque<String>>,
 }
 
@@ -152,12 +155,39 @@ impl PluginView {
     /// a moment to clean up (a browser closing) on a thread of its own, so the
     /// screen doesn't wait.
     pub fn release(&mut self) {
-        let old = std::mem::take(&mut self.inner);
-        old.stopping.store(true, Ordering::SeqCst);
+        let inner = &self.inner;
+        // Never start again (a last paint of a finished app keeps its picture),
+        // and reader threads of this program stand down.
+        inner.started.store(true, Ordering::SeqCst);
+        inner.stopping.store(true, Ordering::SeqCst);
+        inner.run.fetch_add(1, Ordering::SeqCst);
+        let stdin = lock(&inner.stdin).take();
+        let child = lock(&inner.child).take();
+        if stdin.is_none() && child.is_none() {
+            return;
+        }
+        let stop = move || {
+            let mut stdin = stdin;
+            if let Some(w) = stdin.as_mut() {
+                let _ = api::write_json(w, &ToPlugin::Stop);
+            }
+            drop(stdin);
+            if let Some(mut child) = child {
+                if let Some(proc) = child.child_mut() {
+                    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                    while std::time::Instant::now() < deadline
+                        && matches!(proc.try_wait(), Ok(None))
+                    {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+                drop(child); // killed now if it's still running
+            }
+        };
         // If no thread can start, the closure (and the program with it) is dropped here.
         let _ = std::thread::Builder::new()
             .name("stagetui-plugin-stop".into())
-            .spawn(move || drop(old));
+            .spawn(stop);
     }
 
     /// Tell the program whether its pane can be seen. Hidden, it stops drawing
@@ -283,12 +313,16 @@ impl PluginView {
             })?;
         let weak = Arc::downgrade(&self.inner);
         let name = self.name.clone();
+        let run = self.inner.run.load(Ordering::SeqCst);
         std::thread::Builder::new()
             .name("stagetui-plugin".into())
             .spawn(move || {
                 let mut out = BufReader::new(stdout);
                 while let Ok((kind, payload)) = api::read_message(&mut out) {
                     let Some(inner) = weak.upgrade() else { return };
+                    if inner.run.load(Ordering::SeqCst) != run {
+                        return; // an earlier program, after a restart
+                    }
                     match kind {
                         api::KIND_FRAME => {
                             if let Some(f) = api::parse_frame(&payload)
@@ -331,6 +365,9 @@ impl PluginView {
                 }
                 // The program ended.
                 let Some(inner) = weak.upgrade() else { return };
+                if inner.run.load(Ordering::SeqCst) != run {
+                    return; // restarted since: the new program isn't ours
+                }
                 lock(&inner.stdin).take();
                 if !inner.stopping.load(Ordering::SeqCst) {
                     let tail: Vec<String> = lock(&inner.stderr).iter().cloned().collect();
@@ -354,6 +391,7 @@ impl PluginView {
 
     /// Stop the program and start it again.
     pub fn restart(&self) {
+        self.inner.run.fetch_add(1, Ordering::SeqCst);
         self.inner.stopping.store(true, Ordering::SeqCst);
         self.inner.send(&ToPlugin::Stop);
         lock(&self.inner.stdin).take();
@@ -427,14 +465,9 @@ impl PluginView {
     }
 }
 
+/// What a key types: "H" for Shift+H (keys are named in lowercase, text isn't).
 fn key_text(k: &Key) -> Option<String> {
-    if k.mods.ctrl || k.mods.alt {
-        return None;
-    }
-    match k.code {
-        Code::Char(c) => Some(c.to_string()),
-        _ => None,
-    }
+    k.text().map(String::from)
 }
 
 impl Widget for PluginView {
@@ -561,8 +594,9 @@ impl Widget for PluginView {
         }
         let label = k.name();
         let wanted = lock(&self.inner.ready).as_ref().is_some_and(|r| {
-            (r.text && !matches!(k.code, Code::Tab | Code::Esc))
-                || r.keys.iter().any(|w| w.eq_ignore_ascii_case(&label))
+            // A typing add-on (a web page) gets every key, Tab and Esc too — like a
+            // shell pane, people leave it with the prefix key, then Tab.
+            r.text || r.keys.iter().any(|w| w.eq_ignore_ascii_case(&label))
         });
         if !wanted {
             return Reaction::Ignored;
@@ -643,6 +677,24 @@ impl Widget for PluginView {
                 Ok(Value::Null)
             }
             _ => self.ask(method, args),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_text;
+    use crate::input::{Code, Key};
+
+    #[test]
+    fn typed_text_keeps_capitals_and_every_script() {
+        let text = |k: &str| key_text(&Key::parse(k).unwrap());
+        assert_eq!(text("H").as_deref(), Some("H"));
+        assert_eq!(text("shift+h").as_deref(), Some("H"));
+        assert_eq!(text("h").as_deref(), Some("h"));
+        assert_eq!(text("ctrl+h"), None);
+        for ch in ['م', '\u{064E}', '日', 'न'] {
+            assert_eq!(key_text(&Key::plain(Code::Char(ch))), Some(ch.to_string()));
         }
     }
 }

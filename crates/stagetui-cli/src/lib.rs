@@ -49,6 +49,7 @@ enum Command {
     /// Examples:
     ///   stagetui show logo.png
     ///   stagetui show "مرحبا بكم" --title "Arabic"
+    #[command(verbatim_doc_comment)]
     Show {
         /// An image file (PNG, JPEG, GIF, WebP, BMP, SVG) or any text.
         content: String,
@@ -72,6 +73,7 @@ enum Command {
     ///   stagetui render "Hello" --out hello.png
     ///   stagetui render my_app.py --size 100x30 --out app.png --text app.txt --tree app.json
     ///   stagetui render logo.svg --out logo.png
+    #[command(verbatim_doc_comment)]
     Render {
         /// A `.py` file with a StageApp, an image file, or any text.
         target: String,
@@ -104,6 +106,7 @@ enum Command {
     ///
     /// Example:
     ///   echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | stagetui drive my_app.py
+    #[command(verbatim_doc_comment)]
     Drive {
         /// A `.py` file with a StageApp.
         app: String,
@@ -116,6 +119,7 @@ enum Command {
     ///
     /// Example (Claude Code):
     ///   claude mcp add my-app -- stagetui mcp my_app.py
+    #[command(verbatim_doc_comment)]
     Mcp {
         /// A `.py` file with a StageApp.
         app: String,
@@ -135,6 +139,7 @@ enum Command {
     ///   stagetui attach            # the only running app
     ///   stagetui attach harness    # one by name (see `stagetui sessions`)
     ///   stagetui attach harness:chat   # just one pane: it pops out into this terminal
+    #[command(verbatim_doc_comment)]
     Attach {
         /// The session name (optional when only one app is running), with
         /// `:pane` to show just that pane.
@@ -146,6 +151,7 @@ enum Command {
     ///   stagetui start examples/07_harness.py
     ///   stagetui start agent.py --name review --detached
     ///   stagetui start agent.py -- --model fast     # arguments for the app
+    #[command(verbatim_doc_comment)]
     Start {
         /// A `.py` file that calls `MyApp().run()`.
         app: String,
@@ -169,10 +175,28 @@ enum Command {
     /// Examples:
     ///   stagetui plugins                 # what is installed, what you can add
     ///   stagetui plugins install video   # install the video add-on
+    #[command(verbatim_doc_comment)]
     Plugins {
         /// `install <name>` to install an add-on.
         #[command(subcommand)]
         action: Option<PluginsAction>,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show every key: the built-in ones, an app's own shortcuts, and your keys file.
+    ///
+    /// Rename keys in an app with `KEYS = {"quit": "ctrl+q"}`, or for every app in
+    /// your keys file (its path is shown at the bottom).
+    ///
+    /// Examples:
+    ///   stagetui keys                       # the keys every app starts with
+    ///   stagetui keys examples/07_harness.py   # one app's keys
+    ///   stagetui keys --json
+    #[command(verbatim_doc_comment)]
+    Keys {
+        /// A `.py` file with a StageApp (optional).
+        app: Option<String>,
         /// Machine-readable output.
         #[arg(long)]
         json: bool,
@@ -250,7 +274,8 @@ where
         }
         Command::Doctor { detect } => {
             let caps = caps::detect(&detect.options());
-            let fonts = (!caps.headless).then(stagetui_core::text::fonts::coverage);
+            // Headless is where pictures are made: report missing fonts there too.
+            let fonts = Some(stagetui_core::text::fonts::coverage());
             print_line(&doctor::report(&caps, fonts.as_ref()))
         }
         Command::Show {
@@ -297,6 +322,7 @@ where
             None => sessions::plugins(json),
             Some(PluginsAction::Install { name }) => sessions::install_plugin(&name),
         },
+        Command::Keys { app, json } => verbs::keys(app.as_deref(), json),
         Command::Reaper => stagetui_core::reaper::sidecar_main(),
         Command::ReaperSelftest { shm } => reaper_selftest(shm.as_deref()),
     }

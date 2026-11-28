@@ -27,6 +27,8 @@ struct Completion {
     /// `(insert, label, detail)`
     items: Vec<(String, String, String)>,
     hover: usize,
+    /// The user picked `hover` with ↑ / ↓ since the last edit.
+    moved: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +207,7 @@ impl Prompt {
                 start,
                 items,
                 hover: 0,
+                moved: false,
             })
         } else if let Some(q) = token.strip_prefix('@') {
             let q = q.to_lowercase();
@@ -231,12 +234,28 @@ impl Prompt {
                 start,
                 items,
                 hover: 0,
+                moved: false,
             })
         } else {
             None
         };
         if let Some(c) = &mut self.completion {
             c.hover = prev.min(c.items.len() - 1);
+        }
+    }
+
+    /// What is typed is already a whole command (or file): the one picked with
+    /// ↑ / ↓, or else any in the list. Enter then sends it instead of completing it.
+    fn typed_in_full(&self) -> bool {
+        let Some(c) = &self.completion else {
+            return false;
+        };
+        let g = graphemes(&self.lines[self.row]);
+        let typed: String = g[c.start.min(g.len())..self.col.min(g.len())].concat();
+        if c.moved {
+            c.items[c.hover].0 == typed
+        } else {
+            c.items.iter().any(|(insert, _, _)| *insert == typed)
         }
     }
 
@@ -468,7 +487,7 @@ impl Widget for Prompt {
         let ctrl = key.mods.ctrl;
         let open = self.completion.is_some();
         match key.code {
-            Code::Enter if open => self.accept(),
+            Code::Enter if open && !self.typed_in_full() => self.accept(),
             Code::Tab if open && !key.mods.shift => self.accept(),
             Code::Enter if key.mods.shift || key.mods.alt => self.insert("\n"),
             Code::Char('j') if ctrl => self.insert("\n"),
@@ -480,12 +499,14 @@ impl Widget for Prompt {
             Code::Up if open => {
                 if let Some(c) = &mut self.completion {
                     c.hover = c.hover.saturating_sub(1);
+                    c.moved = true;
                 }
                 Reaction::Redraw
             }
             Code::Down if open => {
                 if let Some(c) = &mut self.completion {
                     c.hover = (c.hover + 1).min(c.items.len() - 1);
+                    c.moved = true;
                 }
                 Reaction::Redraw
             }
@@ -791,6 +812,77 @@ mod tests {
             press(&mut p, "enter"),
             Reaction::Emit("submit", _)
         ));
+    }
+
+    #[test]
+    fn enter_sends_a_command_typed_in_full() {
+        let commands = [
+            "help",
+            "helpme",
+            "مُسَاعَدَة",
+            "ヘルプ",
+            "帮助",
+            "मदद",
+            "run-تشغيل",
+        ];
+        let prompt = || {
+            let mut p = Prompt::new("");
+            p.commands = commands
+                .iter()
+                .map(|c| (c.to_string(), String::new()))
+                .collect();
+            p.mentions = Some(vec!["src/app.py".into(), "src/app.py.bak".into()]);
+            p
+        };
+        for name in commands {
+            let mut p = prompt();
+            typed(&mut p, &format!("/{name}"));
+            assert!(p.completion.is_some(), "{name}: the list is open");
+            assert_eq!(
+                press(&mut p, "enter"),
+                Reaction::Emit("submit", json!(format!("/{name}"))),
+                "{name}: one Enter runs it"
+            );
+            assert_eq!(p.text(), "");
+        }
+        // A partial command: Enter still picks the highlighted one.
+        let mut p = prompt();
+        typed(&mut p, "/मद");
+        assert!(matches!(
+            press(&mut p, "enter"),
+            Reaction::Emit("change", _)
+        ));
+        assert_eq!(p.text(), "/मदद ");
+        // Tab always completes, even a command typed in full.
+        let mut p = prompt();
+        typed(&mut p, "/help");
+        press(&mut p, "tab");
+        assert_eq!(p.text(), "/help ");
+        // "/help" is typed in full although "/helpme" also matches …
+        let mut p = prompt();
+        typed(&mut p, "/help");
+        assert_eq!(p.completion.as_ref().unwrap().items.len(), 2);
+        assert!(matches!(
+            press(&mut p, "enter"),
+            Reaction::Emit("submit", _)
+        ));
+        // … but picking "/helpme" with ↓ means that one.
+        let mut p = prompt();
+        typed(&mut p, "/help");
+        press(&mut p, "down");
+        press(&mut p, "enter");
+        assert_eq!(p.text(), "/helpme ");
+        // A file typed in full is sent too; a partial one is completed.
+        let mut p = prompt();
+        typed(&mut p, "see @src/app.py");
+        assert_eq!(
+            press(&mut p, "enter"),
+            Reaction::Emit("submit", json!("see @src/app.py"))
+        );
+        let mut p = prompt();
+        typed(&mut p, "見て @app");
+        press(&mut p, "enter");
+        assert_eq!(p.text(), "見て @src/app.py ");
     }
 
     #[test]

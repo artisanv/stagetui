@@ -6,7 +6,8 @@
 //! clock; pictures follow it (or a plain clock when there is no sound).
 //!
 //! Keys while the pane has focus: Space pause, ← → seek 5 s (Shift: 30 s),
-//! ↑ ↓ volume, M mute, Home start over. Click: pause. Wheel: volume.
+//! ↑ ↓ volume, M mute, Home start over, Enter or O type another file's path
+//! (the app can change them: `ACTIONS`). Click: pause. Wheel: volume.
 
 use std::collections::VecDeque;
 use std::io::Read;
@@ -18,11 +19,71 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use stagetui_plugin_api::{Describe, Frame, Mouse, PaneSource, Ready, Start, serve};
+use stagetui_plugin_api::{
+    Describe, Frame, KeyAction, Keymap, Mouse, PaneSource, PathLine, Ready, Start, Theme, Typed,
+    serve,
+};
 
 /// Largest picture decoded (the terminal scales it to the pane).
 const MAX_SIZE: (u32, u32) = (1280, 720);
 const MAX_FPS: f64 = 30.0;
+const NO_FFMPEG: &str =
+    "ffmpeg wasn't found — it comes with the add-on (pip install imageio-ffmpeg)";
+
+/// What the keys do; the app can give them other keys:
+/// `StagePane("video", keys={"play_pause": "k", "mute": None})`.
+const ACTIONS: &[KeyAction] = &[
+    KeyAction {
+        name: "open",
+        keys: &["enter", "o"],
+        about: "type a video's file path or link, then Enter plays it",
+    },
+    KeyAction {
+        name: "play_pause",
+        keys: &["space"],
+        about: "pause, or play on",
+    },
+    KeyAction {
+        name: "back",
+        keys: &["left"],
+        about: "back 5 seconds",
+    },
+    KeyAction {
+        name: "forward",
+        keys: &["right"],
+        about: "forward 5 seconds",
+    },
+    KeyAction {
+        name: "back_more",
+        keys: &["shift+left"],
+        about: "back 30 seconds",
+    },
+    KeyAction {
+        name: "forward_more",
+        keys: &["shift+right"],
+        about: "forward 30 seconds",
+    },
+    KeyAction {
+        name: "louder",
+        keys: &["up"],
+        about: "volume up",
+    },
+    KeyAction {
+        name: "quieter",
+        keys: &["down"],
+        about: "volume down",
+    },
+    KeyAction {
+        name: "mute",
+        keys: &["m"],
+        about: "sound off, or on again",
+    },
+    KeyAction {
+        name: "restart",
+        keys: &["home"],
+        about: "start over from the beginning",
+    },
+];
 
 fn main() {
     std::process::exit(serve(Video::default()));
@@ -488,6 +549,16 @@ struct Video {
     /// Out of sight (another pane type or tab is showing): `Some(play when back)`.
     /// Nothing plays, and no sound is heard, while it's hidden.
     hidden: Option<bool>,
+    /// Which key does what (the app can change them).
+    keys: Keymap,
+    /// The line for typing a video's path (open: the plugin wants every key).
+    line: PathLine,
+    /// No video: why the last one didn't open, and what it was (to type it again).
+    problem: Option<(String, String)>,
+    autoplay: bool,
+    theme: Theme,
+    /// What stagetui was last told the plugin wants.
+    sent: Option<Ready>,
     status: String,
     status_due: Instant,
     events: Vec<(String, Value)>,
@@ -516,6 +587,12 @@ impl Default for Video {
             sound_gone: false,
             resize_at: None,
             hidden: None,
+            keys: Keymap::new(ACTIONS, &Value::Null).unwrap_or_default(),
+            line: PathLine::default(),
+            problem: None,
+            autoplay: true,
+            theme: Theme::default(),
+            sent: None,
             status: String::new(),
             status_due: Instant::now(),
             events: Vec::new(),
@@ -535,6 +612,9 @@ impl Video {
 
     /// Where we are, in media seconds.
     fn position(&self) -> f64 {
+        if self.ended {
+            return self.base;
+        }
         let pos = match &self.sound {
             Some(s) if !self.sound_gone => self.start + s.played(),
             _ if self.paused => self.base,
@@ -640,59 +720,20 @@ impl Video {
         })
     }
 
-    fn status_line(&self) -> String {
-        let pos = mm_ss(self.position());
-        let total = self.duration().map_or_else(|| "live".to_string(), mm_ss);
-        let state = if self.ended {
-            "■"
-        } else if self.paused {
-            "‖"
-        } else {
-            "▶"
-        };
-        let sound = match (&self.quiet, self.muted) {
-            (Some(why), _) => format!("no sound ({why})"),
-            (None, true) => "muted".to_string(),
-            (None, false) => format!("volume {}%", (self.volume * 100.0).round()),
-        };
-        format!("{state} {pos} / {total} · {sound} · space ‖ · ← → seek · ↑ ↓ volume · m mute")
-    }
-}
-
-impl PaneSource for Video {
-    fn describe(&self) -> Describe {
-        let mut d = Describe::new("video", "Video", "play");
-        d.version = env!("CARGO_PKG_VERSION").into();
-        d
-    }
-
-    fn start(&mut self, start: &Start) -> Result<Ready, String> {
-        let args = &start.args;
-        self.src = ["path", "url", "src"]
-            .iter()
-            .find_map(|k| args.get(*k).and_then(Value::as_str))
-            .unwrap_or_default()
-            .to_string();
-        if self.src.is_empty() {
-            return Err("no video given: StagePane(\"video\", path=\"movie.mp4\")".into());
+    /// Open a file or link and play it from `at` seconds (unless `autoplay=False`).
+    fn open(&mut self, src: &str, at: f64) -> Result<(), String> {
+        if !src.contains("://") && !Path::new(src).exists() {
+            return Err(format!("\"{src}\" was not found"));
         }
-        let is_url = self.src.contains("://");
-        if !is_url && !Path::new(&self.src).exists() {
-            return Err(format!("\"{}\" was not found", self.src));
-        }
-        let ffmpeg = find_ffmpeg()
-            .ok_or("ffmpeg wasn't found — it comes with the add-on (pip install imageio-ffmpeg)")?;
-        let media = probe(&ffmpeg, &self.src)?;
-        self.ffmpeg = Some(ffmpeg);
-        self.pane = (start.width.max(2), start.height.max(2));
-        self.looped = args.get("loop").and_then(Value::as_bool).unwrap_or(false);
-        self.muted = args.get("muted").and_then(Value::as_bool).unwrap_or(false);
-        self.volume = args
-            .get("volume")
-            .and_then(Value::as_f64)
-            .map_or(1.0, |v| v as f32)
-            .clamp(0.0, 1.0);
-        let fps = media.fps.min(MAX_FPS).ceil() as u32;
+        let ffmpeg = self.ffmpeg.clone().ok_or(NO_FFMPEG)?;
+        let media = probe(&ffmpeg, src)?;
+        // What was playing stops (its sound too).
+        self.pictures = None;
+        self.sound = None;
+        self.quiet = None;
+        self.src = src.to_string();
+        self.problem = None;
+        self.blank_sent = false;
         let has_audio = media.audio;
         self.media = Some(media);
         if has_audio {
@@ -709,42 +750,148 @@ impl PaneSource for Video {
                 }
             }
         }
-        let autoplay = args
+        self.seek(at);
+        self.set_paused(!self.autoplay);
+        Ok(())
+    }
+
+    /// What stagetui should send: every key while the path line is open.
+    fn wanted(&self) -> Ready {
+        let fps = self
+            .media
+            .as_ref()
+            .map_or(30, |m| m.fps.min(MAX_FPS).ceil() as u32)
+            .clamp(5, 30);
+        if self.line.is_open() {
+            return self.line.ready(fps);
+        }
+        Ready {
+            keys: self.keys.all_keys(),
+            text: false,
+            fps,
+        }
+    }
+
+    /// Open the path line: what failed, or the playing file's folder.
+    fn ask_for_a_path(&mut self) {
+        let folder = Path::new(&self.src)
+            .parent()
+            .filter(|p| !self.src.contains("://") && !p.as_os_str().is_empty())
+            .map_or_else(String::new, |p| {
+                format!("{}{}", p.display(), std::path::MAIN_SEPARATOR)
+            });
+        let typed = self
+            .problem
+            .as_ref()
+            .map_or(folder, |(_, tried)| tried.clone());
+        self.line.open(&typed);
+        self.status_due = Instant::now();
+    }
+
+    fn status_line(&self) -> String {
+        if self.line.is_open() {
+            return self.line.status("Open a video");
+        }
+        if self.media.is_none() {
+            let ask = self.keys.spoken("open");
+            return match (&self.problem, ask) {
+                (Some((why, _)), Some(key)) => {
+                    format!("⚠ {why} — press {key} to type another path")
+                }
+                (Some((why, _)), None) => format!("⚠ {why}"),
+                (None, Some(key)) => {
+                    format!("No video yet — press {key} to type a file path")
+                }
+                (None, None) => "No video yet".into(),
+            };
+        }
+        let pos = mm_ss(self.position());
+        let total = self.duration().map_or_else(|| "live".to_string(), mm_ss);
+        let state = if self.ended {
+            "■"
+        } else if self.paused {
+            "‖"
+        } else {
+            "▶"
+        };
+        let sound = match (&self.quiet, self.muted) {
+            (Some(why), _) => format!("no sound ({why})"),
+            (None, true) => "muted".to_string(),
+            (None, false) => format!("volume {}%", (self.volume * 100.0).round()),
+        };
+        let mut line = format!("{state} {pos} / {total} · {sound}");
+        // The keys the app gave (a key turned off isn't shown); space offers what it does.
+        let toggle = if self.playing() { "‖" } else { "▶" };
+        for (actions, what) in [
+            (&["play_pause"][..], toggle),
+            (&["back", "forward"][..], "seek"),
+            (&["louder", "quieter"][..], "volume"),
+            (&["mute"][..], "mute"),
+        ] {
+            let keys: Vec<String> = actions.iter().filter_map(|a| self.keys.label(a)).collect();
+            if !keys.is_empty() {
+                line.push_str(&format!(" · {} {what}", keys.join(" ")));
+            }
+        }
+        line
+    }
+}
+
+impl PaneSource for Video {
+    fn describe(&self) -> Describe {
+        let mut d = Describe::new("video", "Video", "play");
+        d.version = env!("CARGO_PKG_VERSION").into();
+        d
+    }
+
+    fn start(&mut self, start: &Start) -> Result<Ready, String> {
+        let args = &start.args;
+        self.keys = Keymap::new(ACTIONS, args)?;
+        self.ffmpeg = Some(find_ffmpeg().ok_or(NO_FFMPEG)?);
+        self.theme = start.theme.clone();
+        self.pane = (start.width.max(2), start.height.max(2));
+        self.looped = args.get("loop").and_then(Value::as_bool).unwrap_or(false);
+        self.muted = args.get("muted").and_then(Value::as_bool).unwrap_or(false);
+        self.volume = args
+            .get("volume")
+            .and_then(Value::as_f64)
+            .map_or(1.0, |v| v as f32)
+            .clamp(0.0, 1.0);
+        self.autoplay = args
             .get("autoplay")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        let at = args.get("start").and_then(Value::as_f64).unwrap_or(0.0);
-        self.seek(at);
-        if !autoplay {
-            self.set_paused(true);
+        // No video, or one that won't open: the pane says so and asks for a path.
+        if let Some(src) = ["path", "url", "src"]
+            .iter()
+            .find_map(|k| args.get(*k).and_then(Value::as_str))
+            .filter(|s| !s.is_empty())
+        {
+            let at = args.get("start").and_then(Value::as_f64).unwrap_or(0.0);
+            if let Err(why) = self.open(src, at) {
+                self.problem = Some((why, src.to_string()));
+            }
         }
         self.events.clear();
-        Ok(Ready {
-            keys: [
-                "space",
-                "left",
-                "right",
-                "shift+left",
-                "shift+right",
-                "up",
-                "down",
-                "m",
-                "home",
-            ]
-            .map(String::from)
-            .to_vec(),
-            text: false,
-            fps: fps.clamp(5, 30),
-        })
+        self.sent = Some(self.wanted());
+        Ok(self.wanted())
     }
 
     fn resize(&mut self, width: u32, height: u32) {
         self.pane = (width.max(2), height.max(2));
+        if self.media.is_none() {
+            self.blank_sent = false; // the quiet picture again, at the new size
+        }
         // Wait for the window to settle before restarting the decoder.
         self.resize_at = Some(Instant::now() + Duration::from_millis(250));
     }
 
     fn frame(&mut self, _now: Duration) -> Option<Frame> {
+        if self.media.is_none() {
+            // Nothing to play yet: a quiet picture (the status line says what to do).
+            return (!std::mem::replace(&mut self.blank_sent, true))
+                .then(|| Frame::placeholder(self.pane.0, self.pane.1, &self.theme));
+        }
         if self.resize_at.is_some_and(|t| Instant::now() >= t) {
             self.resize_at = None;
             let want = self
@@ -808,7 +955,8 @@ impl PaneSource for Video {
             if self.looped {
                 self.seek(0.0);
             } else {
-                self.base = pos;
+                // The end: the clock shows all of it (04:56 / 04:56).
+                self.base = self.duration().unwrap_or(pos);
                 self.ended = true;
                 self.paused = true;
                 if let Some(s) = &self.sound {
@@ -821,24 +969,44 @@ impl PaneSource for Video {
         shown
     }
 
-    fn key(&mut self, key: &str, _text: Option<&str>) -> bool {
+    fn key(&mut self, key: &str, text: Option<&str>) -> bool {
+        if self.line.is_open() {
+            if let Typed::Open(src) = self.line.key(key, text) {
+                match self.open(&src, 0.0) {
+                    Ok(()) => self.line.close(),
+                    Err(why) => self.line.fail(why),
+                }
+            }
+            self.status_due = Instant::now();
+            return true;
+        }
+        let Some(action) = self.keys.action(key) else {
+            return false;
+        };
+        if self.media.is_none() && action != "open" {
+            return false; // nothing to play yet
+        }
         let pos = self.position();
-        match key {
-            "space" => self.set_paused(self.playing()),
-            "left" => self.seek(pos - 5.0),
-            "right" => self.seek(pos + 5.0),
-            "shift+left" => self.seek(pos - 30.0),
-            "shift+right" => self.seek(pos + 30.0),
-            "up" => self.set_volume(self.volume + 0.1),
-            "down" => self.set_volume(self.volume - 0.1),
-            "m" => self.set_muted(!self.muted),
-            "home" => self.seek(0.0),
+        match action {
+            "open" => self.ask_for_a_path(),
+            "play_pause" => self.set_paused(self.playing()),
+            "back" => self.seek(pos - 5.0),
+            "forward" => self.seek(pos + 5.0),
+            "back_more" => self.seek(pos - 30.0),
+            "forward_more" => self.seek(pos + 30.0),
+            "louder" => self.set_volume(self.volume + 0.1),
+            "quieter" => self.set_volume(self.volume - 0.1),
+            "mute" => self.set_muted(!self.muted),
+            "restart" => self.seek(0.0),
             _ => return false,
         }
         true
     }
 
     fn mouse(&mut self, m: &Mouse) {
+        if self.media.is_none() {
+            return;
+        }
         match m.kind.as_str() {
             "down" if m.button.as_deref() == Some("left") => self.set_paused(self.playing()),
             "scroll_up" => self.set_volume(self.volume + 0.05),
@@ -882,10 +1050,30 @@ impl PaneSource for Video {
             ),
             "volume" => self.set_volume(number(args).ok_or("volume needs 0..1")? as f32),
             "mute" => self.set_muted(args.as_bool().unwrap_or(!self.muted)),
+            "open" | "load" => {
+                let src = args
+                    .as_str()
+                    .or_else(|| args.get("path").and_then(Value::as_str))
+                    .ok_or("open needs a file or link, e.g. call(\"open\", \"movie.mp4\")")?;
+                self.open(src, 0.0)?;
+            }
             "state" => {}
             other => return Err(format!("the video add-on has no method \"{other}\"")),
         }
         Ok(self.state())
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.line.paste(text);
+        self.status_due = Instant::now();
+    }
+
+    fn ready(&mut self) -> Option<Ready> {
+        let want = self.wanted();
+        (self.sent.as_ref() != Some(&want)).then(|| {
+            self.sent = Some(want.clone());
+            want
+        })
     }
 
     fn status(&mut self) -> Option<String> {
@@ -956,6 +1144,122 @@ At least one output file must be specified";
             .filter(|(name, _)| name == "state")
             .map(|(_, value)| value)
             .collect()
+    }
+
+    /// A video that is open (sound only, no decoders: nothing really plays).
+    fn opened(seconds: f64) -> Video {
+        Video {
+            media: Some(Media {
+                duration: Some(seconds),
+                size: None,
+                fps: 25.0,
+                audio: false,
+            }),
+            src: "مَرْحَبًا Hello 日本語 नमस्ते.mp4".into(),
+            ..Video::default()
+        }
+    }
+
+    #[test]
+    fn no_video_asks_for_one() {
+        // Opened from a pane's menu: no file yet. The pane says what to do, shows a
+        // quiet picture, and Enter opens a line to type the path.
+        let mut v = Video::default();
+        assert_eq!(
+            v.status_line(),
+            "No video yet — press Enter to type a file path"
+        );
+        assert!(v.frame(Duration::ZERO).is_some() && v.frame(Duration::ZERO).is_none());
+        assert!(!v.key("space", None), "nothing to play yet");
+        v.mouse(&Mouse {
+            kind: "down".into(),
+            button: Some("left".into()),
+            x: 1,
+            y: 1,
+        });
+        assert!(v.events().is_empty(), "a click does nothing yet");
+        v.sent = Some(v.wanted());
+        assert!(v.key("enter", None));
+        assert!(v.ready().expect("every key while typing").text);
+        for c in "nope.mp4".chars() {
+            v.key(&c.to_string(), Some(&c.to_string()));
+        }
+        v.key("enter", None);
+        let status = v.status_line();
+        assert!(
+            status.starts_with("Open a video: nope.mp4█ · ⚠ \"nope.mp4\" was not found"),
+            "{status}"
+        );
+        assert!(v.line.is_open(), "the line stays to fix it");
+        v.key("esc", None);
+        assert!(!v.ready().unwrap().text, "the usual keys again");
+        // Something the app gave that didn't open: said, and offered again.
+        v.problem = Some(("\"a.mp4\" was not found".into(), "a.mp4".into()));
+        assert!(
+            v.status_line()
+                .ends_with("press Enter to type another path")
+        );
+        v.key("o", None);
+        assert_eq!(v.line.text(), "a.mp4");
+        let e = v.call("open", &json!("/nope/b.mp4")).unwrap_err();
+        assert!(e.contains("was not found"), "{e}");
+    }
+
+    #[test]
+    fn the_end_shows_all_of_it_and_space_offers_play() {
+        let mut v = opened(2.0);
+        assert!(v.status_line().contains("space ‖"), "playing: space pauses");
+        v.set_paused(true);
+        assert!(v.status_line().contains("space ▶"), "paused: space plays");
+        v.set_paused(false);
+        // Just before the end (as the clock reads it), then a frame finds the end.
+        v.base = 1.97;
+        v.anchor = Instant::now();
+        let _ = v.frame(Duration::ZERO);
+        assert!(v.ended);
+        let line = v.status_line();
+        assert!(line.starts_with("■ 00:02 / 00:02"), "{line}");
+        assert!(line.contains("space ▶"), "{line}");
+        assert_eq!(v.state()["position"], json!(2.0));
+        // Space plays it again from the start.
+        v.key("space", None);
+        assert!(!v.ended && v.status_line().starts_with("▶ 00:00 / 00:02"));
+    }
+
+    #[test]
+    fn keys_can_be_renamed_or_turned_off() {
+        let mut v = opened(10.0);
+        assert!(
+            v.status_line()
+                .ends_with("space ‖ · ← → seek · ↑ ↓ volume · m mute"),
+            "as it comes: {}",
+            v.status_line()
+        );
+        let keys = json!({"keys": {"mute": "x", "play_pause": null, "back": ["j", "left"]}});
+        v.keys = Keymap::new(ACTIONS, &keys).unwrap();
+        // The new key works, the old one does nothing.
+        assert!(!v.key("m", None) && !v.muted);
+        assert!(v.key("x", None) && v.muted);
+        // Turned off: no key does it.
+        assert!(!v.key("space", None) && !v.paused);
+        assert!(v.keys.keys("play_pause").is_empty());
+        assert!(v.key("j", None) && v.key("left", None), "both keys work");
+        assert!(
+            v.key("down", None) && (v.volume - 0.9).abs() < 1e-6,
+            "the rest as before"
+        );
+        let all = v.keys.all_keys();
+        assert!(all.contains(&"x".to_string()) && all.contains(&"j".to_string()));
+        assert!(!all.contains(&"m".to_string()) && !all.contains(&"space".to_string()));
+        // The status line shows the keys as the app named them.
+        let line = v.status_line();
+        assert!(line.ends_with("· j → seek · ↑ ↓ volume · x mute"), "{line}");
+        assert!(!line.contains('‖'), "off: not shown: {line}");
+        // Mistakes are said plainly (the pane shows it).
+        let e = Keymap::new(ACTIONS, &json!({"keys": {"pause": "p"}})).unwrap_err();
+        assert!(e.contains("\"pause\"") && e.contains("play_pause"), "{e}");
+        let e = Keymap::new(ACTIONS, &json!({"keys": {"mute": "up"}})).unwrap_err();
+        assert!(e.contains("\"louder\" and \"mute\""), "{e}");
     }
 
     #[test]

@@ -55,8 +55,8 @@ pub struct Applied {
     pub root: usize,
     /// New panes that still need content: `(pane, type, args)`.
     pub fresh: Vec<(usize, String, Value)>,
-    /// Kept panes that must show another type: `(pane, type)`.
-    pub switch: Vec<(usize, String)>,
+    /// Kept panes that must show another type: `(pane, type, args)`.
+    pub switch: Vec<(usize, String, Value)>,
     /// The first pane of the layout (where focus goes).
     pub first: Option<usize>,
 }
@@ -94,9 +94,12 @@ impl Tree {
                     .collect(),
             },
             Kind::Pane(p) => {
-                // Options belong to the type the pane was made with.
+                // Options: those the app gave this type (set_type), else the
+                // ones the pane was made with, if it still shows that type.
                 let original = n.spec.content.as_str().unwrap_or_default().trim();
-                let args = if original == p.ptype {
+                let args = if let Some(a) = p.args.get(&p.ptype) {
+                    a.clone()
+                } else if original == p.ptype {
                     n.spec.props.args.clone().unwrap_or(Value::Null)
                 } else {
                     Value::Null
@@ -288,7 +291,7 @@ impl Builder {
                     if let Kind::Pane(p) = &tree.nodes[i].kind
                         && p.ptype != *pane
                     {
-                        self.out.switch.push((i, pane.clone()));
+                        self.out.switch.push((i, pane.clone(), args.clone()));
                     }
                     self.out.first.get_or_insert(i);
                     return Ok(Some(i));

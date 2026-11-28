@@ -24,8 +24,15 @@ Bundled fonts and which writing systems have fonts available.
 
 ### `ts.plugins(*, refresh=False) -> list[dict]`
 Add-ons: installed ones and the official ones you can install — `name`, `title`,
-`installed`, `package`, `about`, `available` (it can be installed now). Same as
+`installed`, `package`, `about`, `available` (it can be installed now). A
+`stagetui-plugin-<name>` file that was found but didn't answer (say, its `#!` Python
+has no stagetui) is listed too, with `"broken": {"path", "why"}`. Same as
 `stagetui plugins --json` ([Add-ons](plugins.md)).
+
+### `ts.keys() -> dict`
+The keys every app starts with on this computer: `keys` (each built-in key with `name`,
+`keys`, `labels`, `after_prefix`, `about`), the person's keys `file` and any `problems`
+in it. Same as `stagetui keys --json` ([Keys](keys.md)).
 
 ### `stagetui.plugin.Plugin` / `serve(plugin)`
 Write an add-on in Python: override `start`, `frame`, `key`, `mouse`, `call`; use
@@ -43,7 +50,7 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 | `theme = "aurora-dark"` | Class attribute: color scheme |
 | `accent = None` | Class attribute: highlight color |
 | `dir = None` | Class attribute: `"rtl"` / `"ltr"` layout; `None` guesses from the text |
-| `BINDINGS = []` | Class attribute: shortcuts `(key, action)` or `(key, action, description)` |
+| `BINDINGS = []` | Class attribute: shortcuts `(key, action)` or `(key, action, description)`; they come before the built-in keys |
 | `reduce_motion = False` | Class attribute: turn animations off |
 | `compose(self) -> list` | Override: return the widgets to show |
 | `on_mount(self)` | Override (optional, may be `async`): runs once the app is on screen |
@@ -61,9 +68,12 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 | `drive(size=(80, 24), *, cell=(16, 32)) -> Driver` | Run without a terminal, step by step (use with `with`) |
 | `capture_text()`, `capture_tree()`, `capture_png()` | The live screen while the app runs |
 | `await ask_permission(question, *, tool=None, args=None)` | Pop-up: returns `"allow"`, `"always"` or `"deny"` |
-| `PREFIX = "ctrl+space"` | Class attribute: the key that reaches the app from a terminal pane |
+| `PREFIX = "ctrl+space"` | Class attribute: the key that reaches the app from a terminal pane (same as `KEYS = {"prefix": …}`) |
+| `KEYS = {}` | Class attribute: rename or turn off built-in keys by name — `{"quit": "ctrl+q", "close_pane": "w", "pane_menu": None}` ([Keys](keys.md)) |
+| `CONFIRM_QUIT = False` | Class attribute: `True` asks "Quit this app?" before a quit key or the last pane's × quits |
+| `keys()` | Every key this app answers to: `keys`, `shortcuts`, `confirm_quit`, `file`, `problems` ([Keys](keys.md)) |
 | `LAUNCHER = None` | Class attribute: how a pane opens in its own window, e.g. `"foot {cmd}"` (`None`: the terminal in use) |
-| `background(work)` | Run `async` work (an agent loop…) alongside the app; cancelled when it quits |
+| `background(work)` | Run `async` work (an agent loop…) alongside the app; cancelled when it quits. Without a terminal it runs while time passes (`wait`), and no step waits for it |
 | `session` | While running: `{"name", "pid", "app", …}` — other terminals open it with `stagetui attach <name>` ([Sessions](sessions.md)) |
 | `workspace()` | The layout of splits and panes, as a dict |
 | `save_workspace(name=None, *, path=None) -> Path` | Save the layout (name: the open workspace tab, or `"default"`) |
@@ -73,7 +83,9 @@ Same as `stagetui sessions --json` ([Sessions](sessions.md)).
 Built-in actions for `BINDINGS`: `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`,
 `pane_menu`, `split_pane_right`, `split_pane_down`, `close_pane` (on the last pane it
 closes the app, like `quit`), `pop_out` (open the focused pane in its own window, or
-bring it back), `detach`.
+bring it back), `detach`. A shortcut with one of these names always does the built-in
+job — an `action_close_pane` method of yours would never run — so give your own
+actions other names (`("x", "close", "Close")` calls `action_close`).
 
 ### `class Driver`
 Made by `app.drive()`; use it in a `with` block.
@@ -83,8 +95,9 @@ Made by `app.drive()`; use it in a `with` block.
 | `press(key)`, `type(text)`, `click("#id" or (x, y))`, `drag("#id" or (x, y), (x, y))`, `scroll(rows, target=None)` | Act like a person |
 | `wait(seconds)`, `wait_idle()`, `resize(cols, rows)`, `step({...})` | Time, size, any `run_headless` step |
 | `snapshot(*, settle=False, png=False) -> Snapshot` | The screen now |
-| `query(id) -> dict | None`, `panes()` | Look at widgets and panes |
-| `close()` | Stop (done by `with`) |
+| `query(id) -> dict | None`, `panes()`, `keys()` | Look at widgets, panes and the keys the app answers to |
+| `has_quit` | `True` once the app quit (`q`, Ctrl+Space then `q`, the last pane's ×): its shells and add-ons stop, you can still look, `wait` does nothing, and pressing, typing or clicking raises a `StageError` |
+| `close()` | Stop (done by `with`): the shells and add-ons the app started stop at once; snapshots taken before still work |
 
 ### pytest: `stage_snapshot` fixture
 `stage_snapshot.assert_match(snap, name=None, *, png=False, tolerance=0.002)` — compare with

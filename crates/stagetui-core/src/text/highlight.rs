@@ -67,19 +67,26 @@ pub fn highlight(code: &str, lang: Option<&str>, dark: bool) -> Vec<Vec<Token>> 
     let mut out = Vec::new();
     for line in LinesWithEndings::from(code) {
         let tokens = match h.highlight_line(line, syntaxes()) {
-            Ok(ranges) => ranges
-                .into_iter()
-                .filter_map(|(style, text)| {
-                    let text = text.trim_end_matches(['\n', '\r']).replace('\t', "    ");
-                    (!text.is_empty()).then(|| Token {
-                        text,
-                        color: Rgb(style.foreground.r, style.foreground.g, style.foreground.b),
-                        bold: style.font_style.contains(FontStyle::BOLD),
+            Ok(ranges) => {
+                // Tabs stop every 4 columns of the whole line, as everywhere else.
+                let mut col = 0;
+                ranges
+                    .into_iter()
+                    .filter_map(|(style, text)| {
+                        let text = text.trim_end_matches(['\n', '\r']);
+                        let text = super::paragraph::expand_tabs_from(text, col).into_owned();
+                        col += super::width(&text);
+                        (!text.is_empty()).then(|| Token {
+                            text,
+                            color: Rgb(style.foreground.r, style.foreground.g, style.foreground.b),
+                            bold: style.font_style.contains(FontStyle::BOLD),
+                        })
                     })
-                })
-                .collect(),
+                    .collect()
+            }
             Err(_) => vec![Token {
-                text: line.trim_end_matches(['\n', '\r']).to_string(),
+                text: super::paragraph::expand_tabs(line.trim_end_matches(['\n', '\r']))
+                    .into_owned(),
                 color: if dark {
                     Rgb(0xc0, 0xc5, 0xce)
                 } else {
@@ -118,5 +125,22 @@ mod tests {
         assert!(colors.len() > 1, "keywords and names get different colors");
         let text: String = lines[1].iter().map(|t| t.text.as_str()).collect();
         assert_eq!(text, "    return 'مرحبا'");
+    }
+
+    #[test]
+    fn tabs_stop_every_four_columns_of_the_whole_line() {
+        let src = "\tif x:\n\t\treturn 'مَرْحَباً'\t# ok\nab\t= 1\t# こんにちは\tनमस्ते\n";
+        for lang in [Some("python"), None] {
+            let lines: Vec<String> = highlight(src, lang, true)
+                .iter()
+                .map(|l| l.iter().map(|t| t.text.as_str()).collect())
+                .collect();
+            let want: Vec<String> = src
+                .lines()
+                .map(|l| super::super::paragraph::expand_tabs(l).into_owned())
+                .collect();
+            assert_eq!(lines, want, "{lang:?}");
+            assert_eq!(lines[2], "ab  = 1 # こんにちは    नमस्ते");
+        }
     }
 }

@@ -18,6 +18,7 @@ pub mod headless;
 pub mod inline;
 pub mod input;
 pub mod ipc;
+pub mod keymap;
 pub mod launch;
 pub mod layout;
 pub mod motion;

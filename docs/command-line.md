@@ -81,6 +81,17 @@ stagetui plugins --json             # for programs
 
 See [Add-ons](plugins.md).
 
+## `stagetui keys` — which keys do what
+
+```bash
+stagetui keys                       # the keys every app starts with, and your keys file
+stagetui keys my_app.py             # one app's keys, with its own shortcuts
+stagetui keys --json                # for programs
+```
+
+Every built-in key by name (`quit`, `prefix`, `close_pane`…) with the keys that do
+it now. Rename them with `KEYS` in an app or in your own `keys.json`: see [Keys](keys.md).
+
 ## `stagetui doctor` — what can my terminal do?
 
 ```bash

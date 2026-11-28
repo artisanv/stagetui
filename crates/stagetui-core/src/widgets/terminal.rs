@@ -21,6 +21,7 @@ use super::{Cx, PaintCx, Reaction, Widget, draw_box, fill, object};
 use crate::frame::Frame;
 use crate::input::{Button, Code, Key, MouseKind};
 use crate::style::{Rgb, Theme};
+use crate::text::{self, Direction};
 
 const SCROLLBACK: usize = 2000;
 
@@ -43,7 +44,8 @@ struct Inner {
     painted: AtomicU64,
     started: AtomicBool,
     exit: Mutex<Option<u32>>,
-    error: Mutex<Option<String>>,
+    /// The program couldn't be started: what / why / fix.
+    error: Mutex<Option<(String, String, String)>>,
     pid: Mutex<Option<u32>>,
 }
 
@@ -153,9 +155,15 @@ impl Terminal {
         *lock(&inner.exit) = None;
         *lock(&inner.error) = None;
         if let Err(e) = self.spawn() {
-            *lock(&inner.error) = Some(format!("Could not start {}: {e}", self.command.join(" ")));
+            let prog = self.command.first().map_or("", String::as_str);
+            *lock(&inner.error) = Some(start_problem(prog, &e));
         }
         inner.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Why the program couldn't be started (what / why / fix), if it couldn't.
+    fn problem(&self) -> Option<(String, String, String)> {
+        lock(&self.inner.error).clone()
     }
 
     fn spawn(&self) -> std::result::Result<(), String> {
@@ -280,6 +288,51 @@ impl Terminal {
     pub fn contents(&self) -> String {
         lock(&self.inner.parser).screen().contents()
     }
+}
+
+/// Explain a failed start in words a user can act on — never the whole PATH,
+/// which the underlying error lists.
+fn start_problem(prog: &str, err: &str) -> (String, String, String) {
+    let e = err.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| e.contains(w));
+    let searched_path = has(&["no viable candidates", "unable to resolve the path"]);
+    let (why, fix) = if has(&["not executable", "permission denied", "access is denied"]) {
+        if cfg!(windows) {
+            (
+                "Windows didn't allow it to run".to_string(),
+                "check that it is a program you may run".to_string(),
+            )
+        } else {
+            (
+                "it isn't allowed to run (it isn't marked executable)".to_string(),
+                format!("make it executable (chmod +x {prog}), or run it with its interpreter"),
+            )
+        }
+    } else if searched_path || has(&["cannot find the file", "os error 2"]) {
+        (
+            "it isn't installed, or it isn't on your PATH".to_string(),
+            "install it, or give its full path".to_string(),
+        )
+    } else if has(&["is a directory"]) {
+        (
+            "that is a folder, not a program".to_string(),
+            "give the path of the program inside it".to_string(),
+        )
+    } else if has(&["does not exist", "doesn't exist"]) {
+        (
+            "there is no file at that path".to_string(),
+            "check the path, or install the program".to_string(),
+        )
+    } else {
+        let first = err.lines().next().unwrap_or(err).trim();
+        let first: String = first.chars().take(160).collect();
+        (first, "check the command".to_string())
+    };
+    (
+        format!("Couldn't start \"{prog}\""),
+        why,
+        format!("{fix}, then press Enter to try again"),
+    )
 }
 
 /// Reply to the terminal queries programs commonly wait for.
@@ -479,9 +532,11 @@ impl Widget for Terminal {
                 .collect::<Vec<_>>()
                 .join(" ")
         });
-        let heading = match exit {
-            Some(code) => format!("❯ {name} · exited ({code})"),
-            None => format!("❯ {name}"),
+        let problem = self.problem();
+        let heading = match (exit, &problem) {
+            (_, Some(_)) => format!("❯ {name} · couldn't start"),
+            (Some(code), None) => format!("❯ {name} · exited ({code})"),
+            (None, None) => format!("❯ {name}"),
         };
         draw_box(
             frame,
@@ -493,14 +548,22 @@ impl Widget for Terminal {
             t.accent,
             false,
         );
-        if let Some(err) = lock(&self.inner.error).clone() {
-            frame.put_str(
-                inner.x,
-                inner.y,
-                &err,
-                inner.width,
-                Style::new().fg(t.accent.color()).bg(tbg.color()),
-            );
+        if let Some((what, why, fix)) = problem {
+            let room = inner.width.saturating_sub(2);
+            let mut y = inner.y + u16::from(inner.height > 4);
+            for (part, color, bold) in [
+                (what, t.fg, true),
+                (why, t.muted, false),
+                (fix, t.accent, false),
+            ] {
+                for line in text::layout(&part, usize::from(room.max(1)), Direction::Ltr) {
+                    if y >= inner.bottom() {
+                        return;
+                    }
+                    frame.put_line(inner.x + 1, y, room, &line, color, tbg, bold);
+                    y += 1;
+                }
+            }
             return;
         }
         let parser = lock(&self.inner.parser);
@@ -583,8 +646,11 @@ impl Widget for Terminal {
         object(json!({
             "command": self.command,
             "pid": *lock(&self.inner.pid),
-            "running": self.inner.started.load(Ordering::SeqCst) && self.exited().is_none(),
+            "running": self.inner.started.load(Ordering::SeqCst)
+                && self.exited().is_none()
+                && self.problem().is_none(),
             "exit_code": self.exited(),
+            "error": self.problem().map(|(what, why, _)| format!("{what} — {why}")),
             "screen": self.contents(),
         }))
     }
@@ -602,7 +668,7 @@ impl Widget for Terminal {
     }
 
     fn key(&mut self, key: &Key, _area: Rect) -> Reaction {
-        if self.exited().is_some() {
+        if self.exited().is_some() || self.problem().is_some() {
             if key.is(Code::Enter) {
                 self.restart();
                 return Reaction::Redraw;
@@ -717,7 +783,10 @@ impl Widget for Terminal {
         match method {
             "write" | "send" => {
                 self.write(args.as_str().unwrap_or_default().as_bytes());
-                Ok(Value::Null)
+                match self.problem() {
+                    Some((what, why, fix)) => Err(crate::Error::friendly(what, why, fix)),
+                    None => Ok(Value::Null),
+                }
             }
             "restart" => {
                 self.restart();
@@ -812,5 +881,130 @@ mod tests {
             Reaction::Ignored,
             "ended: keys are ignored"
         );
+    }
+
+    #[cfg(unix)]
+    fn painted(t: &Terminal, w: u16, h: u16) -> String {
+        let theme = crate::style::THEMES[0];
+        let mut frame = Frame::new(Rect::new(0, 0, w, h), theme.bg, theme.fg);
+        let hints = [];
+        let p = PaintCx {
+            theme: &theme,
+            cell_px: (10, 20),
+            focused: true,
+            hovered: false,
+            now: std::time::Duration::ZERO,
+            glow: 0.0,
+            rtl: false,
+            pane: false,
+            hints: &hints,
+        };
+        t.paint(Rect::new(0, 0, w, h), &mut frame, &p);
+        frame.text()
+    }
+
+    #[test]
+    fn start_errors_say_what_why_and_fix_without_the_path() {
+        for (err, why) in [
+            (
+                "Unable to spawn foo because:\nNo viable candidates found in PATH \"/usr/bin:/bin\"",
+                "it isn't installed, or it isn't on your PATH",
+            ),
+            (
+                "Unable to spawn foo because:\n/opt/foo exists but is not executable.\nNo viable candidates found in PATH \"/a:/b\"",
+                if cfg!(windows) {
+                    "Windows didn't allow it to run"
+                } else {
+                    "it isn't allowed to run"
+                },
+            ),
+            (
+                "Unable to spawn /tmp/x because it doesn't exist on the filesystem (ENOENT: No such file or directory)",
+                "there is no file at that path",
+            ),
+            (
+                "Unable to spawn /tmp because it is a directory",
+                "that is a folder, not a program",
+            ),
+            (
+                "CreateProcessW `\"foo\"` in cwd `None` failed: The system cannot find the file specified. (os error 2)",
+                "it isn't installed, or it isn't on your PATH",
+            ),
+            (
+                "failed to openpty: out of ptys",
+                "failed to openpty: out of ptys",
+            ),
+        ] {
+            let (what, got, fix) = start_problem("foo", err);
+            assert_eq!(what, "Couldn't start \"foo\"");
+            assert!(got.starts_with(why), "{err}: {got}");
+            assert!(fix.ends_with("then press Enter to try again"), "{fix}");
+            assert!(!got.contains("PATH \"") && !fix.contains("/usr/bin"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_program_is_explained_and_enter_tries_again() {
+        let mut t = Terminal::new(vec!["definitely-not-a-program-xyz".into()], None);
+        let text = painted(&t, 48, 10);
+        assert!(text.contains("Couldn't start"), "{text}");
+        assert!(
+            text.contains("\"definitely-not-a-program-xyz\""),
+            "wrapped, not cut: {text}"
+        );
+        assert!(
+            text.contains("it isn't installed, or it isn't on your PATH"),
+            "{text}"
+        );
+        assert!(text.contains("press Enter to try again"), "{text}");
+        assert!(
+            !text.contains("/usr/bin") && !text.contains("viable"),
+            "{text}"
+        );
+        let d = t.describe();
+        assert_eq!(d["running"], false);
+        assert!(
+            d["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("isn't installed"))
+        );
+        assert!(
+            t.call("send", &json!("ls\n")).is_err(),
+            "sending says why it can't"
+        );
+
+        // Enter starts it again: once the program exists, it runs.
+        let dir = std::env::temp_dir().join(format!("stagetui-term-retry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("hello.sh");
+        let _ = std::fs::remove_file(&script);
+        let mut t = Terminal::new(vec![script.to_string_lossy().into_owned()], None);
+        let text = painted(&t, 60, 10);
+        assert!(text.contains("there is no file at that path"), "{text}");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nprintf 'مَرْحَباً Hello مرحبا こんにちは 你好 नमस्ते\\n'\nsleep 0.2\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            t.key(&Key::plain(Code::Enter), Rect::default()),
+            Reaction::Redraw
+        );
+        assert!(t.problem().is_none(), "{:?}", t.problem());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !t.contents().contains("नमस्ते") && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            t.contents()
+                .contains("مَرْحَباً Hello مرحبا こんにちは 你好 नमस्ते"),
+            "{:?}",
+            t.contents()
+        );
+        t.release();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

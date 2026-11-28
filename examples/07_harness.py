@@ -4,7 +4,8 @@ pretend agent (no AI is connected, so it runs anywhere, offline).
 Run:   python examples/07_harness.py
 Try:   type a question and press Enter · /run ls -la · /diff · /clear · @ to mention a file
 Keys:  Tab moves between panes · in the shell, Ctrl+Space then Tab gets you out
-       click a pane's title to switch what it shows · Ctrl+T theme · Ctrl+C or q quits
+       click a pane's title to switch what it shows · Ctrl+T theme
+       Ctrl+Space then q quits from anywhere (q alone types into the prompt or shell)
 """
 
 import asyncio

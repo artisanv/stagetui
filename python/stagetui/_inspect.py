@@ -38,3 +38,10 @@ def plugins(*, refresh: bool = False) -> list[dict[str, Any]]:
     installing one while your program runs).
     """
     return json.loads(_core.plugins(refresh))
+
+
+def keys() -> dict[str, Any]:
+    """The keys every app starts with on this computer: the built-in ones by name
+    (``keys``), plus the person's keys ``file`` and any ``problems`` in it.
+    Same as ``stagetui keys --json``. Rename keys in an app with ``KEYS``."""
+    return json.loads(_core.keys())

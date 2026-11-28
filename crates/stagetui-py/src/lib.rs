@@ -76,6 +76,13 @@ fn plugins(py: Python<'_>, refresh: bool) -> PyResult<String> {
 }
 
 /// The default workspaces file of an app (by its class name).
+/// The built-in keys with the person's keys file (no app): JSON, or a table.
+#[pyfunction]
+#[pyo3(signature = (text = false))]
+fn keys(text: bool) -> String {
+    stagetui_core::keymap::overview(text)
+}
+
 #[pyfunction]
 fn workspace_file(app: &str) -> String {
     stagetui_core::workspace::default_file(app)
@@ -219,6 +226,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fonts, m)?)?;
     m.add_function(wrap_pyfunction!(sessions, m)?)?;
     m.add_function(wrap_pyfunction!(plugins, m)?)?;
+    m.add_function(wrap_pyfunction!(keys, m)?)?;
     m.add_function(wrap_pyfunction!(workspace_file, m)?)?;
     m.add_function(wrap_pyfunction!(workspace_names, m)?)?;
     m.add_function(wrap_pyfunction!(register_image, m)?)?;

@@ -10,7 +10,7 @@ use super::{Cx, PaintCx, Reaction, Widget, clamp_scroll, object, scrollbar};
 use crate::frame::Frame;
 use crate::input::{Code, Key};
 use crate::style::{Rgb, Theme};
-use crate::text::{self, Direction};
+use crate::text;
 
 #[derive(Debug, Clone)]
 pub struct Log {
@@ -45,7 +45,7 @@ impl Log {
         }
         for line in text.trim_end_matches('\n').split('\n') {
             self.lines
-                .push_back(line.trim_end_matches('\r').replace('\t', "    "));
+                .push_back(text::paragraph::expand_tabs(line.trim_end_matches('\r')).into_owned());
         }
         while self.lines.len() > self.max_lines {
             self.lines.pop_front();
@@ -115,10 +115,8 @@ impl Widget for Log {
         let room = area.width.saturating_sub(1);
         for (row, line) in shown.iter().skip(first).take(rows).enumerate() {
             let y = area.y + row as u16;
-            let laid = text::layout(line, usize::MAX / 2, Direction::Ltr);
-            if let Some(l) = laid.first() {
-                frame.put_line(area.x, y, room, l, level_color(line, t), bg, false);
-            }
+            let v = text::paragraph::verbatim(line, None);
+            super::code::put_verbatim(frame, area.x, y, room, &v, level_color(line, t), bg, false);
         }
         if filter_row {
             let y = area.bottom() - 1;
@@ -246,5 +244,42 @@ mod tests {
         l.call("filter", &json!("error")).unwrap();
         assert_eq!(l.shown().len(), 50);
         assert!(l.shown().iter().all(|s| s.starts_with("ERROR")));
+    }
+
+    #[test]
+    fn lines_keep_their_indentation() {
+        let lines = [
+            "Traceback (most recent call last):",
+            "  File \"x.py\", line 1, in <module>",
+            "    main()",
+            "\tat Main.run(Main.java:3)",
+            "  مَرْحَباً بِكُمْ: خطأ",
+            "  Hello مرحبا world",
+            "    こんにちは 世界 你好",
+            "    नमस्ते दुनिया",
+            "ValueError: boom",
+        ];
+        let (frame, cells) = crate::widgets::code::tests::render(
+            json!({"type": "log", "content": lines.join("\n"), "props": {"height": 9}}),
+            60,
+            12,
+        );
+        let text = frame.text();
+        let rows: Vec<&str> = text.lines().collect();
+        let top = rows.iter().position(|r| r.contains("Traceback")).unwrap();
+        let margin = rows[top].find("Traceback").unwrap();
+        for (i, want) in lines.iter().enumerate() {
+            let want = format!(
+                "{}{}",
+                " ".repeat(margin),
+                text::paragraph::expand_tabs(want)
+            );
+            assert_eq!(rows[top + i], want, "in\n{text}");
+        }
+        // On screen the Arabic line is shaped and reordered after its indentation.
+        let v = text::paragraph::verbatim("  مَرْحَباً بِكُمْ: خطأ", None);
+        assert_eq!(v.lead, 2);
+        let shown = format!("{}  {}", " ".repeat(margin), v.line.visual);
+        assert!(cells[top + 4].starts_with(&shown), "{cells:#?}");
     }
 }

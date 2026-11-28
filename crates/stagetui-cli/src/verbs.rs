@@ -290,6 +290,33 @@ pub fn agent(mode: &str, app: &str, size: &str) -> i32 {
     }
 }
 
+/// `stagetui keys [app.py] [--json]`: the keys every app starts with, or one app's.
+pub fn keys(app: Option<&str>, json: bool) -> i32 {
+    let Some(app) = app else {
+        println!("{}", stagetui_core::keymap::overview(!json).trim_end());
+        return 0;
+    };
+    if !Path::new(app).is_file() {
+        return fail(&Error::friendly(
+            format!("App file \"{app}\" was not found"),
+            "stagetui keys needs a .py file that defines a StageApp",
+            "check the path, e.g. stagetui keys examples/07_harness.py",
+        ));
+    }
+    let mut args = vec!["-m", "stagetui._agent", "keys", app];
+    if json {
+        args.push("--json");
+    }
+    match std::process::Command::new(python()).args(&args).status() {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => fail(&Error::friendly(
+            "Could not start Python for stagetui keys",
+            e.to_string(),
+            "install stagetui in a Python environment (pip install stagetui) and run `stagetui` from it",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

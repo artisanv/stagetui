@@ -4,7 +4,7 @@ a pop-up window, notifications, themes and Arabic right-to-left layout.
 Run:   python examples/05_ui_gallery.py
 Keys:  Tab / Shift+Tab move between controls · Enter or Space presses
        click anything · scroll with the mouse wheel · Ctrl+T changes the theme
-       F1 opens the About window · q quits
+       F1 opens the About window · Ctrl+C quits (q too, when no text box has the focus)
 """
 
 import asyncio

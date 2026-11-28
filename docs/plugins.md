@@ -59,14 +59,82 @@ stagetui plugins                  # what is installed, what you can add
 stagetui plugins install video    # install one
 ```
 
+### Change an add-on's keys
+
+Each add-on's keys have **names** — the tables below list them (`wires`, `spin`,
+`mute`…). Give `keys=` to the pane to use other keys, or to turn some off:
+
+```python
+from stagetui import StageApp, StagePane
+
+
+class Look(StageApp):
+    def compose(self):
+        return [
+            StagePane(
+                "3d",
+                path="robot.glb",
+                keys={
+                    "wires": "x",              # x shows the edges now (w does nothing)
+                    "grid": None,              # no key turns the grid on or off
+                    "spin": ["s", "space"],    # two keys for one thing
+                },
+            )
+        ]
+
+
+Look().run()
+```
+
+- A name you don't list keeps its usual keys.
+- Keys are written like everywhere else in stagetui: `"x"`, `"space"`,
+  `"ctrl+s"`, `"shift+left"`, `"f5"`, `"+"` (see
+  [Keyboard shortcuts](events.md#keyboard-shortcuts-with-bindings)). As there, a
+  capital letter means Shift: `"X"` is Shift+X, `"x"` is the plain key.
+- The line at the bottom of the pane shows your keys (`x wires`), and leaves out
+  the ones you turned off.
+- A key the add-on no longer uses goes to your app instead (your `BINDINGS`).
+
+If something is wrong, the pane says what instead of starting — for example
+`keys= names "wire", but there is no action by that name; the actions are:
+turn_left, turn_right, …`, or `"g" is given to both "wires" and "grid"` when two
+names would share a key (give the other one a new key, or `None`). Fix it and
+press Enter in the pane.
+
+### No file yet? The pane asks for one
+
+Pick **Video** or **3D** from a pane's menu and there is no file to show yet. The
+pane says so at the bottom — `No model yet — press Enter to type a file path` —
+and you can carry on right there:
+
+1. Click the pane, then press **Enter** (or the **o** key). A line opens at the bottom,
+   like a web browser's address bar: `Open a model: █`.
+2. Type the file's path. **Tab** finishes a file name for you, `~` is your home
+   folder (`~/Downloads/robot.glb`), **Backspace** rubs out, **Ctrl+U** clears the
+   line. You can also paste a path, or drag a file from your file manager onto the
+   terminal.
+3. Press **Enter**. The file opens. If it can't — not found, or not a file the
+   add-on reads — the line says why and stays open, so you can fix the path.
+   **Esc** closes the line.
+
+The same happens when the file your app gave isn't there: the pane says what is
+wrong, and **Enter** opens the line with that path already typed, ready to fix.
+With a model or video already showing, **Enter** opens the line in its folder, to
+pick another one.
+
 ### Out of sight, an add-on rests
 
 An add-on works only while you can see its pane. Switch the pane to another type
 (say, from *Video* to *Notes*) or go to another tab, and stagetui tells the add-on
-it is hidden: a video pauses its sound and picture, a web page stops sending
-pictures, and 3D stops drawing — so nothing plays where you can't hear it, and
-your computer doesn't work for nothing. Come back and it carries on (a video that
-was playing plays on).
+it is hidden: a video pauses its sound and picture, a web page rests, and 3D
+stops drawing — so nothing plays where you can't hear it, and your computer
+doesn't work for nothing. Come back and it carries on (a video that was playing
+plays on).
+
+A resting web page is frozen: no pictures, no scripts or timers, and no sound —
+not its videos, not sound made only in script (`new Audio()`), not its Web Audio,
+not the frames of other sites inside it. When you come back, what was playing
+plays on. [Web → Out of sight](#out-of-sight) has the details.
 
 **Closing** the pane — **×** in its header, or **Ctrl+Space** then **x** — stops
 the add-on's program right away. See
@@ -118,10 +186,26 @@ Cinema().run()
 | `muted=True` | No sound |
 | `start=30` | Begin at 30 seconds |
 
-**Keys** (with the pane focused — click it): **Space** pause · **← →** seek 5 s
-(**Shift** 30 s) · **↑ ↓** volume · **M** mute · **Home** start over. Clicking the
-picture pauses; the mouse wheel changes the volume. The line at the bottom shows
-where you are: `▶ 01:23 / 04:56 · volume 80%`.
+**Keys** (with the pane focused — click it). Rename them or turn them off with
+`keys={...}` ([how](#change-an-add-ons-keys)):
+
+| Name | Keys (as you write them) | What it does |
+|---|---|---|
+| `open` | `enter` or `o` | Type a video's path or link at the bottom, then Enter plays it ([how](#no-file-yet-the-pane-asks-for-one)) |
+| `play_pause` | `space` | Pause, or play on |
+| `back` | `left` (←) | Back 5 seconds |
+| `forward` | `right` (→) | Forward 5 seconds |
+| `back_more` | `shift+left` | Back 30 seconds |
+| `forward_more` | `shift+right` | Forward 30 seconds |
+| `louder` | `up` (↑) | Volume up |
+| `quieter` | `down` (↓) | Volume down |
+| `mute` | `m` | Sound off, or on again |
+| `restart` | `home` | Start over from the beginning |
+
+For example `StagePane("video", path="trip.mp4", keys={"play_pause": "k", "back": "j",
+"forward": "l"})`. Clicking the picture pauses; the mouse wheel changes the volume.
+The line at the bottom shows where you are, and what Space does now (`‖` pause,
+`▶` play): `▶ 01:23 / 04:56 · volume 80% · space ‖ · ← → seek · …`.
 
 From code, the pane's `content` does it too:
 
@@ -132,6 +216,7 @@ video.call("pause")              # also: "play", "toggle"
 video.call("seek", 90)           # seconds
 video.call("volume", 0.5)        # 0 to 1
 video.call("mute", True)
+video.call("open", "other.mp4")  # play another file (or a link)
 video.call("state")              # {"position", "duration", "paused", "volume", …}
 StagePane("video", path="a.mp4", on_ended=self.next_clip, on_state=self.changed)
 ```
@@ -165,9 +250,30 @@ JavaScript all work. Nothing is downloaded.
 | `url="https://…"` | A web address — or `path="page.html"` for a file |
 | `zoom=1.5` | Bigger (or smaller, below 1) |
 
-Click the page, then **type** — in any language. **Ctrl+L** types an address at
-the bottom (Enter goes there), **Alt+← / Alt+→** go back and forward, **F5**
-reloads. The mouse wheel scrolls.
+Click the page, then **type** — in any language. Keys reach the page as real key
+presses: **Tab** moves to the next field (**Shift+Tab** back), **Esc** reaches the
+page, and the page's own shortcuts work. To leave the pane, press **Ctrl+Space**
+then **Tab**. The mouse wheel scrolls.
+
+A link or form that opens a **new window** (`target="_blank"`, `window.open` in
+the page — in a frame of another site too) opens **in the pane** instead: a hidden
+browser has no other window you could see. A form keeps what it sends.
+(**Alt+←** goes back to where you were.) The browser holds the pane's page and
+nothing else.
+
+**Keys** of the pane itself. Rename them or turn them off with `keys={...}`
+([how](#change-an-add-ons-keys)):
+
+| Name | Keys | What it does |
+|---|---|---|
+| `address` | Ctrl+L | Type an address at the bottom: Enter goes there, Esc (or Ctrl+L again) never minds |
+| `back` | Alt+← | Back to the page before |
+| `forward` | Alt+→ | Forward again |
+| `reload` | F5 or Ctrl+R | Load the page again |
+
+For example `StagePane("web", url="https://example.com", keys={"address": "ctrl+o",
+"reload": None})`. A key you rename away, or turn off, is the page's: here Ctrl+L
+and F5 go to the page.
 
 From code:
 
@@ -180,6 +286,35 @@ title = page.call("evaluate", "document.title")   # run JavaScript, get the resu
 page.call("state")                     # {"url", "title", "loading", "zoom"}
 StagePane("web", url="…", on_title=self.titled, on_navigated=self.went, on_loaded=self.ready)
 ```
+
+### Out of sight
+
+When its pane is out of sight (another pane type, another tab), the page **rests**:
+
+- It is frozen — nothing in it runs, and it makes **no sound**: the sound stops
+  within about 0.1–0.2 seconds of the pane going out of sight. What was playing
+  (videos, audio, Web Audio, in every frame) is paused, and plays on when you come
+  back. Something the page or your code asks to play meanwhile (`play()`,
+  `resume()` on an AudioContext, a new AudioContext) waits, and starts once the
+  pane is shown.
+- `navigate`, `back`, `forward` and `reload` **wait**: the page goes there when
+  the pane is shown again, and `on_navigated`, `on_title` and `on_loaded` come
+  then. `call("state")` shows the page it is resting on until then.
+- `evaluate` still works for plain JavaScript and answers at once. What it waits
+  for (a timer, a download, a promise) only finishes once the pane is shown; if
+  the answer doesn't come within 9 seconds, the call fails with *"the page didn't
+  answer: it rests while its pane is hidden, and what it waits for finishes once
+  it's shown"*.
+- A page stuck in an endless script can't be told to rest. Then the line at the
+  bottom of the pane says *"This page isn't responding — it may keep playing;
+  close the pane to stop it"*. Closing the pane always stops it.
+
+Two small limits remain. A sound that plays by itself (`autoplay`) from an
+element that was never put on the page is quiet while hidden but stays paused when
+you come back — press play again. And a form inside a frame from **another site**
+that posts to a new window opens in the pane without what it sent (that frame may
+not be allowed to change the whole page, so the browser's new window is followed
+instead).
 
 ## 3D
 
@@ -214,9 +349,25 @@ card or driver needed.
 | `grid=False` | No floor grid |
 | `up="z"` | Which way is up in the file (STL files are usually `"z"`; others `"y"`) |
 
-**Mouse:** drag to turn it, right-drag to move it, the wheel zooms. **Keys** (click
-the model first): **← → ↑ ↓** turn · **+ −** zoom · **Space** spin or stop · **W**
-wires · **G** grid · **F** fit it in the pane · **R** start over.
+**Mouse:** drag to turn it, right-drag to move it, the wheel zooms.
+
+**Keys** (click the model first). Rename them or turn them off with `keys={...}`
+([how](#change-an-add-ons-keys)):
+
+| Name | Keys (as you write them) | What it does |
+|---|---|---|
+| `open` | `enter` or `o` | Type a model's path at the bottom, then Enter opens it ([how](#no-file-yet-the-pane-asks-for-one)) |
+| `turn_left` | `left` (←) | Turn the model to the left |
+| `turn_right` | `right` (→) | Turn the model to the right |
+| `turn_up` | `up` (↑) | Look from higher up |
+| `turn_down` | `down` (↓) | Look from lower down |
+| `zoom_in` | `+` or `=` | Come closer |
+| `zoom_out` | `-` | Move away |
+| `spin` | `space` | Spin slowly, or stop |
+| `reset` | `r` or `home` | Start over: the first angle, the whole model in view |
+| `wires` | `w` | Show the triangles' edges, or hide them |
+| `grid` | `g` | Show the floor grid, or hide it |
+| `fit` | `f` | Fit the model in the pane, keeping the angle |
 
 From code:
 
@@ -299,7 +450,66 @@ chmod +x stagetui-plugin-pulse
 STAGETUI_PLUGIN_PATH=. python my_app.py      # or put it anywhere on your PATH
 ```
 
-`Pulse` now shows up in every pane's menu. What a plugin can do:
+`Pulse` now shows up in every pane's menu.
+
+#### Keys the app can rename
+
+Instead of plain `keys`, give your keys **names** in `actions`. Then an app can
+rename them or turn them off, exactly like the add-ons above
+(`StagePane("pulse", keys={"bigger": "b", "smaller": None})`):
+
+<!-- not-tested -->
+```python
+class Pulse(Plugin):
+    name, title, icon = "pulse", "Pulse", "heart"
+    actions = {
+        "bigger": ("+", "="),      # name: its usual keys
+        "smaller": ("-",),
+    }
+
+    def start(self, args):
+        self.size = 1.0
+        # self.keymap knows the app's keys: show them at the bottom of the pane.
+        hints = [f"{self.keymap.label(a)} {a}" for a in self.actions if self.keymap.label(a)]
+        self.status(" · ".join(hints))         # e.g. "+ bigger · - smaller"
+
+    def action(self, name):        # "bigger" or "smaller" — whatever key the app chose
+        self.size *= 1.2 if name == "bigger" else 1 / 1.2
+
+    # frame() draws, as in the first Pulse (a circle self.size times as big).
+```
+
+- `action(name)` gets the keys of `actions`; `key(key, text)` still gets the
+  plain `keys` (and every other key with `text = True`).
+- stagetui sends your plugin only the keys it asked for, so a key the app moved
+  away goes back to the app.
+- If the app names an action you don't have, or gives one key to two actions,
+  your pane shows what is wrong (you don't need to check).
+- `self.keymap.keys("bigger")` is the list of keys, `self.keymap.label("bigger")`
+  the first one, short for a status line (arrows as `← → ↑ ↓`), or `None` when it
+  is turned off. `self.keymap.spoken("bigger")` writes it for a sentence ("press
+  Enter to …"): `Enter`, `Ctrl+O`, `Shift+←`.
+
+#### Asking for every key for a while
+
+A plugin that opens a text line (like the path line above) needs every key while
+you type, then its usual keys again. Say so with `self.ready(...)` at any time:
+
+<!-- not-tested -->
+```python
+def action(self, name):
+    if name == "open":
+        self.typing = ""
+        self.ready(text=True, keys=("esc", "tab"))   # every key; Esc and Tab too
+
+def key(self, key, text):
+    if key == "esc":
+        self.ready(text=False, keys=())              # back to the usual keys
+    elif text:
+        self.typing += text
+```
+
+What a plugin can do:
 
 | Method | When |
 |---|---|
@@ -307,11 +517,14 @@ STAGETUI_PLUGIN_PATH=. python my_app.py      # or put it anywhere on your PATH
 | `frame(t)` | Draw: return a `Canvas` (or raw RGBA bytes), or `None` if nothing changed |
 | `resize(width, height)` | The pane changed size (`self.width`, `self.height` are pixels) |
 | `key(key, text)` | A key from `keys` (`text = True` gets every key) |
+| `action(name)` | A key of one of `actions` (whichever key the app gave it) |
 | `mouse(kind, x, y, button)` | Clicks, drags, moves and the wheel, in pixels |
+| `paste(text)` | Text was pasted into the pane (or a file dragged in) |
 | `call(method, args)` | The app called `pane.content.call(...)` |
 | `shown(shown)` | The pane went out of sight (`False`) or came back (`True`); `frame` isn't called while hidden |
 | `self.status(text)` | Show a line at the bottom of the pane |
 | `self.event(name, value)` | Tell the app (`on_<name>` handlers) |
+| `self.ready(text=…, keys=…, fps=…)` | Change what it wants while it runs (every key while typing) |
 
 ### In Rust
 
@@ -366,13 +579,79 @@ write them:
 | `shown(bool)` | The pane went **out of sight** (`false`: its type was switched, or it is in a tab you aren't looking at) or came back (`true`). `frame` isn't called while it's hidden — pause sound and other work here, like the video, web and 3D add-ons do |
 | `call(method, args)` | The app called `pane.content.call(...)` |
 | `status()` | The line at the bottom of the pane (`None`: unchanged) |
+| `ready()` | What it wants now, if that changed (`None`: unchanged) — e.g. every key while a text line is open, its usual keys after |
+
+**Keys the app can rename**, in Rust: list your actions once, read the app's
+`keys=` in `start` with `Keymap::new`, and ask it which action a key does:
+
+```rust
+use stagetui_plugin_api::{KeyAction, Keymap, Ready, Start};
+
+const ACTIONS: &[KeyAction] = &[
+    KeyAction { name: "bigger", keys: &["+", "="], about: "grow" },
+    KeyAction { name: "smaller", keys: &["-"], about: "shrink" },
+];
+
+// In `start`: a mistake in the app's keys= becomes the pane's message (the `?`).
+fn start(&mut self, s: &Start) -> Result<Ready, String> {
+    self.keys = Keymap::new(ACTIONS, &s.args)?;
+    Ok(Ready { keys: self.keys.all_keys(), ..Ready::default() })
+}
+
+fn key(&mut self, key: &str, _text: Option<&str>) -> bool {
+    match self.keys.action(key) {
+        Some("bigger") => self.size *= 1.2,
+        Some("smaller") => self.size /= 1.2,
+        _ => return false,
+    }
+    true
+}
+```
+
+`self.keys.label("bigger")` is the first key for your status line (`None` when the
+app turned it off), `self.keys.spoken("bigger")` the same for a sentence
+(`Enter`, `Ctrl+O`); `self.keys.keys("bigger")` all of them.
+
+**A line for typing a path**, like the video and 3D add-ons have: `PathLine` does
+the typing, Tab completion, `~`, pasting and quotes; you open the file. While it is
+open, ask for every key with the `ready()` hook:
+
+```rust
+use stagetui_plugin_api::{PathLine, Ready, Typed};
+
+// In `key`: an `open` action opens the line; while it's open, it gets every key.
+fn key(&mut self, key: &str, text: Option<&str>) -> bool {
+    if self.line.is_open() {
+        if let Typed::Open(path) = self.line.key(key, text) {
+            match self.load(&path) {
+                Ok(()) => self.line.close(),
+                Err(why) => self.line.fail(why),   // shown on the line, which stays open
+            }
+        }
+        return true;
+    }
+    if self.keys.action(key) == Some("open") {
+        self.line.open("");
+    }
+    true
+}
+
+// What stagetui should send now; `serve` asks after every message.
+fn ready(&mut self) -> Option<Ready> {
+    let want = if self.line.is_open() { self.line.ready(30) } else { self.usual() };
+    (self.sent != want).then(|| { self.sent = want.clone(); want })
+}
+
+// In `status`: `self.line.status("Open a file")` while it is open.
+```
+
+`Frame::placeholder(width, height, &theme)` is a quiet picture for a pane with
+nothing to show yet (send it once, so the pane doesn't say "Starting…").
 
 Under the hood both Python and Rust add-ons speak a tiny protocol over
 stdin/stdout: JSON messages and raw RGBA frames. stagetui sends `{"t": "start", …}`,
 `{"t": "key", …}`, `{"t": "shown", "shown": false}` and so on; an add-on that doesn't
-know a message simply ignores it, so older add-ons keep working. (The Python
-`Plugin` helper above doesn't pass `shown` on yet: a Python add-on keeps drawing
-while hidden.)
+know a message simply ignores it, so older add-ons keep working.
 
 ## Good to know
 

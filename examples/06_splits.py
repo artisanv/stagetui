@@ -19,11 +19,14 @@ TIPS = [
 
 class Splits(StageApp):
     theme = "aurora-dark"
+    # Our own action names (not the built-in "close_pane", "split_pane_right"…):
+    # a built-in name would run stagetui's version, never the methods below.
+    # "next_theme" is built in on purpose.
     BINDINGS = [
-        ("|", "split_right", "Split →"),
-        ("ctrl+backslash", "split_right"),
-        ("-", "split_down", "Split ↓"),
-        ("x", "close_pane", "Close"),
+        ("|", "add_right", "Split →"),
+        ("ctrl+backslash", "add_right"),
+        ("-", "add_below", "Split ↓"),
+        ("x", "close", "Close"),
         ("ctrl+t", "next_theme", "Theme"),
     ]
 
@@ -46,31 +49,41 @@ class Splits(StageApp):
         return StageCard(tip, title=f"Pane {self.count}", icon="terminal", animate="pop")
 
     def target(self):
-        # The pane with the keyboard focus, or the first pane.
-        return self.focused_pane or self.query("#pane-1")
+        # The pane with the keyboard focus, or else the first one on screen.
+        return self.focused_pane or self.query("#" + self.pane_ids()[0])
 
-    def action_split_right(self):
+    def action_add_right(self):
         self.target().split(self.new_pane(), direction="horizontal")
         self.refresh_status()
 
-    def action_split_down(self):
+    def action_add_below(self):
         self.target().split(self.new_pane(), direction="vertical")
         self.refresh_status()
 
-    def action_close_pane(self):
-        pane = self.focused_pane
-        panes = self.panes()
-        if pane is None or len(panes) <= 1:
+    def action_close(self):
+        if len(self.pane_ids()) <= 1:
             self.notify("This is the last pane", icon="info")
             return
-        pane.remove()
+        pane = self.focused_pane
+        if pane is None:
+            self.notify("Click a pane (or press Tab) first, then x closes it", icon="info")
+            return
+        pane.remove()  # the other panes grow back
         self.refresh_status()
 
-    def panes(self):
-        return [w for w in self._widgets.values() if isinstance(w, StageCard)]
+    def pane_ids(self):
+        # The cards on screen right now, read from the app's live widget tree.
+        def cards(node):
+            for child in node.get("children", []):
+                if child["type"] == "card":
+                    yield child["id"]
+                else:
+                    yield from cards(child)
+
+        return list(cards(self.capture_tree()))
 
     def refresh_status(self):
-        n = len(self.panes())
+        n = len(self.pane_ids())
         self.query("#status").update(f"{n} pane{'s' if n != 1 else ''}")
 
 

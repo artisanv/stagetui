@@ -4,7 +4,9 @@
 //! to the app's Python (where `pip install` puts it), in `STAGETUI_PLUGIN_PATH`
 //! or on the `PATH`, and asked `--describe` for its title and icon. Plugins
 //! stagetui knows about but that aren't installed are offered anyway: picking
-//! one asks whether to install it.
+//! one asks whether to install it. A file that doesn't answer `--describe`
+//! (a script whose `#!` Python lacks stagetui, a crash, bad JSON) is kept as
+//! [`Broken`], so people are told why it isn't there.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -18,6 +20,16 @@ use stagetui_plugin_api::Describe;
 pub struct Installed {
     pub describe: Describe,
     pub path: PathBuf,
+}
+
+/// A `stagetui-plugin-<name>` file that didn't answer `--describe`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Broken {
+    pub name: String,
+    pub path: PathBuf,
+    /// Short reason: the error it printed, its exit code, or what was wrong
+    /// with its answer.
+    pub why: String,
 }
 
 /// A plugin stagetui knows about (it can offer to install it).
@@ -65,6 +77,8 @@ pub const KNOWN: &[Known] = &[
 const PREFIX: &str = "stagetui-plugin-";
 
 static FOUND: Mutex<Option<Vec<Installed>>> = Mutex::new(None);
+/// Found with [`FOUND`]: files that didn't answer.
+static BROKEN: Mutex<Vec<Broken>> = Mutex::new(Vec::new());
 static PYTHON: Mutex<Option<String>> = Mutex::new(None);
 /// Tests: add-ons stagetui pretends to know (see [`pretend_known`]).
 #[cfg(test)]
@@ -122,28 +136,112 @@ fn plugin_name(file: &str) -> Option<&str> {
 
 /// Ask a plugin what it is (`--describe`), giving up after a few seconds.
 pub fn describe(path: &Path) -> Option<Describe> {
+    ask(path).ok()
+}
+
+/// Read a pipe to the end on a thread of its own (so a chatty program never
+/// blocks on a full pipe); the text arrives on the returned channel.
+fn drain(pipe: Option<impl std::io::Read + Send + 'static>) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    if let Some(mut pipe) = pipe {
+        let _ = std::thread::Builder::new()
+            .name("stagetui-plugin-describe".into())
+            .spawn(move || {
+                let mut bytes = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut pipe, &mut bytes);
+                let _ = tx.send(String::from_utf8_lossy(&bytes).into_owned());
+            });
+    }
+    rx
+}
+
+/// `--describe`, or why it didn't answer (in words a person can act on).
+fn ask(path: &Path) -> Result<Describe, String> {
     let mut child = Command::new(path)
         .arg("--describe")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .map_err(|e| couldnt_start(path, &e))?;
+    let out = drain(child.stdout.take());
+    let err = drain(child.stderr.take());
     let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
+            Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            _ => {
+            Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                return Err("it didn't answer within 5 seconds".into());
             }
+            Err(e) => return Err(e.to_string()),
         }
+    };
+    let grace = Duration::from_secs(1);
+    let out = out.recv_timeout(grace).unwrap_or_default();
+    let err = err.recv_timeout(grace).unwrap_or_default();
+    let Some(line) = out.lines().find(|l| l.trim_start().starts_with('{')) else {
+        return Err(if status.success() {
+            "its answer to --describe has no JSON line".into()
+        } else {
+            stopped(status, &err)
+        });
+    };
+    serde_json::from_str(line).map_err(|e| {
+        if status.success() {
+            format!("its answer to --describe isn't valid JSON: {e}")
+        } else {
+            stopped(status, &err)
+        }
+    })
+}
+
+/// The program ended with an error: the line that says what went wrong.
+fn stopped(status: std::process::ExitStatus, stderr: &str) -> String {
+    let mut lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    // A Rust panic ends with a hint about backtraces; the reason is above it.
+    while lines.len() > 1 && lines.last().is_some_and(|l| l.starts_with("note:")) {
+        lines.pop();
     }
-    let mut out = String::new();
-    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
-    serde_json::from_str(out.lines().find(|l| l.trim_start().starts_with('{'))?).ok()
+    // A Python traceback ends with the error itself; others say it first or last.
+    match lines.last() {
+        Some(line) => short(line),
+        None => match status.code() {
+            Some(code) => format!("it stopped with exit code {code} and said nothing"),
+            None => "it was stopped by a signal".into(),
+        },
+    }
+}
+
+fn couldnt_start(path: &Path, e: &std::io::Error) -> String {
+    let first = std::fs::read(path).ok().and_then(|bytes| {
+        let text = String::from_utf8_lossy(&bytes[..bytes.len().min(256)]).into_owned();
+        text.lines().next().map(str::to_string)
+    });
+    match first {
+        Some(line) if line.starts_with("#!") && e.kind() == std::io::ErrorKind::NotFound => {
+            format!(
+                "couldn't start it: its first line `{}` names a program that isn't here",
+                short(&line)
+            )
+        }
+        _ => format!("couldn't start it: {e}"),
+    }
+}
+
+fn short(line: &str) -> String {
+    const MAX: usize = 200;
+    if line.chars().count() <= MAX {
+        line.to_string()
+    } else {
+        format!("{}…", line.chars().take(MAX).collect::<String>())
+    }
 }
 
 /// Every plugin on this computer (looked up once; see [`forget`]).
@@ -161,9 +259,19 @@ fn installed_here() -> Vec<Installed> {
     if let Some(list) = found.as_ref() {
         return list.clone();
     }
+    let (list, broken) = scan(&search_dirs());
+    *lock(&BROKEN) = broken;
+    *found = Some(list.clone());
+    list
+}
+
+/// Look for plugins in `dirs`, in order: the first file of each name wins.
+/// Files that don't answer are returned too, unless another file of that name works.
+fn scan(dirs: &[PathBuf]) -> (Vec<Installed>, Vec<Broken>) {
     let mut list: Vec<Installed> = Vec::new();
-    for dir in search_dirs() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+    let mut broken: Vec<Broken> = Vec::new();
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
         };
         let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
@@ -179,14 +287,32 @@ fn installed_here() -> Vec<Installed> {
             if list.iter().any(|p| p.describe.name == name) || !path.is_file() {
                 continue;
             }
-            if let Some(mut d) = describe(&path) {
-                d.name = name.to_string(); // the file name decides the type
-                list.push(Installed { describe: d, path });
+            match ask(&path) {
+                Ok(mut d) => {
+                    d.name = name.to_string(); // the file name decides the type
+                    list.push(Installed { describe: d, path });
+                }
+                Err(why) => {
+                    if !broken.iter().any(|b| b.name == name) {
+                        broken.push(Broken {
+                            name: name.to_string(),
+                            path,
+                            why,
+                        });
+                    }
+                }
             }
         }
     }
-    *found = Some(list.clone());
-    list
+    broken.retain(|b| !list.iter().any(|p| p.describe.name == b.name));
+    (list, broken)
+}
+
+/// Plugin files that were found but didn't answer `--describe` (looked up
+/// with [`installed`]).
+pub fn broken() -> Vec<Broken> {
+    let _ = installed();
+    lock(&BROKEN).clone()
 }
 
 /// Tests: treat `name` as installed (it won't actually run).
@@ -205,6 +331,7 @@ pub fn pretend_installed(name: &str) {
 /// Look again next time (after installing something).
 pub fn forget() {
     *lock(&FOUND) = None;
+    lock(&BROKEN).clear();
 }
 
 pub fn find(name: &str) -> Option<Installed> {
@@ -291,11 +418,35 @@ pub struct Report {
     pub version: Option<String>,
     /// It can be installed now (official add-ons, once published).
     pub available: bool,
+    /// Its file was found, but it didn't answer `--describe`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broken: Option<BrokenReport>,
 }
 
-/// Every add-on: installed ones, then official ones that aren't installed.
+/// Where a plugin file is that didn't answer, and why.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BrokenReport {
+    pub path: String,
+    pub why: String,
+}
+
+impl From<&Broken> for BrokenReport {
+    fn from(b: &Broken) -> Self {
+        Self {
+            path: b.path.display().to_string(),
+            why: b.why.clone(),
+        }
+    }
+}
+
+/// Every add-on: installed ones, files that didn't answer, then official ones
+/// that aren't installed.
 pub fn report() -> Vec<Report> {
-    let mut out: Vec<Report> = installed()
+    build_report(installed(), &broken(), &catalog())
+}
+
+fn build_report(installed: Vec<Installed>, broken: &[Broken], catalog: &[Known]) -> Vec<Report> {
+    let mut out: Vec<Report> = installed
         .into_iter()
         .map(|p| {
             let k = known(&p.describe.name);
@@ -309,10 +460,28 @@ pub fn report() -> Vec<Report> {
                 path: Some(p.path.display().to_string()),
                 version: Some(p.describe.version.clone()).filter(|v| !v.is_empty()),
                 available: true,
+                broken: None,
             }
         })
         .collect();
-    for k in catalog() {
+    let broken_named = |name: &str| broken.iter().find(|b| b.name == name);
+    for b in broken {
+        if !out.iter().any(|r| r.name == b.name) && !catalog.iter().any(|k| k.name == b.name) {
+            out.push(Report {
+                name: b.name.clone(),
+                title: b.name.clone(),
+                icon: None,
+                installed: false,
+                package: None,
+                about: None,
+                path: Some(b.path.display().to_string()),
+                version: None,
+                available: false,
+                broken: Some(b.into()),
+            });
+        }
+    }
+    for k in catalog {
         if !out.iter().any(|r| r.name == k.name) {
             out.push(Report {
                 name: k.name.into(),
@@ -324,6 +493,7 @@ pub fn report() -> Vec<Report> {
                 path: None,
                 version: None,
                 available: k.available,
+                broken: broken_named(k.name).map(Into::into),
             });
         }
     }
@@ -359,6 +529,137 @@ mod tests {
         }
         let three = report().into_iter().find(|r| r.name == "3d").unwrap();
         assert!(three.available && !three.installed, "{three:?}");
+    }
+
+    /// Run `scan` until no file is "busy": a file just written can't be run
+    /// while another test thread is starting a program.
+    fn scan_settled(dirs: &[PathBuf]) -> (Vec<Installed>, Vec<Broken>) {
+        for _ in 0..20 {
+            let (found, broken) = scan(dirs);
+            if !broken.iter().any(|b| b.why.contains("busy")) {
+                return (found, broken);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        scan(dirs)
+    }
+
+    fn fresh_dir(label: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("stagetui-plugins-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    const SAYS: &str = "ModuleNotFoundError: No module named 'stagetui' مَرْحَبًا Hello 日本語 नमस्ते";
+
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_file_that_does_not_answer_is_reported_not_lost() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = fresh_dir("broken");
+        let later = fresh_dir("later");
+        let write = |dir: &Path, name: &str, body: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        // A Python script run by a Python without stagetui: a traceback, exit 1.
+        write(
+            &dir,
+            "stagetui-plugin-crash",
+            &format!(
+                "#!/bin/sh\necho 'Traceback (most recent call last):' >&2\necho \"{SAYS}\" >&2\nexit 1\n"
+            ),
+        );
+        write(
+            &dir,
+            "stagetui-plugin-garbled",
+            "#!/bin/sh\necho '{not json'\n",
+        );
+        write(&dir, "stagetui-plugin-nopython", "#!/nonexistent/python3\n");
+        write(&dir, "stagetui-plugin-silent", "#!/bin/sh\nexit 3\n");
+        write(&dir, "stagetui-plugin-video", "#!/bin/sh\nexit 1\n");
+        let good = r#"{"name":"x","title":"Good","icon":"star"}"#;
+        write(
+            &dir,
+            "stagetui-plugin-good",
+            &format!("#!/bin/sh\necho '{good}'\n"),
+        );
+        // A working file of the same name further down the search path wins.
+        write(
+            &later,
+            "stagetui-plugin-silent",
+            &format!("#!/bin/sh\necho '{good}'\n"),
+        );
+
+        let (found, broken) = scan_settled(&[dir.clone(), later.clone()]);
+        let names: Vec<&str> = found.iter().map(|p| p.describe.name.as_str()).collect();
+        assert_eq!(names, ["good", "silent"], "the file name decides the type");
+        let why = |name: &str| {
+            let b = broken.iter().find(|b| b.name == name).unwrap();
+            assert_eq!(b.path, dir.join(format!("stagetui-plugin-{name}")));
+            b.why.clone()
+        };
+        assert_eq!(
+            why("crash"),
+            SAYS,
+            "the error it printed, not the traceback header"
+        );
+        assert!(
+            why("garbled").contains("isn't valid JSON"),
+            "{}",
+            why("garbled")
+        );
+        assert!(
+            why("nopython").contains("#!/nonexistent/python3"),
+            "{}",
+            why("nopython")
+        );
+        assert_eq!(why("video"), "it stopped with exit code 1 and said nothing");
+        assert!(!broken.iter().any(|b| b.name == "silent"), "{broken:?}");
+
+        // `stagetui plugins` / ts.plugins(): broken files are listed, the
+        // official add-on stays installable and says what was found.
+        let report = build_report(found, &broken, KNOWN);
+        let entry = |name: &str| report.iter().find(|r| r.name == name).unwrap();
+        let crash = entry("crash");
+        assert!(!crash.installed && !crash.available && crash.package.is_none());
+        assert_eq!(crash.broken.as_ref().unwrap().why, SAYS);
+        let video = entry("video");
+        assert!(!video.installed && video.available);
+        assert_eq!(video.package.as_deref(), Some("stagetui-video"));
+        assert!(
+            video
+                .broken
+                .as_ref()
+                .unwrap()
+                .path
+                .ends_with("stagetui-plugin-video")
+        );
+        assert!(entry("good").installed && entry("good").broken.is_none());
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json[0].get("broken").is_none(), "only broken ones carry it");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&later);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_plugin_file_that_does_not_answer_is_reported_not_lost() {
+        let dir = fresh_dir("broken");
+        std::fs::write(
+            dir.join("stagetui-plugin-crash.cmd"),
+            format!("@echo off\r\necho {SAYS} 1>&2\r\nexit /b 1\r\n"),
+        )
+        .unwrap();
+        let (found, broken) = scan_settled(std::slice::from_ref(&dir));
+        assert!(found.is_empty());
+        assert_eq!(broken.len(), 1);
+        assert_eq!(broken[0].name, "crash");
+        assert!(!broken[0].why.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// An add-on that isn't out yet (only these tests know it).

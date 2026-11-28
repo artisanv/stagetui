@@ -325,13 +325,15 @@ impl Widget for Chat {
         let t = crate::style::THEMES[0];
         let (lines, owner) = self.layout(area.width.saturating_sub(1), &t, Duration::ZERO);
         let first = self.offset(lines.len(), usize::from(area.height));
-        if let Some(Some(i)) = owner.get(first + usize::from(y)) {
-            if self.selected == Some(*i)
-                && let Some(tool) = &mut self.messages[*i].tool
-            {
+        let row = first + usize::from(y);
+        if let Some(&Some(i)) = owner.get(row) {
+            // A tool call's first line is its header: one click opens or closes it,
+            // focused or not (like a `StageToolCall` on its own). Its output only selects.
+            let header = owner.iter().position(|o| *o == Some(i)) == Some(row);
+            if header && let Some(tool) = &mut self.messages[i].tool {
                 tool.expanded = !tool.expanded;
             }
-            self.selected = Some(*i);
+            self.selected = Some(i);
             self.follow = false;
             self.scroll = first;
         }
@@ -482,6 +484,51 @@ mod tests {
         c.selected = Some(1);
         assert!(
             matches!(c.key(&Key::plain(Code::Char('y')), Rect::new(0, 0, 40, 10)), Reaction::Copy(s) if s.starts_with("Sure"))
+        );
+    }
+
+    #[test]
+    fn one_click_opens_a_tool_call_even_when_the_chat_is_not_focused() {
+        let spec = json!({"children": [
+            {"type": "input", "props": {"id": "in"}},
+            {"type": "chat", "props": {"id": "chat", "height": 12}, "content": [
+                {"role": "user", "text": "مَرْحَباً — Hello مرحبا · こんにちは 你好 · नमस्ते"},
+                {"role": "tool", "tool": {"name": "bash", "args": {"cmd": "ls"}, "status": "done",
+                    "output": "  مَرْحَباً.txt\n  日本.txt\n  नमस्ते.txt"}},
+            ]},
+        ]});
+        let mut s = crate::session::Session::from_json(&spec.to_string()).unwrap();
+        let screen = |s: &mut crate::session::Session| s.frame(70, 20).text();
+        let text = screen(&mut s);
+        let (y, row) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.contains("✓ bash"))
+            .unwrap();
+        let x = crate::text::width(&row[..row.find("bash").unwrap()]) as u16;
+        assert_ne!(s.tree_json(70, 20)["focus"], "chat");
+        s.click_at(x, y as u16);
+        let text = screen(&mut s);
+        assert_eq!(
+            s.tree_json(70, 20)["focus"],
+            "chat",
+            "the click focuses the chat"
+        );
+        assert!(
+            text.contains("▾") && text.contains("│   日本.txt"),
+            "and opens the tool call:\n{text}"
+        );
+        assert!(text.contains("│   مَرْحَباً.txt"));
+        assert!(text.contains("│   नमस्ते.txt"));
+        // Clicking its output only selects; clicking the header again closes it.
+        let out = text.lines().position(|l| l.contains("日本.txt")).unwrap();
+        s.click_at(x, out as u16);
+        assert!(screen(&mut s).contains("日本.txt"), "still open");
+        s.click_at(x, y as u16);
+        let text = screen(&mut s);
+        assert!(
+            text.contains("▸") && !text.contains("日本.txt"),
+            "closed:\n{text}"
         );
     }
 }

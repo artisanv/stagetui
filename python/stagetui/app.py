@@ -127,7 +127,11 @@ class StageApp:
     - ``accent`` — highlight color.
     - ``dir`` — ``"rtl"`` mirrors the whole layout; ``None`` guesses from your text.
     - ``BINDINGS`` — keyboard shortcuts: ``[("ctrl+s", "save", "Save")]`` calls
-      ``self.action_save()`` (or ``self.save()``) when Ctrl+S is pressed.
+      ``self.action_save()`` (or ``self.save()``) when Ctrl+S is pressed. They come
+      before the built-in keys, so ``("q", "save")`` takes ``q`` for your app.
+    - ``KEYS`` — rename or turn off built-in keys: ``{"quit": "ctrl+q",
+      "close_pane": "w", "pane_menu": None}``. ``stagetui keys`` lists the names.
+    - ``CONFIRM_QUIT`` — ``True`` asks "Quit this app?" before quitting.
     """
 
     theme: ClassVar[Theme] = "aurora-dark"
@@ -136,7 +140,12 @@ class StageApp:
     BINDINGS: ClassVar[Sequence[Binding]] = ()
     reduce_motion: ClassVar[bool] = False
     #: The key that reaches the app from inside a terminal pane (then press Tab, |, -, x, Space, q).
+    #: Same as ``KEYS = {"prefix": ...}``.
     PREFIX: ClassVar[str] = "ctrl+space"
+    #: Built-in keys renamed or turned off (``None``), by name — see ``stagetui keys``.
+    KEYS: ClassVar[Mapping[str, str | Sequence[str] | None]] = {}
+    #: Ask "Quit this app?" before quitting from the keyboard or the last pane's ×.
+    CONFIRM_QUIT: ClassVar[bool] = False
     #: How a pane opens in its own window: ``None`` uses the terminal you are in
     #: (Kitty opens Kitty, foot opens foot…). Or a command like ``"foot {cmd}"``.
     LAUNCHER: ClassVar[str | None] = None
@@ -145,9 +154,12 @@ class StageApp:
         self._core: _core.App | None = None
         self._widgets: dict[str, _Widget] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
+        # Long-running work from background(): headless steps don't wait for it.
+        self._background: set[asyncio.Task[Any]] = set()
         self._failure: BaseException | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._headless = False
+        self._quitting = False
 
     # ----- what to override -------------------------------------------------
 
@@ -289,6 +301,14 @@ class StageApp:
         handle._app = self
         return handle
 
+    def keys(self) -> dict[str, Any]:
+        """Every key this app answers to: ``keys`` (the built-in ones by name, with
+        ``keys``, ``labels``, ``after_prefix`` and ``about``), ``shortcuts`` (your
+        ``BINDINGS``), ``confirm_quit``, and the person's keys ``file`` with any
+        ``problems`` in it. Same as ``stagetui keys my_app.py --json``."""
+        core = self._require_core("keys()")
+        return json.loads(core.keys())
+
     def panes(self) -> list[dict[str, Any]]:
         """Every Blender-style pane: ``id``, ``type``, ``bounds``, ``focused``, ``stashed``."""
         core = self._core
@@ -371,7 +391,9 @@ class StageApp:
                 "the app is not on screen yet",
                 "call it from on_mount() or an event handler",
             )
-        self._handle(work)
+        task = self._handle(work)
+        if task is not None:
+            self._background.add(task)
 
     def notify(
         self, text: str, *, icon: str | None = None, accent: str | None = None, timeout: float = 3.0
@@ -404,14 +426,18 @@ class StageApp:
         """Run in the current terminal. Press ``q``, ``Esc`` or ``Ctrl+C`` to quit."""
         try:
             asyncio.get_running_loop()
+            inside_async = True
         except RuntimeError:
-            asyncio.run(self.run_async())
-            return
-        raise _error(
-            "run() can't be used inside async code",
-            "an asyncio event loop is already running in this thread",
-            "use `await app.run_async()` instead",
-        )
+            inside_async = False
+        if inside_async:
+            raise _error(
+                "run() can't be used inside async code",
+                "an asyncio event loop is already running in this thread",
+                "use `await app.run_async()` instead",
+            )
+        # Outside the `except` above: an error in the app is shown on its own,
+        # not as "during handling of RuntimeError: no running event loop".
+        asyncio.run(self.run_async())
 
     async def run_async(self) -> None:
         """Run in the current terminal from ``async`` code (``await app.run_async()``)."""
@@ -531,6 +557,8 @@ class StageApp:
             "bindings": bindings,
             "pane_types": _pane_types_spec(),
             "prefix": self.PREFIX,
+            "keys": dict(self.KEYS),
+            "confirm_quit": bool(self.CONFIRM_QUIT),
         }
         if self.accent is not None:
             spec["accent"] = self.accent
@@ -552,6 +580,7 @@ class StageApp:
                 "wait for it to finish, or create a second instance",
             )
         self._widgets = {}
+        self._quitting = False
         spec = self._spec_json()
         core = _core.App(spec, cell)
         self._core = core
@@ -583,6 +612,7 @@ class StageApp:
         key, _id, name, raw = event
         value = json.loads(raw)
         if name == "quit":
+            self._quitting = True  # a headless Driver keeps running: it reads this
             return False
         if key is None:
             if name == "action":
@@ -610,14 +640,22 @@ class StageApp:
 
     def _pane_event(self, target: str, widget: _Widget | None, value: Mapping[str, Any]) -> None:
         """A pane switched type; build custom content when stagetui can't."""
-        from .harness import _build_pane_content
+        from .harness import _build_pane_content, _plain
 
         kind = str(value.get("type", ""))
         core = self._core
         if not value.get("built") and core is not None:
-            content = _build_pane_content(kind, dict(value.get("args") or {}))
+            args = dict(value.get("args") or {})
+            content = _build_pane_content(kind, args)
             self._bind(content)
-            core.pane_set(target, kind, json.dumps(content._spec(), ensure_ascii=False), False)
+            core.pane_set(
+                target,
+                kind,
+                json.dumps(content._spec(), ensure_ascii=False),
+                False,
+                # Kept with the pane, so a saved layout brings the options back.
+                json.dumps(_plain(args), ensure_ascii=False),
+            )
         if widget is not None:
             widget._content = kind
             handler = widget._handlers.get("pane")
@@ -652,22 +690,24 @@ class StageApp:
             )
         self._handle(_call(method))
 
-    def _handle(self, result: Any) -> None:
+    def _handle(self, result: Any) -> asyncio.Task[Any] | None:
         """Run an async handler's coroutine; plain results are ignored."""
         if not inspect.isawaitable(result):
-            return
+            return None
         loop = self._loop
         if loop is None:
-            return
+            return None
         task = loop.create_task(self._await(result))
         self._tasks.add(task)
 
         def done(t: asyncio.Task[Any]) -> None:
             self._tasks.discard(t)
+            self._background.discard(t)
             if not t.cancelled() and t.exception() is not None:
                 self._failure = t.exception()
 
         task.add_done_callback(done)
+        return task
 
     @staticmethod
     async def _await(result: Any) -> Any:
@@ -688,11 +728,16 @@ class StageApp:
             events = core.poll_events()
             for e in events:
                 self._dispatch(e)
-            if not self._tasks:
+            # Handlers get time to finish; background() work runs for as long as
+            # time passes (`wait` steps), never holding a step up.
+            pending = [t for t in self._tasks if t not in self._background]
+            if not pending:
+                if self._background:
+                    loop.run_until_complete(asyncio.sleep(0))  # what is ready runs now
+                    self._raise_failure()
                 if not events:
                     return
                 continue
-            pending = list(self._tasks)
             loop.run_until_complete(asyncio.wait(pending, timeout=_HEADLESS_TASK_BUDGET))
             self._raise_failure()
             if not events and all(not t.done() for t in pending):
@@ -746,6 +791,8 @@ class StageApp:
                 core.advance(step_ms)
                 core.render(cols, rows)
                 if self._loop is not None:
+                    if self._background:  # it runs on real time: give it this step's share
+                        self._loop.run_until_complete(asyncio.sleep(step_ms / 1000))
                     self._drain(self._loop)
                 remaining -= step_ms
         elif action == "wait_idle":
@@ -767,6 +814,11 @@ class Driver:
     Made by :meth:`StageApp.drive`. Every action runs the app's handlers and lets
     animations advance on a virtual clock, exactly like ``run_headless(steps=...)``.
     Used by ``stagetui drive``, ``stagetui mcp`` and the pytest plugin.
+
+    When the app quits (``q``, Ctrl+Space then ``q``, the last pane's ×,
+    ``app.exit()``), :attr:`has_quit` turns ``True`` and its shells and add-ons
+    stop: you can still look (``snapshot``, ``query``…) and ``wait`` does
+    nothing, but pressing, typing or clicking raises a :class:`StageError`.
     """
 
     def __init__(self, app: StageApp, size: tuple[int, int], cell: tuple[int, int]) -> None:
@@ -778,6 +830,7 @@ class Driver:
         self.loop = asyncio.new_event_loop()
         app._loop = self.loop
         self.closed = False
+        self._stopped_on_quit = False
         try:
             self._render()
             self.loop.run_until_complete(app._await(app.on_mount()))
@@ -790,12 +843,35 @@ class Driver:
         self.core.render(self.cols, self.rows)
         self.app._drain(self.loop)
         self.core.render(self.cols, self.rows)  # lay out what the handlers changed
+        if self.has_quit and not self._stopped_on_quit:
+            # Like a real run: once the app quits, its shells and add-ons stop.
+            self._stopped_on_quit = True
+            self.core.release()
 
     # ----- actions -------------------------------------------------------
+
+    @property
+    def has_quit(self) -> bool:
+        """``True`` once the app quit (``q``, the last pane's ×, ``app.exit()``…)."""
+        return self.app._quitting
+
+    @staticmethod
+    def _quit_error() -> _core.StageError:
+        return _error(
+            "The app has quit",
+            "it was asked to quit (q, Ctrl+Space then q, the last pane's ×, or app.exit()),"
+            " so there is nothing left to press or click",
+            "look at the last screen with snapshot(), or start the app again"
+            " (a new app.drive(), or restart `stagetui drive` / `stagetui mcp`)",
+        )
 
     def step(self, step: Step) -> None:
         """Run one step dict, e.g. ``{"press": "tab"}`` (see ``run_headless``)."""
         self._check()
+        if self.has_quit:
+            if isinstance(step, Mapping) and set(step) <= {"wait", "wait_idle"}:
+                return  # time passes, but an app that has quit does nothing
+            raise self._quit_error()
         self.cols, self.rows = self.app._step(self.core, step, self.cols, self.rows)
         self._render()
 
@@ -851,6 +927,10 @@ class Driver:
     def panes(self) -> list[dict[str, Any]]:
         return self.app.panes()
 
+    def keys(self) -> dict[str, Any]:
+        """Every key the app answers to (see :meth:`StageApp.keys`)."""
+        return self.app.keys()
+
     # ----- lifecycle -----------------------------------------------------
 
     def _check(self) -> None:
@@ -862,20 +942,27 @@ class Driver:
             )
 
     def close(self) -> None:
-        """Stop the app. Handlers still running are cancelled without touching it."""
+        """Stop the app. Handlers still running are cancelled without touching it,
+        and every program it started (shells, add-ons) stops now. Snapshots taken
+        before keep working (``png``, ``query``). Closing twice does nothing."""
         if self.closed:
             return
         self.closed = True
         app = self.app
         app._core = None
-        for t in app._tasks:
-            t.cancel()
-        if app._tasks:
-            self.loop.run_until_complete(asyncio.gather(*app._tasks, return_exceptions=True))
-        app._tasks.clear()
-        self.loop.close()
-        app._loop = None
-        app._headless = False
+        try:
+            for t in app._tasks:
+                t.cancel()
+            if app._tasks:
+                self.loop.run_until_complete(asyncio.gather(*app._tasks, return_exceptions=True))
+            app._tasks.clear()
+            app._background.clear()
+            self.loop.close()
+        finally:
+            app._loop = None
+            app._headless = False
+            # Shells and add-ons stop now, not whenever Python frees the app.
+            self.core.release()
 
     def __enter__(self) -> Self:
         return self

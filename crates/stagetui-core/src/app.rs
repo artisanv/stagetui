@@ -358,6 +358,11 @@ impl App {
                 "wait for it to finish before calling run() again",
             ));
         }
+        if local.is_some() {
+            // Messages printed now would land on the app's screen: keep them
+            // until the terminal is given back (see `stop`).
+            crate::text::fonts::hold_warnings(true);
+        }
         // Without a terminal of its own the session is required; with one it's a bonus.
         let registration = match serve.map(|s| {
             let registry = match &s.dir {
@@ -862,6 +867,7 @@ impl App {
             let _ = t.join();
         }
         self.running.store(false, Ordering::SeqCst);
+        crate::text::fonts::hold_warnings(false);
         match lock(&self.failure).take() {
             Some(e) => Err(e),
             None => Ok(()),

@@ -10,6 +10,9 @@ Read `termstage-SPEC-v8.0.md` first. It is the source of truth.
   - `layout.rs` taffy flex/grid → cell rects, scroll extents, split dividers, modals
   - `session.rs` state machine: focus, keys, mouse, scroll, drag, modals, toasts, motion, events
   - `input.rs` keys/mouse (crossterm + `"ctrl+s"` parsing); `motion.rs` effects on a clock
+  - `keymap.rs` named built-in keys (`ACTIONS`: quit, prefix, close_pane… with defaults), app `KEYS`,
+    the safety rules (`check`: a quit key, a prefix, one key one job), the person's `keys.json`
+    (`user_file` / `apply_user_file`: bad entries skipped + one toast), `stagetui keys` text
   - `app.rs` terminal runtime: input thread + dirty-driven render thread + event queue;
     local and remote windows (each its own `TerminalView`), accept loop for attaching windows
   - `ipc.rs` sessions: private runtime folder, token, framing, registry, `attach` client
@@ -65,6 +68,8 @@ python scripts/screenshots.py                  # README gallery pictures (docs/i
 ## Operating an app as an agent
 `stagetui mcp my_app.py` exposes the app as MCP tools (snapshot, press, type, click, …);
 `stagetui drive my_app.py` is the same over plain JSON-RPC. In Python: `with App().drive((100, 30)) as d: ...`.
+Keys may be renamed (`KEYS`, keys.json): ask with the `keys` tool / `d.keys()` / `stagetui keys app.py --json`
+before pressing `ctrl+space`, `q`…
 
 ## Sessions
 `stagetui start app.py -d` runs an app in the background (`STAGETUI_SERVE=1`); `stagetui sessions`,
@@ -99,3 +104,4 @@ snap.query("#chat")  # widget JSON: id, type, bounds, text, dir, theme, focused�
 | `STAGETUI_PLUGIN_PATH=dirs` | Extra folders with `stagetui-plugin-*` add-ons |
 | `STAGETUI_NO_PLUGINS=1` | Don't list add-ons in pane menus |
 | `STAGETUI_LAUNCHER="foot {cmd}"` | How pop-out pane windows are opened (default: same terminal family) |
+| `STAGETUI_KEYS=path` | A person's keys file (default `<config dir>/stagetui/keys.json`; headless runs read only this) |

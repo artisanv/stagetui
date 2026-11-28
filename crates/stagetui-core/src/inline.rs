@@ -62,6 +62,8 @@ fn card_session(text: &str, opts: &ShowOptions) -> Result<Session> {
         bindings: Vec::new(),
         reduce_motion: None,
         prefix: None,
+        keys: None,
+        confirm_quit: None,
         pane_types: Vec::new(),
         children: vec![NodeSpec {
             kind: "card".into(),

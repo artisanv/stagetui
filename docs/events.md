@@ -168,6 +168,10 @@ Each entry is `(key, action)` or `(key, action, description)`. stagetui calls
 
 **Built-in actions:** `quit`, `next_theme`, `focus_next`, `focus_previous`, `close_modal`.
 
+Your shortcuts come before stagetui's own keys: `("q", "save", "Save")` makes
+**q** save instead of quit. To move or turn off stagetui's keys themselves, use
+`KEYS` — see [Keys](keys.md).
+
 ## Keys and mouse that always work
 
 | Key / mouse | What it does |
@@ -185,3 +189,7 @@ Each entry is `(key, action)` or `(key, action, description)`. stagetui calls
 | Drag a split line | Resize panes |
 
 Hovering highlights what you can click.
+
+**Tab**, **Shift+Tab**, **Ctrl+PageUp / Ctrl+PageDown** and the quit keys (**q**,
+**Esc**, **Ctrl+C**) can be given other keys, or turned off: see [Keys](keys.md).
+`CONFIRM_QUIT = True` makes the app ask before it quits.

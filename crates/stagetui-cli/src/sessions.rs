@@ -314,12 +314,27 @@ pub fn plugins(json: bool) -> i32 {
             Err(e) => fail(&e.into()),
         };
     }
+    print_line(&plugins_text(&list))
+}
+
+/// The table `stagetui plugins` prints.
+fn plugins_text(list: &[stagetui_core::plugins::Report]) -> String {
     let mut out = String::from("Add-ons (pane types in their own program):\n");
-    for p in &list {
+    for p in list {
         let mark = if p.installed { "✓" } else { " " };
         let about = p.about.clone().unwrap_or_else(|| p.title.clone());
-        out.push_str(&format!("\n {mark} {:<8} {about}", p.name));
-        if !p.installed && !p.available {
+        if p.package.is_some() || p.broken.is_none() {
+            out.push_str(&format!("\n {mark} {:<8} {about}", p.name));
+        } else {
+            out.push_str(&format!("\n {mark} {}", p.name));
+        }
+        if let Some(b) = &p.broken {
+            out.push_str(&format!(
+                "\n            ⚠ found {} but it didn't answer: {}",
+                b.path, b.why
+            ));
+        }
+        if !p.installed && p.package.is_some() && !p.available {
             out.push_str("\n            coming soon");
         } else if !p.installed
             && let Some(pkg) = &p.package
@@ -331,7 +346,14 @@ pub fn plugins(json: bool) -> i32 {
         }
     }
     out.push_str("\n\nIn an app, picking one that isn't installed offers to install it.");
-    print_line(&out)
+    if list.iter().any(|p| p.broken.is_some()) {
+        out.push_str(
+            "\nAn add-on that didn't answer: run it with --describe to see the whole error. \
+             If it is a Python script, its first line (#!…) must start a Python where \
+             stagetui is installed.",
+        );
+    }
+    out
 }
 
 /// `stagetui plugins install <name>`
@@ -384,6 +406,37 @@ pub fn install_plugin(name: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugins_that_did_not_answer_are_shown() {
+        use stagetui_core::plugins::{BrokenReport, Report};
+        let why = "ModuleNotFoundError: No module named 'stagetui' مَرْحَبًا 日本語 नमस्ते";
+        let entry = |name: &str, package: Option<&str>| Report {
+            name: name.into(),
+            title: name.into(),
+            icon: None,
+            installed: false,
+            package: package.map(Into::into),
+            about: None,
+            path: None,
+            version: None,
+            available: package.is_some(),
+            broken: Some(BrokenReport {
+                path: format!("/opt/addons/stagetui-plugin-{name}"),
+                why: why.into(),
+            }),
+        };
+        let text = plugins_text(&[entry("pulse", None), entry("video", Some("stagetui-video"))]);
+        assert!(text.contains(&format!(
+            "⚠ found /opt/addons/stagetui-plugin-pulse but it didn't answer: {why}"
+        )));
+        assert!(text.contains("   pulse\n"), "{text}");
+        assert!(
+            text.contains("install: stagetui plugins install video"),
+            "an official one stays installable: {text}"
+        );
+        assert!(text.contains("--describe"), "{text}");
+    }
 
     #[test]
     fn friendly_ages_and_table() {

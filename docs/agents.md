@@ -44,9 +44,19 @@ The agent then has these tools:
 | `wait` | Let time pass (animations, live drawings) |
 | `query` | One widget's details by id |
 | `list_panes` / `set_pane_type` | See and switch [panes](panes.md) |
+| `keys` | Every key the app answers to — its built-in keys by name (an app or its user may have [moved them](keys.md)), its own shortcuts, and whether quitting asks first |
 | `workspace` / `load_workspace` / `save_workspace` | Read the layout of splits and panes, rearrange it (`layout: {...}` or `name`), save it ([workspaces](panes.md#save-a-layout-bring-it-back)) |
 
 Every action answers with the new screen, so the agent always sees the effect.
+
+When the app quits — the agent pressed `q`, Ctrl+Space then `q`, or clicked the
+last pane's × — that answer starts with **"The app has quit"** and carries
+`"quit": true`. After that only `snapshot` still answers (with the last screen);
+every other tool returns an error saying the app has quit. Start
+`stagetui mcp` again to go on.
+
+The app runs as if you had typed `python my_app.py`: `sys.argv` is
+`["my_app.py"]`, so an app that reads its own arguments gets none.
 
 ## drive: JSON messages for any program
 
@@ -58,8 +68,10 @@ echo '{"jsonrpc":"2.0","id":1,"method":"snapshot"}' | stagetui drive my_app.py
 ```
 
 Methods: `snapshot`, `press`, `type`, `click`, `drag`, `scroll`, `resize`, `wait`,
-`wait_idle`, `query`, `panes`, `set_pane_type`, `shutdown`. Their parameters are
+`wait_idle`, `query`, `panes`, `keys`, `set_pane_type`, `shutdown`. Their parameters are
 the same as the MCP tools above. Errors come back with `what`, `why` and `fix`.
+Once the app has quit, answers carry `"quit": true`, and every method but
+`snapshot` and `shutdown` returns the error "The app has quit".
 
 Anything your app prints goes to stderr, so it never mixes with the answers.
 
@@ -89,8 +101,27 @@ with Greeter().drive((60, 16)) as d:
 ```
 
 A driver has `press`, `type`, `click`, `drag`, `scroll`, `resize`, `wait`, `wait_idle`,
-`snapshot(png=False)`, `query(id)` and `panes()`. Time is virtual, so every run
+`snapshot(png=False)`, `query(id)`, `panes()` and `keys()`. Time is virtual, so every run
 gives the same result.
+
+When the `with` block ends, every shell and add-on the app started stops right
+away (so does `run_headless()` when it returns); the snapshots you took still
+work. If the app quits on the way — say a step pressed `q` — `d.has_quit` turns
+`True`:
+
+```python
+from stagetui import StageApp, StageCard
+
+
+class Hello(StageApp):
+    def compose(self):
+        return [StageCard("مَرْحَبًا Hello 日本語 नमस्ते")]
+
+
+with Hello().drive((60, 10)) as d:
+    d.press("q")
+    print(d.has_quit)  # True: you can still look (d.snapshot()), not press
+```
 
 ## Look at a running app
 

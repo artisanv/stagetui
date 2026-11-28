@@ -195,7 +195,16 @@ def test_mcp_protocol(app_file):
     init = by_id[1]["result"]
     assert init["serverInfo"]["name"] == "stagetui" and "tools" in init["capabilities"]
     names = {t["name"] for t in by_id[2]["result"]["tools"]}
-    assert {"snapshot", "press", "type", "click", "drag", "list_panes", "set_pane_type"} <= names
+    assert {
+        "snapshot",
+        "press",
+        "type",
+        "click",
+        "drag",
+        "list_panes",
+        "set_pane_type",
+        "keys",
+    } <= names
     for t in by_id[2]["result"]["tools"]:
         assert t["inputSchema"]["type"] == "object" and t["description"]
     assert "Hello, Ali!" in by_id[4]["result"]["content"][0]["text"]
@@ -205,6 +214,57 @@ def test_mcp_protocol(app_file):
     assert "markdown" in by_id[7]["result"]["content"][0]["text"]
     assert by_id[8]["result"] == {}
     assert len(replies) == 8, "the notification gets no reply"
+
+
+def test_agents_are_told_when_the_app_quits(app_file):
+    call = lambda id, name, args: {
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {"name": name, "arguments": args},
+    }
+    replies, _ = rpc(
+        "mcp",
+        app_file,
+        [
+            call(1, "type", {"text": ARABIC}),
+            call(2, "press", {"keys": ["ctrl+space", "q"]}),
+            call(3, "press", {"key": "tab"}),
+            call(4, "snapshot", {}),
+            call(5, "list_panes", {}),
+        ],
+    )
+    by_id = {r["id"]: r["result"] for r in replies}
+    assert "quit" not in json.dumps(by_id[1]), "running: nothing about quitting"
+    quit_reply = by_id[2]
+    assert quit_reply["isError"] is False
+    assert quit_reply["content"][0]["text"].startswith("The app has quit")
+    assert json.loads(quit_reply["content"][-1]["text"])["quit"] is True
+    for after in (by_id[3], by_id[5]):
+        assert after["isError"] is True
+        assert after["content"][0]["text"].startswith("The app has quit")
+    assert by_id[4]["isError"] is False, "the last screen can still be seen"
+    assert by_id[4]["content"][0]["text"].startswith("The app has quit")
+    assert ARABIC in by_id[4]["content"][1]["text"]
+
+    replies, _ = rpc(
+        "drive",
+        app_file,
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "press", "params": {"key": "ctrl+space"}},
+            {"jsonrpc": "2.0", "id": 2, "method": "press", "params": {"key": "q"}},
+            {"jsonrpc": "2.0", "id": 3, "method": "type", "params": {"text": ARABIC}},
+            {"jsonrpc": "2.0", "id": 4, "method": "snapshot"},
+            {"jsonrpc": "2.0", "id": 5, "method": "shutdown"},
+        ],
+    )
+    by_id = {r["id"]: r for r in replies}
+    assert "quit" not in by_id[1]["result"]
+    assert by_id[2]["result"]["quit"] is True
+    assert by_id[3]["error"]["message"] == "The app has quit"
+    assert by_id[3]["error"]["data"]["quit"] is True and by_id[3]["error"]["data"]["fix"]
+    assert by_id[4]["result"]["quit"] is True and by_id[4]["result"]["text"]
+    assert by_id[5]["result"] == {}
 
 
 def test_cli_drive_hands_over_to_python(app_file):

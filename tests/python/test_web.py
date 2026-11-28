@@ -20,7 +20,12 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Test مرحبا</title>
   Click me</button>
 <input id=i style="position:absolute;left:0;top:128px;width:320px;height:64px;font-size:20px">
 <div id=out style="position:absolute;left:0;top:224px">waiting</div>
+<input id=j style="position:absolute;left:0;top:288px;width:320px;height:64px;font-size:20px">
 <div style="height:4000px"></div>
+<script>
+window.keys = [];
+addEventListener('keydown', (e) => keys.push((e.ctrlKey ? 'ctrl+' : '') + e.key));
+</script>
 """
 
 SECOND = "<!doctype html><meta charset=utf-8><title>Second page</title><h1>Two</h1>"
@@ -101,10 +106,23 @@ def test_a_real_page_clicks_types_navigates_and_scrolls(pages: tuple[Path, Path]
         d.click((b["x"] + 2, b["y"] + 1))  # a cell inside the 320x96 px button
         assert until(d, lambda: js("document.getElementById('out').textContent") == "clicked 1")
 
-        # Click the text box and type — any language.
+        # Click the text box and type — any language. The keys are real key presses:
+        # the page's keydown listener hears them.
         d.click((b["x"] + 2, b["y"] + 4))  # 128..192 px down: row 4 (cells are 32 px)
-        d.type("hello مرحبا 日本語")
-        assert until(d, lambda: js("document.getElementById('i').value") == "hello مرحبا 日本語")
+        typed = "hello مَرْحَبًا 日本語 नमस्ते"
+        d.type(typed)
+        assert until(d, lambda: js("document.getElementById('i').value") == typed)
+        assert js("keys.slice(0, 5).join('')") == "hello"
+
+        # Tab goes to the next field, Shift+Tab back; Esc reaches the page.
+        d.press("tab")
+        assert until(d, lambda: js("document.activeElement.id") == "j")
+        d.type("x")
+        assert until(d, lambda: js("document.getElementById('j').value") == "x")
+        d.press("shift+tab")
+        assert until(d, lambda: js("document.activeElement.id") == "i")
+        d.press("esc")
+        assert until(d, lambda: "Escape" in js("keys"))
 
         # The wheel scrolls the page.
         d.scroll(5, target="#w")
@@ -130,7 +148,12 @@ def test_the_address_line(pages: tuple[Path, Path]) -> None:
     with Browser().drive((100, 30)) as d:
         web = d.app.query("#w").content
         assert until(d, lambda: web.call("state")["title"] == "Test مرحبا")
+        status = lambda: d.query("#w")["children"][0]["status"] or ""
         d.click("#w")
+        d.press("ctrl+l")
+        assert until(d, lambda: "Go to:" in status())
+        d.press("esc")  # never mind
+        assert until(d, lambda: "Go to:" not in status())
         d.press("ctrl+l")
         d.type(str(two))
         assert until(d, lambda: "Go to:" in (d.query("#w")["children"][0]["status"] or ""))
@@ -138,3 +161,27 @@ def test_the_address_line(pages: tuple[Path, Path]) -> None:
         assert until(d, lambda: web.call("state")["title"] == "Second page")
         state = json.dumps(web.call("state"), ensure_ascii=False)
         assert "two.html" in state
+
+
+def test_its_keys_can_be_renamed_or_turned_off(pages: tuple[Path, Path]) -> None:
+    one, _ = pages
+
+    class Browser(StageApp):
+        def compose(self):
+            keys = {"address": "ctrl+o", "reload": None}
+            return [StagePane("web", id="w", path=str(one), keys=keys)]
+
+    with Browser().drive((100, 30)) as d:
+        web = d.app.query("#w").content
+        status = lambda: d.query("#w")["children"][0]["status"] or ""
+        assert until(d, lambda: web.call("state")["title"] == "Test مرحبا")
+        assert until(d, lambda: "ctrl+o address" in status()), status()
+        assert "reload" not in status()
+        d.click("#w")
+        d.press("ctrl+l")  # renamed away: it is the page's now
+        assert until(d, lambda: "ctrl+l" in web.call("evaluate", "keys"))
+        assert "Go to:" not in status()
+        d.press("ctrl+o")
+        assert until(d, lambda: "Go to:" in status())
+        d.press("esc")
+        assert until(d, lambda: "Go to:" not in status())

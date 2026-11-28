@@ -14,7 +14,7 @@ keywords = ["tui", "terminal", "blender", "panes", "agents", "kitty", "sixel", "
 # Zero runtime dependencies: everything lives in the Rust extension.
 dependencies = []
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
@@ -31,9 +31,9 @@ classifiers = [
 
 [project.optional-dependencies]
 # Add-ons: `pip install "stagetui[video]"`, `"stagetui[web]"`, `"stagetui[3d]"`.
-video = ["stagetui-video>=0.1.0a7"]
-web = ["stagetui-web>=0.1.0a7"]
-3d = ["stagetui-3d>=0.1.0a7"]
+video = ["stagetui-video>=1.0.0"]
+web = ["stagetui-web>=1.0.0"]
+3d = ["stagetui-3d>=1.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/artisanv/stagetui"

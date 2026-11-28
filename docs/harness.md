@@ -74,8 +74,8 @@ StagePrompt(
 | **Enter** | Send (`on_submit(text)`), then the box empties |
 | **Shift+Enter**, **Alt+Enter**, **Ctrl+J** | New line |
 | **↑ / ↓** (on the first / last line) | Previous / next thing you sent |
-| **/** at the start | Commands list — **Tab** or **Enter** picks one |
-| **@** | File list — keep typing to narrow it down |
+| **/** at the start | Commands list — **Tab** or **Enter** picks one. Typed a whole command (`/help`)? **Enter** sends it straight away |
+| **@** | File list — keep typing to narrow it down, then **Tab** or **Enter** picks one |
 | **Ctrl+U** / **Ctrl+W** | Clear everything / delete a word |
 
 ## Tool calls: `StageToolCall`
@@ -98,7 +98,8 @@ class Tools(StageApp):
 Tools().run()
 ```
 
-Click a tool call (or select it and press Enter) to see its arguments and output.
+Click a tool call (or select it and press Enter) to see its arguments and output;
+click it again to fold it away.
 `StageToolCall("bash", args={...})` is the same card on its own, outside a chat.
 
 ## Asking first: `ask_permission`
@@ -201,7 +202,10 @@ shell.send("pytest -q\n")  # type into it from code
 print(shell.screen)  # what it shows right now, as text
 ```
 
-The program stops when your app exits — even if your app crashes.
+The program stops when your app exits — even if your app crashes. When it ends,
+the pane says so; press **Enter** in it to start it again. If it can't start at all
+(say the program isn't installed), the pane tells you why and what to do, and
+**Enter** tries again.
 
 ## Putting it together
 

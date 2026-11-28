@@ -221,6 +221,16 @@ fn fps() -> u32 {
     30
 }
 
+/// `#rrggbb` → bytes.
+fn rgb(hex: &str) -> Option<[u8; 3]> {
+    let s = hex.trim().trim_start_matches('#');
+    if s.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(s, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
 impl Default for Ready {
     fn default() -> Self {
         Self {
@@ -229,6 +239,536 @@ impl Default for Ready {
             fps: fps(),
         }
     }
+}
+
+// ----- keys the app can rename ------------------------------------------------
+
+/// Something a key does in a plugin, with the keys it has unless the app says
+/// otherwise: `KeyAction { name: "wires", keys: &["w"], about: "show the edges" }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyAction {
+    /// What the app writes in `keys={...}`, e.g. `"wires"` (snake_case).
+    pub name: &'static str,
+    /// Its keys, as stagetui names them: `"w"`, `"space"`, `"shift+left"`, `"ctrl+s"`, `"+"`.
+    pub keys: &'static [&'static str],
+    /// What it does, in a few words (for help and docs).
+    pub about: &'static str,
+}
+
+/// A plugin's keys after the app's changes. The app writes
+/// `StagePane("3d", keys={"wires": "x", "grid": None, "spin": ["s", "space"]})`:
+/// an action name, then one key, a list of keys, or `None` to turn it off.
+///
+/// ```
+/// use stagetui_plugin_api::{KeyAction, Keymap};
+/// use serde_json::json;
+///
+/// const ACTIONS: &[KeyAction] = &[
+///     KeyAction { name: "spin", keys: &["space"], about: "spin or stop" },
+///     KeyAction { name: "wires", keys: &["w"], about: "show the edges" },
+/// ];
+/// let keys = Keymap::new(ACTIONS, &json!({"keys": {"wires": "x"}})).unwrap();
+/// assert_eq!(keys.action("x"), Some("wires"));
+/// assert_eq!(keys.action("w"), None);
+/// assert_eq!(keys.all_keys(), ["space", "x"]); // for `Ready.keys`
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Keymap {
+    /// Each action (in the plugin's order) and its keys, written like `key_name`.
+    actions: Vec<(&'static str, Vec<String>)>,
+}
+
+impl Keymap {
+    /// The plugin's `actions`, changed by the app's `args["keys"]` (if any).
+    /// The error says what is wrong in words the app's author can act on: a
+    /// name that isn't an action (the real ones are listed), a key stagetui
+    /// doesn't know, or one key given to two actions.
+    pub fn new(actions: &[KeyAction], args: &Value) -> Result<Keymap, String> {
+        let mut map: Vec<(&'static str, Vec<String>)> = actions
+            .iter()
+            .map(|a| {
+                let keys = a
+                    .keys
+                    .iter()
+                    .map(|k| key_name(k).unwrap_or_else(|| k.to_lowercase()))
+                    .collect();
+                (a.name, keys)
+            })
+            .collect();
+        let names = || {
+            actions
+                .iter()
+                .map(|a| a.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match args.get("keys") {
+            None | Some(Value::Null) => {}
+            Some(Value::Object(given)) => {
+                for (name, value) in given {
+                    let Some(slot) = map.iter_mut().find(|(n, _)| n == name) else {
+                        return Err(format!(
+                            "keys= names \"{name}\", but there is no action by that name; \
+                             the actions are: {}",
+                            names()
+                        ));
+                    };
+                    slot.1 = given_keys(name, value)?;
+                }
+            }
+            Some(other) => {
+                return Err(format!(
+                    "keys= should name actions and their keys, like keys={{\"{}\": \"x\"}}, \
+                     not {other}; the actions are: {}",
+                    actions.first().map_or("name", |a| a.name),
+                    names()
+                ));
+            }
+        }
+        for slot in &mut map {
+            let mut seen = Vec::new();
+            slot.1.retain(|k| {
+                let new = !seen.contains(k);
+                seen.push(k.clone());
+                new
+            });
+        }
+        for (i, (first, keys)) in map.iter().enumerate() {
+            for key in keys {
+                if let Some((second, _)) = map[i + 1..].iter().find(|(_, ks)| ks.contains(key)) {
+                    return Err(format!(
+                        "\"{key}\" is given to both \"{first}\" and \"{second}\"; give one of \
+                         them another key (keys={{\"{second}\": \"…\"}}) or turn it off \
+                         (keys={{\"{second}\": None}})"
+                    ));
+                }
+            }
+        }
+        Ok(Keymap { actions: map })
+    }
+
+    /// The action a key does (`None`: none, or it was turned off). `key` is a
+    /// key as stagetui sends it (`"space"`, `"shift+left"`, `"shift+w"`).
+    pub fn action(&self, key: &str) -> Option<&'static str> {
+        let key = key_name(key).unwrap_or_else(|| key.to_lowercase());
+        self.actions
+            .iter()
+            .find(|(_, keys)| keys.contains(&key))
+            .map(|(name, _)| *name)
+    }
+
+    /// The keys an action has now (empty: turned off, or no such action).
+    pub fn keys(&self, action: &str) -> &[String] {
+        self.actions
+            .iter()
+            .find(|(name, _)| *name == action)
+            .map_or(&[], |(_, keys)| keys.as_slice())
+    }
+
+    /// The action's first key, short for a status line (`"x"`, `"space"`, arrows as
+    /// `← → ↑ ↓`, `"shift+←"`); `None` when the action is off.
+    pub fn label(&self, action: &str) -> Option<String> {
+        self.keys(action).first().map(|k| short(k))
+    }
+
+    /// The action's first key written for a sentence, the way stagetui shows
+    /// keys (`"Enter"`, `"Ctrl+O"`, `"Shift+←"`, `"o"`): "press Enter to …".
+    /// `None` when the action is off.
+    pub fn spoken(&self, action: &str) -> Option<String> {
+        self.keys(action).first().map(|k| spoken(k))
+    }
+
+    /// Every key of every action, for `Ready.keys` (so stagetui sends them on).
+    pub fn all_keys(&self) -> Vec<String> {
+        self.actions
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().cloned())
+            .collect()
+    }
+}
+
+/// The keys the app gave one action: `"x"`, `["s", "space"]`, or `None` / `[]` (off).
+fn given_keys(action: &str, value: &Value) -> Result<Vec<String>, String> {
+    let one = |v: &Value| -> Result<String, String> {
+        let text = v.as_str().ok_or_else(|| {
+            format!(
+                "keys={{\"{action}\": {value}}}: give a key like \"x\", \"space\" or \"ctrl+s\", \
+                 a list of keys, or None to turn it off"
+            )
+        })?;
+        key_name(text).ok_or_else(|| {
+            format!(
+                "\"{text}\" (for \"{action}\") isn't a key stagetui knows; keys are written \
+                 like \"x\", \"space\", \"ctrl+s\", \"shift+left\", \"f5\" or \"+\""
+            )
+        })
+    };
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(items) => items.iter().map(one).collect(),
+        v => Ok(vec![one(v)?]),
+    }
+}
+
+/// Key names stagetui understands, and the name it sends for each.
+const KEY_NAMES: [(&str, &str); 30] = [
+    ("enter", "enter"),
+    ("return", "enter"),
+    ("escape", "esc"),
+    ("esc", "esc"),
+    ("tab", "tab"),
+    ("backspace", "backspace"),
+    ("delete", "delete"),
+    ("del", "delete"),
+    ("insert", "insert"),
+    ("up", "up"),
+    ("down", "down"),
+    ("left", "left"),
+    ("right", "right"),
+    ("home", "home"),
+    ("end", "end"),
+    ("pageup", "pageup"),
+    ("page_up", "pageup"),
+    ("pagedown", "pagedown"),
+    ("page_down", "pagedown"),
+    ("space", "space"),
+    ("backslash", "\\"),
+    ("slash", "/"),
+    ("comma", ","),
+    ("period", "."),
+    ("minus", "-"),
+    ("plus", "+"),
+    ("equals", "="),
+    ("semicolon", ";"),
+    ("left_bracket", "["),
+    ("right_bracket", "]"),
+];
+
+/// A key written the way stagetui names the keys it sends a plugin
+/// (`"Ctrl+s"` → `"ctrl+s"`, `"shift+ctrl+left"` → `"ctrl+shift+left"`,
+/// `"plus"` → `"+"`, `"Escape"` → `"esc"`); `None` if it isn't a key. As in an
+/// app's `BINDINGS`, a capital letter means Shift: `"W"` is `"shift+w"`.
+pub fn key_name(text: &str) -> Option<String> {
+    let lower = text.trim().to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    // A lone "+" is the plus key; otherwise "+" joins the parts.
+    let parts: Vec<&str> = if lower == "+" {
+        vec!["+"]
+    } else if let Some(head) = lower.strip_suffix("++") {
+        head.split('+').chain(std::iter::once("+")).collect()
+    } else {
+        lower.split('+').collect()
+    };
+    let (last, held) = parts.split_last()?;
+    let (mut ctrl, mut alt, mut sup, mut shift) = (false, false, false, false);
+    for m in held {
+        match *m {
+            "ctrl" | "control" => ctrl = true,
+            "alt" | "option" | "meta" => alt = true,
+            "super" | "cmd" | "win" => sup = true,
+            "shift" => shift = true,
+            _ => return None,
+        }
+    }
+    let base = if let Some((_, name)) = KEY_NAMES.iter().find(|(n, _)| n == last) {
+        (*name).to_string()
+    } else if let Some(n) = last.strip_prefix('f').and_then(|n| n.parse::<u8>().ok()) {
+        if !(1..=24).contains(&n) {
+            return None;
+        }
+        format!("f{n}")
+    } else {
+        let mut chars = last.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => {
+                if text.trim().chars().last().is_some_and(char::is_uppercase) {
+                    // "W" is Shift+W, like stagetui reads it everywhere.
+                    shift = true;
+                } else if !c.is_alphabetic() && c != ' ' {
+                    // Symbols say shift already ("?", "+"): stagetui never adds it.
+                    shift = false;
+                }
+                c.to_string()
+            }
+            _ => return None,
+        }
+    };
+    let mut name = String::new();
+    for (on, m) in [
+        (ctrl, "ctrl+"),
+        (alt, "alt+"),
+        (sup, "super+"),
+        (shift, "shift+"),
+    ] {
+        if on {
+            name.push_str(m);
+        }
+    }
+    name.push_str(&base);
+    Some(name)
+}
+
+/// `"shift+left"` → `"shift+←"`; other keys stay as they are.
+fn short(key: &str) -> String {
+    let (held, base) = if key == "+" {
+        ("", "+")
+    } else if let Some(head) = key.strip_suffix("++") {
+        (&key[..head.len() + 1], "+")
+    } else {
+        key.rsplit_once('+')
+            .map_or(("", key), |(h, b)| (&key[..h.len() + 1], b))
+    };
+    let base = match base {
+        "left" => "←",
+        "right" => "→",
+        "up" => "↑",
+        "down" => "↓",
+        other => other,
+    };
+    format!("{held}{base}")
+}
+
+/// `"ctrl+o"` → `"Ctrl+O"`, `"enter"` → `"Enter"`, `"shift+left"` → `"Shift+←"`.
+fn spoken(key: &str) -> String {
+    let (held, base) = if key == "+" {
+        ("", "+")
+    } else if let Some(head) = key.strip_suffix("++") {
+        (head, "+")
+    } else {
+        key.rsplit_once('+').unwrap_or(("", key))
+    };
+    let mut out = String::new();
+    for m in held.split('+').filter(|m| !m.is_empty()) {
+        let mut c = m.chars();
+        out.extend(c.next().map(|f| f.to_ascii_uppercase()));
+        out.push_str(c.as_str());
+        out.push('+');
+    }
+    let named = [
+        ("space", "Space"),
+        ("enter", "Enter"),
+        ("esc", "Esc"),
+        ("tab", "Tab"),
+        ("backspace", "Backspace"),
+        ("delete", "Del"),
+        ("insert", "Ins"),
+        ("up", "↑"),
+        ("down", "↓"),
+        ("left", "←"),
+        ("right", "→"),
+        ("home", "Home"),
+        ("end", "End"),
+        ("pageup", "PgUp"),
+        ("pagedown", "PgDn"),
+    ];
+    if let Some((_, name)) = named.iter().find(|(n, _)| *n == base) {
+        out.push_str(name);
+    } else if base.len() > 1 && base.starts_with('f') {
+        out.push('F');
+        out.push_str(&base[1..]);
+    } else if held.contains("ctrl") || held.contains("alt") {
+        out.push_str(&base.to_uppercase());
+    } else {
+        out.push_str(base);
+    }
+    out
+}
+
+// ----- typing a file's path in the pane ----------------------------------------
+
+/// What a key did to a [`PathLine`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Typed {
+    /// The line changed (or the key wasn't for it): nothing to do yet.
+    Editing,
+    /// Enter: open this. `~` is already the home folder, and quotes around a
+    /// dragged-in path are taken off. If it can't be opened, call
+    /// [`PathLine::fail`]: the line stays open and says why.
+    Open(String),
+    /// Esc: the line closed.
+    Closed,
+}
+
+/// A line at the bottom of the pane for typing a file's path, like a web
+/// browser's address bar: type (any language) or paste, Backspace, Ctrl+U clears,
+/// Tab completes a file name, `~` is the home folder, Enter opens, Esc closes.
+///
+/// While it is open the plugin needs every key: return [`PathLine::ready`] from
+/// [`PaneSource::ready`], and your usual `Ready` again once it closes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PathLine {
+    open: bool,
+    text: String,
+    problem: Option<String>,
+}
+
+impl PathLine {
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    /// Open the line with `text` already typed (`""`, a folder, the last path).
+    pub fn open(&mut self, text: &str) {
+        self.open = true;
+        self.text = text.to_string();
+        self.problem = None;
+    }
+
+    pub fn close(&mut self) {
+        self.open = false;
+        self.problem = None;
+    }
+
+    /// What is typed so far.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Opening what was typed failed: say why on the line, and keep it open.
+    pub fn fail(&mut self, why: impl Into<String>) {
+        self.problem = Some(why.into());
+    }
+
+    /// A key while the line is open (as `PaneSource::key` gets it).
+    pub fn key(&mut self, key: &str, text: Option<&str>) -> Typed {
+        if !self.open {
+            return Typed::Closed;
+        }
+        match key {
+            "enter" => {
+                let path = expand_home(&unquote(self.text.trim()));
+                if path.is_empty() {
+                    self.problem = Some("type a file's path first".into());
+                    return Typed::Editing;
+                }
+                return Typed::Open(path);
+            }
+            "esc" => {
+                self.close();
+                return Typed::Closed;
+            }
+            "backspace" => {
+                self.text.pop();
+            }
+            "ctrl+u" => self.text.clear(),
+            "tab" => self.text = complete(&self.text),
+            _ => match text {
+                // A capital arrives as "shift+h" (older stagetui sent the text "h").
+                Some(t) if key.starts_with("shift+") => self.text.push_str(&t.to_uppercase()),
+                Some(t) => self.text.push_str(t),
+                None => return Typed::Editing,
+            },
+        }
+        self.problem = None;
+        Typed::Editing
+    }
+
+    /// Pasted (or dragged-in) text goes on the line (its first line only).
+    pub fn paste(&mut self, text: &str) {
+        if self.open {
+            self.text
+                .push_str(text.lines().find(|l| !l.trim().is_empty()).unwrap_or(""));
+            self.problem = None;
+        }
+    }
+
+    /// The status line while it is open: `"Open a model: ~/robot.glb█ · …"`.
+    pub fn status(&self, what: &str) -> String {
+        let mut line = format!("{what}: {}█", self.text);
+        if let Some(p) = &self.problem {
+            line.push_str(&format!(" · ⚠ {p}"));
+        }
+        line.push_str(" · Enter open · Tab complete · Esc cancel");
+        line
+    }
+
+    /// What the plugin wants while the line is open: every key (Tab and Esc too).
+    pub fn ready(&self, fps: u32) -> Ready {
+        Ready {
+            keys: vec!["esc".into(), "tab".into()],
+            text: true,
+            fps,
+        }
+    }
+}
+
+fn home() -> Option<std::path::PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// `~/models/a.glb` → `/home/you/models/a.glb`; anything else stays as it is.
+pub fn expand_home(path: &str) -> String {
+    let rest = path.strip_prefix('~');
+    match (rest, home()) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            format!("{}{rest}", home.display())
+        }
+        _ => path.to_string(),
+    }
+}
+
+/// `'/a b/c.glb'` → `/a b/c.glb`; `/a\ b/c.glb` → `/a b/c.glb` (how terminals paste
+/// a dragged-in file).
+fn unquote(text: &str) -> String {
+    for q in ['\'', '"'] {
+        if text.len() >= 2 && text.starts_with(q) && text.ends_with(q) {
+            return text[1..text.len() - 1].to_string();
+        }
+    }
+    if cfg!(windows) {
+        text.to_string()
+    } else {
+        text.replace("\\ ", " ")
+    }
+}
+
+/// Tab: finish the file name being typed — all of it when one file fits, as
+/// much as they share when several do. Folders get a `/`.
+fn complete(typed: &str) -> String {
+    if typed == "~" {
+        return format!("~{}", std::path::MAIN_SEPARATOR);
+    }
+    let full = expand_home(typed);
+    let cut = full
+        .rfind(['/', std::path::MAIN_SEPARATOR])
+        .map_or(0, |i| i + 1);
+    let (dir, start) = full.split_at(cut);
+    if !typed.ends_with(start) {
+        return typed.to_string();
+    }
+    let Ok(entries) = std::fs::read_dir(if dir.is_empty() { "." } else { dir }) else {
+        return typed.to_string();
+    };
+    let mut found: Vec<(String, bool)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let hidden = name.starts_with('.') && !start.starts_with('.');
+            (name.starts_with(start) && !hidden).then(|| (name, e.path().is_dir()))
+        })
+        .collect();
+    found.sort();
+    let Some((first, is_dir)) = found.first() else {
+        return typed.to_string();
+    };
+    let mut shared = first.clone();
+    for (other, _) in &found[1..] {
+        let same = shared
+            .char_indices()
+            .zip(other.chars())
+            .find(|((_, a), b)| a != b)
+            .map_or(shared.len().min(other.len()), |((i, _), _)| i);
+        shared.truncate(same);
+    }
+    if found.len() == 1 && *is_dir {
+        shared.push(std::path::MAIN_SEPARATOR);
+    }
+    // Keep what was typed before the name (e.g. "~/"), finish the name.
+    format!("{}{shared}", &typed[..typed.len() - start.len()])
 }
 
 /// One picture.
@@ -241,6 +781,30 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// A quiet picture for a pane with nothing to show yet: the theme's
+    /// background with a dashed square and a "+" in the middle.
+    pub fn placeholder(width: u32, height: u32, theme: &Theme) -> Self {
+        let bg = rgb(&theme.bg).unwrap_or([26, 27, 38]);
+        let fg = rgb(&theme.fg).unwrap_or([192, 202, 245]);
+        let ink: [u8; 3] =
+            std::array::from_fn(|i| ((u16::from(fg[i]) * 2 + u16::from(bg[i]) * 3) / 5) as u8);
+        let (w, h) = (width.max(1), height.max(1));
+        let half = (w.min(h) as f32 * 0.2).max(4.0);
+        let t = (half / 20.0).max(1.0);
+        let dash = half / 4.0;
+        let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+        Self::from_fn(w, h, |x, y| {
+            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+            let (ax, ay) = (dx.abs(), dy.abs());
+            let dashed = |along: f32| ((along + half) / dash).floor() as i32 % 2 == 0;
+            let side = (ax - half).abs() <= t && ay <= half + t && dashed(dy);
+            let top = (ay - half).abs() <= t && ax <= half + t && dashed(dx);
+            let plus = (ax <= t && ay <= half * 0.4) || (ay <= t && ax <= half * 0.4);
+            let c = if side || top || plus { ink } else { bg };
+            [c[0], c[1], c[2], 255]
+        })
+    }
+
     /// A frame where `color(x, y)` gives each pixel's RGBA.
     pub fn from_fn(width: u32, height: u32, color: impl Fn(u32, u32) -> [u8; 4]) -> Self {
         let mut rgba = Vec::with_capacity((width * height * 4) as usize);
@@ -363,6 +927,13 @@ pub trait PaneSource {
 
     /// Status line text, checked after every message and frame (`None`: unchanged).
     fn status(&mut self) -> Option<String> {
+        None
+    }
+
+    /// What the plugin wants changed while it runs, checked after every message
+    /// and frame (`None`: unchanged) — e.g. every key while a [`PathLine`] is
+    /// open, then its usual keys again.
+    fn ready(&mut self) -> Option<Ready> {
         None
     }
 
@@ -498,6 +1069,10 @@ fn run<S: PaneSource>(mut source: S, rx: mpsc::Receiver<ToPlugin>, out: &mut imp
             }
         };
         let mut talk = || -> io::Result<()> {
+            if started && let Some(ready) = source.ready() {
+                every = Duration::from_secs_f64(1.0 / f64::from(ready.fps.clamp(1, 120)));
+                write_json(out, &FromPlugin::Ready(ready))?;
+            }
             if let Some(text) = source.status() {
                 write_json(out, &FromPlugin::Status { text })?;
             }
@@ -588,6 +1163,378 @@ mod tests {
         // A message this version doesn't know fails to read, and `serve` skips it:
         // that is how plugins built before `shown` ignore it.
         assert!(serde_json::from_str::<ToPlugin>(r#"{"t":"someday","x":1}"#).is_err());
+    }
+
+    const ACTIONS: &[KeyAction] = &[
+        KeyAction {
+            name: "spin",
+            keys: &["space"],
+            about: "spin or stop",
+        },
+        KeyAction {
+            name: "zoom_in",
+            keys: &["+", "="],
+            about: "closer",
+        },
+        KeyAction {
+            name: "back",
+            keys: &["shift+left"],
+            about: "back 30 s",
+        },
+        KeyAction {
+            name: "wires",
+            keys: &["w"],
+            about: "show the edges",
+        },
+        KeyAction {
+            name: "grid",
+            keys: &["g"],
+            about: "the floor grid",
+        },
+    ];
+
+    fn keymap(keys: Value) -> Result<Keymap, String> {
+        Keymap::new(
+            ACTIONS,
+            &serde_json::json!({ "path": "a.glb", "keys": keys }),
+        )
+    }
+
+    #[test]
+    fn keymap_defaults_rename_and_turn_off() {
+        let plain = Keymap::new(ACTIONS, &Value::Null).unwrap();
+        assert_eq!(
+            plain,
+            keymap(Value::Null).unwrap(),
+            "no keys= means the defaults"
+        );
+        assert_eq!(plain.action("space"), Some("spin"));
+        assert_eq!(plain.action("="), Some("zoom_in"));
+        assert_eq!(plain.keys("zoom_in"), ["+", "="]);
+        assert_eq!(
+            plain.all_keys(),
+            ["space", "+", "=", "shift+left", "w", "g"]
+        );
+
+        let k = keymap(serde_json::json!({"wires": "x", "grid": null, "spin": ["s", "space"]}))
+            .unwrap();
+        assert_eq!(k.action("x"), Some("wires"));
+        assert_eq!(k.action("w"), None, "the old key does nothing now");
+        assert_eq!(k.action("g"), None);
+        assert!(
+            k.keys("grid").is_empty() && k.label("grid").is_none(),
+            "off"
+        );
+        assert_eq!(k.keys("spin"), ["s", "space"]);
+        assert_eq!(k.label("spin").as_deref(), Some("s"), "the first key");
+        assert_eq!(k.all_keys(), ["s", "space", "+", "=", "shift+left", "x"]);
+        assert!(
+            keymap(serde_json::json!({"zoom_in": []}))
+                .unwrap()
+                .keys("zoom_in")
+                .is_empty()
+        );
+        assert!(k.keys("explode").is_empty() && k.label("explode").is_none());
+    }
+
+    #[test]
+    fn keymap_names_keys_like_stagetui() {
+        // Modifier order and other names for the same key don't matter; as in
+        // BINDINGS, a capital letter means Shift.
+        let k = keymap(serde_json::json!({
+            "wires": "Ctrl+w", "grid": "shift+ctrl+g", "zoom_in": "plus", "spin": "Escape",
+            "back": ["SHIFT+LEFT", "J"]
+        }))
+        .unwrap();
+        assert_eq!(k.keys("wires"), ["ctrl+w"]);
+        assert_eq!(k.action("ctrl+w"), Some("wires"));
+        assert_eq!(k.keys("grid"), ["ctrl+shift+g"]);
+        assert_eq!(k.keys("back"), ["shift+left", "shift+j"]);
+        assert_eq!(k.action("shift+j"), Some("back"));
+        assert_eq!(k.action("j"), None, "plain j is another key");
+        assert_eq!(k.keys("zoom_in"), ["+"]);
+        assert_eq!(k.keys("spin"), ["esc"]);
+        assert_eq!(k.label("back").as_deref(), Some("shift+←"));
+        for (written, named) in [
+            ("+", "+"),
+            ("ctrl++", "ctrl++"),
+            ("shift+?", "?"),
+            ("shift+space", "shift+space"),
+            ("F5", "f5"),
+            ("page_down", "pagedown"),
+            ("option+left", "alt+left"),
+            ("cmd+shift+alt+ctrl+k", "ctrl+alt+super+shift+k"),
+            ("W", "shift+w"),
+            ("Ctrl+S", "ctrl+shift+s"),
+            ("shift+w", "shift+w"),
+            ("ENTER", "enter"),
+            ("Ж", "shift+ж"),
+            // Keys on other keyboards: Arabic, Japanese, Devanagari.
+            ("ب", "ب"),
+            ("ctrl+あ", "ctrl+あ"),
+            ("क", "क"),
+        ] {
+            assert_eq!(key_name(written).as_deref(), Some(named), "{written}");
+            // What stagetui sends reads back the same.
+            assert_eq!(key_name(named).as_deref(), Some(named), "{named}");
+        }
+        for bad in ["", "  ", "ctrl+", "hyper+x", "banana", "f25", "f0"] {
+            assert_eq!(key_name(bad), None, "{bad:?}");
+        }
+        assert_eq!(short("left"), "←");
+        assert_eq!(short("ctrl++"), "ctrl++");
+        assert_eq!(short("alt+right"), "alt+→");
+        assert_eq!(short("+"), "+");
+        for (key, said) in [
+            ("enter", "Enter"),
+            ("o", "o"),
+            ("ctrl+o", "Ctrl+O"),
+            ("shift+left", "Shift+←"),
+            ("ctrl++", "Ctrl++"),
+            ("f5", "F5"),
+            ("space", "Space"),
+            ("f", "f"),
+        ] {
+            assert_eq!(spoken(key), said, "{key}");
+        }
+        assert_eq!(k.spoken("back").as_deref(), Some("Shift+←"));
+    }
+
+    #[test]
+    fn keymap_mistakes_are_explained() {
+        // A name that isn't an action: the real ones are listed.
+        let e = keymap(serde_json::json!({"wire": "x"})).unwrap_err();
+        assert!(
+            e.contains("\"wire\"") && e.contains("spin, zoom_in, back, wires, grid"),
+            "{e}"
+        );
+        let e = keymap(serde_json::json!({"مَرْحَبًا Hello 日本語 नमस्ते": "x"})).unwrap_err();
+        assert!(
+            e.contains("مَرْحَبًا Hello 日本語 नमस्ते") && e.contains("wires"),
+            "{e}"
+        );
+        // One key, two actions — also when one of them keeps its default.
+        let e = keymap(serde_json::json!({"wires": "x", "grid": ["h", "x"]})).unwrap_err();
+        assert!(
+            e.contains("\"x\"") && e.contains("\"wires\"") && e.contains("\"grid\""),
+            "{e}"
+        );
+        let e = keymap(serde_json::json!({"wires": "g"})).unwrap_err();
+        assert!(e.contains("\"wires\" and \"grid\""), "{e}");
+        assert!(e.contains("keys={\"grid\": None}"), "it says how: {e}");
+        // Moving the other one away too is fine.
+        let k = keymap(serde_json::json!({"wires": "g", "grid": "h"})).unwrap();
+        assert_eq!(
+            (k.action("g"), k.action("h")),
+            (Some("wires"), Some("grid"))
+        );
+        // The same key twice for one action is just one key; a capital is another.
+        assert_eq!(
+            keymap(serde_json::json!({"wires": ["x", "x", "X", "shift+x"]}))
+                .unwrap()
+                .keys("wires"),
+            ["x", "shift+x"]
+        );
+        // Not a key, not a list of keys, not a dict.
+        let e = keymap(serde_json::json!({"wires": "ctrl+banana"})).unwrap_err();
+        assert!(
+            e.contains("\"ctrl+banana\"") && e.contains("\"wires\""),
+            "{e}"
+        );
+        let e = keymap(serde_json::json!({"wires": 5})).unwrap_err();
+        assert!(e.contains("None to turn it off"), "{e}");
+        let e = keymap(serde_json::json!({"wires": ["x", true]})).unwrap_err();
+        assert!(e.contains("a list of keys"), "{e}");
+        let e = keymap(serde_json::json!("x")).unwrap_err();
+        assert!(
+            e.contains("keys={\"spin\": \"x\"}") && e.contains("wires"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_path_line_types_completes_and_opens() {
+        let dir = std::env::temp_dir().join(format!("stagetui-path-{}", std::process::id()));
+        let name = "مَرْحَبًا Hello 日本語 नमस्ते";
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        std::fs::write(dir.join(format!("{name}.glb")), b"x").unwrap();
+        std::fs::write(dir.join("robot-one.obj"), b"x").unwrap();
+        std::fs::write(dir.join("robot-two.obj"), b"x").unwrap();
+        std::fs::write(dir.join(".hidden"), b"x").unwrap();
+        let base = format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR);
+
+        let mut line = PathLine::default();
+        assert!(!line.is_open());
+        assert_eq!(
+            line.key("a", Some("a")),
+            Typed::Closed,
+            "closed: not for it"
+        );
+        line.open(&base);
+        assert!(line.ready(30).text && line.ready(30).keys.contains(&"esc".to_string()));
+        // Tab: one file fits — all of it; several — what they share; a folder gets a "/".
+        line.key("m", Some("م"));
+        line.key("tab", None);
+        assert_eq!(line.text(), format!("{base}{name}.glb"));
+        line.open(&format!("{base}rob"));
+        line.key("tab", None);
+        assert_eq!(line.text(), format!("{base}robot-"));
+        line.open(&format!("{base}mo"));
+        line.key("tab", None);
+        assert_eq!(
+            line.text(),
+            format!("{base}models{}", std::path::MAIN_SEPARATOR)
+        );
+        line.open(&format!("{base}zzz"));
+        line.key("tab", None);
+        assert_eq!(line.text(), format!("{base}zzz"), "nothing fits: as it was");
+        line.open(&base);
+        line.key("tab", None);
+        assert_eq!(line.text(), base, "hidden files only when asked for");
+
+        // Typing (capitals too), Backspace, Ctrl+U.
+        line.open("");
+        for (key, text) in [("shift+h", "h"), ("i", "i"), ("space", " "), ("ب", "ب")] {
+            assert_eq!(line.key(key, Some(text)), Typed::Editing);
+        }
+        assert_eq!(line.text(), "Hi ب");
+        line.key("backspace", None);
+        line.key("ctrl+r", None);
+        assert_eq!(line.text(), "Hi ");
+        line.key("ctrl+u", None);
+        assert_eq!(line.text(), "");
+        // Enter with nothing typed asks for a path; the line stays.
+        assert_eq!(line.key("enter", None), Typed::Editing);
+        assert!(line.is_open() && line.status("Open a model").contains("type a file's path"));
+        // Enter: the path, with ~ and quotes sorted out.
+        line.paste("'~/a b.glb'\n");
+        let home = home().unwrap().display().to_string();
+        assert_eq!(
+            line.key("enter", None),
+            Typed::Open(format!("{home}/a b.glb"))
+        );
+        // It failed: the reason shows, the line stays open, typing clears it.
+        line.fail("\"a b.glb\" was not found");
+        let status = line.status("Open a model");
+        assert!(status.starts_with("Open a model: '~/a b.glb'█ · ⚠ \"a b.glb\" was not found"));
+        assert!(
+            status.ends_with("Enter open · Tab complete · Esc cancel"),
+            "{status}"
+        );
+        line.key("x", Some("x"));
+        assert!(!line.status("Open").contains('⚠'));
+        assert_eq!(line.key("esc", None), Typed::Closed);
+        assert!(!line.is_open());
+        assert_eq!(expand_home("~"), home);
+        assert_eq!(expand_home("~x/a"), "~x/a");
+        assert_eq!(expand_home("https://a.b/c.mp4"), "https://a.b/c.mp4");
+        if !cfg!(windows) {
+            assert_eq!(unquote("/a\\ b.glb"), "/a b.glb");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_placeholder_is_quiet() {
+        let theme = Theme {
+            bg: "#000000".into(),
+            fg: "#ffffff".into(),
+            accent: String::new(),
+        };
+        let f = Frame::placeholder(200, 100, &theme);
+        assert_eq!(f.rgba.len(), 200 * 100 * 4);
+        let px = |x: usize, y: usize| f.rgba[(y * 200 + x) * 4];
+        assert_eq!(px(0, 0), 0, "the background in the corners");
+        assert_eq!(px(100, 50), 102, "a muted plus in the middle");
+    }
+
+    /// Wants every key after "enter", its usual keys again after "esc".
+    #[derive(Default)]
+    struct Typist {
+        line: PathLine,
+        sent: Option<Ready>,
+    }
+
+    impl Typist {
+        fn wanted(&self) -> Ready {
+            if self.line.is_open() {
+                self.line.ready(20)
+            } else {
+                Ready {
+                    keys: vec!["enter".into()],
+                    ..Ready::default()
+                }
+            }
+        }
+    }
+
+    impl PaneSource for Typist {
+        fn describe(&self) -> Describe {
+            Describe::new("typist", "Typist", "cube")
+        }
+        fn start(&mut self, _start: &Start) -> Result<Ready, String> {
+            self.sent = Some(self.wanted());
+            Ok(self.wanted())
+        }
+        fn frame(&mut self, _now: Duration) -> Option<Frame> {
+            None
+        }
+        fn key(&mut self, key: &str, text: Option<&str>) -> bool {
+            if self.line.is_open() {
+                self.line.key(key, text);
+            } else {
+                self.line.open("");
+            }
+            true
+        }
+        fn ready(&mut self) -> Option<Ready> {
+            let want = self.wanted();
+            (self.sent.as_ref() != Some(&want)).then(|| {
+                self.sent = Some(want.clone());
+                want
+            })
+        }
+    }
+
+    #[test]
+    fn what_a_plugin_wants_can_change_while_it_runs() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(ToPlugin::Start(Start {
+            width: 8,
+            height: 8,
+            cols: 1,
+            rows: 1,
+            args: Value::Null,
+            theme: Theme::default(),
+            protocol: PROTOCOL,
+        }))
+        .unwrap();
+        for key in ["enter", "a", "esc"] {
+            tx.send(ToPlugin::Key {
+                key: key.into(),
+                text: None,
+            })
+            .unwrap();
+        }
+        tx.send(ToPlugin::Stop).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(run(Typist::default(), rx, &mut out), 0);
+        let mut r = io::Cursor::new(out);
+        let mut readies = Vec::new();
+        while let Ok((_, json)) = read_message(&mut r) {
+            if let Ok(FromPlugin::Ready(ready)) = serde_json::from_slice(&json) {
+                readies.push((ready.text, ready.keys));
+            }
+        }
+        // Started; the line opened (every key); it closed (the usual keys) — once each.
+        assert_eq!(
+            readies,
+            [
+                (false, vec!["enter".to_string()]),
+                (true, vec!["esc".to_string(), "tab".to_string()]),
+                (false, vec!["enter".to_string()]),
+            ]
+        );
     }
 
     /// Counts frames asked for, and remembers `shown` calls.

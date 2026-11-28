@@ -20,6 +20,7 @@ from stagetui.plugin import Plugin, serve
 class Dot(Plugin):
     name, title, icon = "dot", "Dot", "dot"
     keys = ("space",)
+    actions = {{"ping": ("p",), "jump": ("j", "up")}}
     fps = 15
 
     def start(self, args):
@@ -39,12 +40,18 @@ class Dot(Plugin):
         self.n += 1
         self.event("pressed", {{"key": key, "n": self.n}})
 
+    def action(self, name):
+        self.event("acted", name)
+
     def shown(self, shown):
         self.event("shown", shown)
 
     def call(self, method, args):
         if method == "count":
             return self.n
+        if method == "typing":  # every key while typing, the usual ones after
+            self.ready(text=args, keys=("esc",) if args else ("space",))
+            return args
         return super().call(method, args)
 
 
@@ -159,6 +166,131 @@ def test_an_add_on_can_refuse_to_start(addons: Path) -> None:
     with Bad().drive((60, 16)) as d:
         assert settle(d, lambda: "could not start" in d.snapshot().text), d.snapshot().text
         assert "asked to fail: no file" in d.snapshot().text
+
+
+def test_keymaps_rename_turn_off_and_explain() -> None:
+    from stagetui.plugin import Keymap, key_name
+
+    actions = {"spin": ("space",), "wires": "w", "grid": ("g",), "back": ("shift+left",)}
+    plain = Keymap(actions)
+    assert plain.action("space") == "spin" and plain.label("back") == "shift+←"
+    k = Keymap(
+        actions, {"path": "a.glb", "keys": {"wires": "x", "grid": None, "spin": ["s", "space"]}}
+    )
+    assert k.action("x") == "wires" and k.action("w") is None, "the old key does nothing"
+    assert k.keys("grid") == [] and k.label("grid") is None, "turned off"
+    assert k.keys("spin") == ["s", "space"] and k.label("spin") == "s"
+    assert k.all_keys() == ["s", "space", "x", "shift+left"]
+    # Written like stagetui names keys — also keys of other keyboards.
+    # As in BINDINGS, a capital letter means Shift.
+    capital = Keymap(actions, {"keys": {"wires": "X"}})
+    assert capital.action("shift+x") == "wires" and capital.action("x") is None
+    assert capital.spoken("wires") == "Shift+x" and capital.spoken("back") == "Shift+←"
+    assert Keymap({"open": ("enter", "o"), "go": "ctrl+g"}).spoken("go") == "Ctrl+G"
+    assert Keymap({"open": ("enter", "o")}).spoken("open") == "Enter"
+    for written, named in [
+        ("Ctrl+w", "ctrl+w"),
+        ("Ctrl+W", "ctrl+shift+w"),
+        ("W", "shift+w"),
+        ("Ж", "shift+ж"),
+        ("ENTER", "enter"),
+        ("shift+ctrl+left", "ctrl+shift+left"),
+        ("plus", "+"),
+        ("ctrl++", "ctrl++"),
+        ("shift+?", "?"),
+        ("Escape", "esc"),
+        ("F5", "f5"),
+        ("ب", "ب"),
+        ("ctrl+あ", "ctrl+あ"),
+        ("क", "क"),
+    ]:
+        assert key_name(written) == named, written
+        assert key_name(named) == named, named
+    assert key_name("ctrl+banana") is None and key_name("f25") is None and key_name("") is None
+    # Mistakes say what to do.
+    with pytest.raises(ValueError, match='"wire".*spin, wires, grid, back'):
+        Keymap(actions, {"keys": {"wire": "x"}})
+    with pytest.raises(ValueError, match="مَرْحَبًا Hello 日本語 नमस्ते"):
+        Keymap(actions, {"keys": {"مَرْحَبًا Hello 日本語 नमस्ते": "x"}})
+    with pytest.raises(ValueError, match=r'"wires" and "grid".*keys=\{"grid": None\}'):
+        Keymap(actions, {"keys": {"wires": "g"}})
+    with pytest.raises(ValueError, match=r'"ctrl\+banana" \(for "wires"\)'):
+        Keymap(actions, {"keys": {"wires": "ctrl+banana"}})
+    with pytest.raises(TypeError, match="None to turn it off"):
+        Keymap(actions, {"keys": {"wires": 5}})
+    with pytest.raises(TypeError, match=r'like keys=\{"spin": "x"\}'):
+        Keymap(actions, {"keys": "x"})
+
+
+def test_an_add_on_s_keys_can_be_renamed(addons: Path) -> None:
+    ts.plugins(refresh=True)
+    acted, pressed = [], []
+
+    class Desk(StageApp):
+        def compose(self):
+            return [
+                StagePane(
+                    "dot",
+                    id="d",
+                    label="مَرْحَبًا Hello 日本語 नमस्ते",
+                    keys={"ping": "x", "jump": None},
+                    on_acted=acted.append,
+                    on_pressed=pressed.append,
+                )
+            ]
+
+    with Desk().drive((60, 16)) as d:
+        info = lambda: d.query("#d")["children"][0]
+        assert settle(d, lambda: info()["status"] is not None), info()
+        d.click("#d")
+        for old in ["p", "j", "up"]:  # its old key, and a turned-off action's keys
+            d.press(old)
+        d.press("x")
+        assert settle(d, lambda: acted), "the renamed key reached action()"
+        d.press("space")  # a plain key still goes to key()
+        assert settle(d, lambda: pressed)
+        assert acted == ["ping"] and pressed == [{"key": "space", "n": 1}]
+
+
+def test_an_add_on_can_ask_for_every_key(addons: Path) -> None:
+    ts.plugins(refresh=True)
+    pressed = []
+
+    class Desk(StageApp):
+        def compose(self):
+            return [StagePane("dot", id="d", label="مَرْحَبًا 日本語 नमस्ते", on_pressed=pressed.append)]
+
+    with Desk().drive((60, 16)) as d:
+        dot = d.app.query("#d").content
+        assert settle(d, lambda: d.query("#d")["children"][0]["status"] is not None)
+        d.click("#d")
+        d.press("z")  # not one of its keys: the app's
+        assert dot.call("typing", True) is True
+        d.press("z")  # now it gets every key
+        assert settle(d, lambda: pressed), "a key it didn't list arrived"
+        dot.call("typing", False)
+        d.press("z")
+        d.wait(0.3)
+        time.sleep(0.2)
+        d.wait(0.1)
+        assert [p["key"] for p in pressed] == ["z"], pressed
+
+
+def test_an_add_on_explains_bad_keys(addons: Path) -> None:
+    ts.plugins(refresh=True)
+
+    class Bad(StageApp):
+        def compose(self):
+            return [
+                StagePane("dot", id="a", keys={"pong": "x"}),
+                StagePane("dot", id="b", keys={"ping": "j"}),
+            ]
+
+    with Bad().drive((100, 16)) as d:
+        error = lambda pane: d.query(pane)["children"][0]["error"] or ""
+        assert settle(d, lambda: '"pong"' in error("#a")), error("#a")
+        assert "Dot could not start" in error("#a") and "ping, jump" in error("#a")
+        assert settle(d, lambda: '"j" is given to both "ping" and "jump"' in error("#b"))
 
 
 def test_official_add_ons_offer_to_install(addons: Path) -> None:

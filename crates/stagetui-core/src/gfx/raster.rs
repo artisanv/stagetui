@@ -186,8 +186,7 @@ pub fn render(frame: &Frame, cell_px: (u32, u32)) -> Pixmap {
     let mono_size = chf * 0.74;
     let mut glyphs: HashMap<(String, bool), Pixmap> = HashMap::new();
     let width = usize::from(area.width);
-    for (i, cell) in frame.cells.content().iter().enumerate() {
-        let (cx, cy) = ((i % width) as f32 * cwf, (i / width) as f32 * chf);
+    let colors = |cell: &ratatui_core::buffer::Cell| {
         let mut fg = rgb(cell.fg, Rgb(230, 230, 230));
         let mut bg = rgb(cell.bg, frame.bg);
         if cell.modifier.contains(Modifier::REVERSED) {
@@ -196,7 +195,18 @@ pub fn render(frame: &Frame, cell_px: (u32, u32)) -> Pixmap {
         if cell.modifier.contains(Modifier::DIM) {
             fg = fg.mix(bg, 0.45);
         }
-        fill(&mut p, cx, cy, cwf, chf, bg);
+        (fg, bg)
+    };
+    let corner = |i: usize| ((i % width) as f32 * cwf, (i / width) as f32 * chf);
+    // Every background first: a wide glyph (CJK) reaches into the next cell,
+    // which must not paint over its right half afterwards.
+    for (i, cell) in frame.cells.content().iter().enumerate() {
+        let (cx, cy) = corner(i);
+        fill(&mut p, cx, cy, cwf, chf, colors(cell).1);
+    }
+    for (i, cell) in frame.cells.content().iter().enumerate() {
+        let (cx, cy) = corner(i);
+        let (fg, _) = colors(cell);
         let sym = cell.symbol();
         if covered[i] || sym.is_empty() || sym == " " {
             continue;
@@ -283,17 +293,21 @@ pub fn text_run(run: &TextRun, cell_px: (u32, u32)) -> Pixmap {
         color: run.fg,
         alpha: 255,
     };
-    let (tw, _) = text_raster::measure(&run.logical, &style);
+    // Shape and place the run in its line's direction, as the cells show it: in a
+    // left-to-right line (`# مرحبا` in code) the `#` stays first and the run starts at
+    // the left of its cells, so the line reads on without a gap; a right-to-left
+    // line starts at the right. The mark is invisible; it only sets the direction.
+    let (mark, align) = match run.dir {
+        Direction::Ltr => ('\u{200E}', HAlign::Left),
+        Direction::Rtl => ('\u{200F}', HAlign::Right),
+    };
+    let text = format!("{mark}{}", run.logical);
+    let (tw, _) = text_raster::measure(&text, &style);
     if tw > box_w {
         style.size_px *= box_w / tw;
     }
     let ty = (chf - style.size_px * 1.3) / 2.0;
-    let align = if run.dir == Direction::Rtl {
-        HAlign::Right
-    } else {
-        HAlign::Left
-    };
-    text_raster::draw(&mut p, &run.logical, 0.0, ty, &style, Some(box_w), align);
+    text_raster::draw(&mut p, &text, 0.0, ty, &style, Some(box_w), align);
     p
 }
 
@@ -336,6 +350,141 @@ mod tests {
                 && Rgb(c.red(), c.green(), c.blue()) != theme.surface
         });
         assert!(non_bg.count() > 500, "text and borders should be drawn");
+    }
+
+    /// Columns of `p` with any ink in them: `(first, last)`.
+    fn inked(p: &Pixmap, bg: Rgb) -> (u32, u32) {
+        let w = p.width();
+        let cols: Vec<u32> = (0..w)
+            .filter(|&x| {
+                (0..p.height()).any(|y| {
+                    let c = p.pixel(x, y).unwrap().demultiply();
+                    Rgb(c.red(), c.green(), c.blue()) != bg
+                })
+            })
+            .collect();
+        (cols[0], *cols.last().unwrap())
+    }
+
+    #[test]
+    fn runs_start_on_their_lines_side() {
+        let bg = Rgb(0, 0, 0);
+        let run = |logical: &str, dir: Direction| TextRun {
+            area: ratatui_core::layout::Rect::new(0, 0, 30, 1),
+            logical: logical.into(),
+            dir,
+            complex: true,
+            fg: Rgb(255, 255, 255),
+            bg,
+            bold: false,
+            transparent: false,
+            pixel: true,
+        };
+        for s in [
+            "مَرْحَباً بِكُمْ",
+            "# مَرْحَباً",
+            "Hello مرحبا world",
+            "नमस्ते दुनिया",
+            "こんにちは 世界",
+        ] {
+            // 30 cells of 10 px: far wider than the text in a proportional font.
+            let (first, last) = inked(&text_run(&run(s, Direction::Ltr), (10, 20)), bg);
+            assert!(
+                first < 20 && last < 240,
+                "{s}: left to right starts left ({first}..{last})"
+            );
+            let (first, last) = inked(&text_run(&run(s, Direction::Rtl), (10, 20)), bg);
+            assert!(
+                last > 280 && first > 60,
+                "{s}: right to left starts right ({first}..{last})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_code_comment_in_arabic_reads_on_from_its_hash() {
+        // The token `# مَرْحَباً` in a left-to-right line of code: the `#` is drawn
+        // first (left), the Arabic after it — the same order as the cells.
+        let mut s = Session::from_json(
+            r#"{"children":[{"type":"code","content":"x = 1  # مَرْحَباً","props":{"language":"python"}}]}"#,
+        )
+        .unwrap();
+        let frame = s.frame(40, 5);
+        let run = frame
+            .runs
+            .iter()
+            .find(|r| r.logical.contains("مَرْحَباً"))
+            .expect("the Arabic is a pixel run");
+        assert_eq!(run.dir, Direction::Ltr);
+        let with = |logical: &str| TextRun {
+            logical: logical.into(),
+            area: ratatui_core::layout::Rect::new(0, 0, 20, 1),
+            ..run.clone()
+        };
+        let (first, _) = inked(&text_run(&with("مَرْحَباً"), (10, 20)), run.bg);
+        assert!(first < 10, "starts at the left of its cells: {first}");
+        // Drawn as one piece, `# مَرْحَباً` starts with its `#`: the first columns
+        // carry the same ink as a lone `#` (the Arabic font may move it up or down).
+        let ink = |p: &Pixmap, x: u32| {
+            (0..p.height())
+                .filter(|&y| {
+                    let c = p.pixel(x, y).unwrap().demultiply();
+                    Rgb(c.red(), c.green(), c.blue()) != run.bg
+                })
+                .count()
+        };
+        let both = text_run(&with("# مَرْحَباً"), (10, 20));
+        let hash = text_run(&with("#"), (10, 20));
+        let (a, b) = inked(&hash, run.bg);
+        assert!(b < 20, "a lone # is narrow: {a}..{b}");
+        for x in a..=b + 2 {
+            assert_eq!(ink(&both, x), ink(&hash, x), "column {x}");
+        }
+    }
+
+    #[test]
+    fn wide_glyphs_keep_their_right_half() {
+        let (bg, fg) = (Rgb(0, 0, 0), Rgb(255, 255, 255));
+        let ink = |p: &Pixmap, x: u32| {
+            (0..p.height())
+                .filter(|&y| p.pixel(x, y).is_some_and(|c| c.demultiply().red() > 0))
+                .count()
+        };
+        for wide in ["日", "你", "こ"] {
+            let mut f = Frame::new(ratatui_core::layout::Rect::new(0, 0, 4, 1), bg, fg);
+            let style = ratatui_core::style::Style::new()
+                .fg(fg.color())
+                .bg(bg.color());
+            f.put_str(0, 0, &format!("{wide}本"), 4, style);
+            let p = render(&f, (10, 20));
+            // The glyph alone, drawn the way `render` draws it.
+            let mut alone = Pixmap::new(20, 20).unwrap();
+            let size = 20.0 * 0.74;
+            let style = TextStyle {
+                face: Face::Mono,
+                size_px: size,
+                bold: false,
+                color: fg,
+                alpha: 255,
+            };
+            text_raster::draw(
+                &mut alone,
+                wide,
+                0.0,
+                (20.0 - size * 1.3) / 2.0,
+                &style,
+                None,
+                HAlign::Left,
+            );
+            for x in 10..20 {
+                if ink(&alone, x) > 0 {
+                    assert!(
+                        ink(&p, x) > 0,
+                        "{wide}: column {x} of its second cell was painted over"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

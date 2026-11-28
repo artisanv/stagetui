@@ -39,7 +39,8 @@ impl TextStyle {
     }
 }
 
-/// Horizontal alignment inside `max_width`.
+/// Horizontal alignment inside `max_width` — the absolute side, whatever the
+/// text's direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HAlign {
     Left,
@@ -119,19 +120,53 @@ fn buffer(
         .into_iter()
         .map(|(t, s)| (t, attrs(style, s)))
         .collect();
+    // Always the side asked for: cosmic-text's default would put right-to-left
+    // text at the right even when `Left` was asked for.
     let align = match align {
-        HAlign::Left => None,
-        HAlign::Center => Some(Align::Center),
-        HAlign::Right => Some(Align::Right),
+        HAlign::Left => Align::Left,
+        HAlign::Center => Align::Center,
+        HAlign::Right => Align::Right,
     };
     buf.set_rich_text(
         spans,
         &attrs(style, Script::Other),
         Shaping::Advanced,
-        align,
+        Some(align),
     );
     buf.shape_until_scroll(&mut fonts.system, false);
+    // Glyph 0 is the empty box a font draws for a character it lacks: no font had it.
+    for run in buf.layout_runs() {
+        for g in run.glyphs.iter().filter(|g| g.glyph_id == 0) {
+            if let Some(c) = run.text.get(g.start..g.end).and_then(|t| t.chars().next()) {
+                fonts::warn_missing(c, fonts.system_fonts_loaded);
+            }
+        }
+    }
     buf
+}
+
+/// The scripts in `text` that no available font can draw (they'd show as boxes).
+pub fn unfound(text: &str) -> Vec<&'static str> {
+    let mut guard = fonts::lock();
+    let buf = buffer(
+        &mut guard,
+        text,
+        &TextStyle::new(16.0, Rgb(0, 0, 0)),
+        None,
+        HAlign::Left,
+    );
+    let mut out = Vec::new();
+    for run in buf.layout_runs() {
+        for g in run.glyphs.iter().filter(|g| g.glyph_id == 0) {
+            let c = run.text.get(g.start..g.end).and_then(|t| t.chars().next());
+            if let Some(m) = c.and_then(fonts::script_of)
+                && !out.contains(&m.script)
+            {
+                out.push(m.script);
+            }
+        }
+    }
+    out
 }
 
 /// `(width, height)` in pixels of `text` laid out without wrapping.
@@ -238,5 +273,43 @@ mod tests {
             );
             assert!(ink(&p) > 30, "{s} drew nothing");
         }
+    }
+
+    #[test]
+    fn characters_without_a_font_are_found_and_reported() {
+        // The bundled fonts draw these, marks and all: nothing is missing.
+        for s in [
+            "مَرْحَباً بِكُمْ",
+            "Hello مرحبا world",
+            "नमस्ते दुनिया",
+            "ΑΒΓ Привет",
+            "\u{200E}# مرحبا\u{200F}",
+        ] {
+            assert_eq!(unfound(s), Vec::<&str>::new(), "{s}");
+        }
+        // Chinese/Japanese is missing exactly when the coverage report says so.
+        let covered = |name: &str| {
+            fonts::coverage()
+                .scripts
+                .iter()
+                .any(|s| s.script == name && s.covered)
+        };
+        for (s, name) in [("你好世界", "chinese"), ("こんにちは", "japanese")] {
+            let want: Vec<&str> = if covered(name) {
+                vec![]
+            } else {
+                vec!["Chinese/Japanese"]
+            };
+            assert_eq!(unfound(s), want, "{s}");
+        }
+        // A character no font has (the last private-use code point).
+        assert_eq!(unfound("a\u{10FFFD}b"), ["some"]);
+        // Drawing it warned once, and the report lists it.
+        assert!(fonts::coverage().missing_in_pictures.contains(&"some"));
+        let mut p = Pixmap::new(100, 30).unwrap();
+        let style = TextStyle::new(20.0, Rgb(0, 0, 0));
+        draw(&mut p, "\u{10FFFD}", 0.0, 0.0, &style, None, HAlign::Left);
+        let m = fonts::script_of('\u{10FFFD}').unwrap();
+        assert_eq!(fonts::note_missing(m, true), None, "already warned");
     }
 }

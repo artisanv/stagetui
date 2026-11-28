@@ -4,9 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0a7] — 2026-11-28
+## [1.0.0] — 2026-11-28
 
-The 3D add-on is out: `pip install stagetui-3d` (or `pip install "stagetui[3d]"`).
+stagetui 1.0: the first stable release. Everything in the docs works today on
+Linux, macOS and Windows, and code written for 1.0 keeps working in every 1.x
+version. New in this release: keys you can rename or turn off, and the 3D add-on
+(`pip install stagetui-3d`, or `pip install "stagetui[3d]"`).
+
+### Added — keys you can rename
+- **Customizable keys.** Every key stagetui itself answers to has a name (`quit`,
+  `prefix`, `close_pane`, `split_right`…). An app renames them or turns them off with
+  `KEYS = {"quit": "ctrl+q", "close_pane": "w", "pane_menu": None}`. It stays safe:
+  there is always a quit key, the prefix key can't be turned off, and one key never
+  does two jobs — a mistake is explained (what, why, how to fix it) when the app
+  starts. Your `BINDINGS` still come first: `("q", "save")` makes q save.
+- `CONFIRM_QUIT = True` asks "Quit this app?" before a quit key (or × on the last
+  pane) quits.
+- **Your own keys for every app**, in `keys.json` in the stagetui settings folder
+  (`~/.config/stagetui/`, or `%APPDATA%\stagetui\` on Windows) or wherever
+  `STAGETUI_KEYS` points. A mistake there never stops an app: that entry is skipped
+  and one message says so. Tests and agents (headless) read only `STAGETUI_KEYS`.
+- See every key: `stagetui keys [app.py] [--json]`, `ts.keys()`, `app.keys()` /
+  `Driver.keys()`, and the `keys` tool in `stagetui mcp` (and `drive`).
+- **Add-on pane keys**: every add-on's keys can be renamed or turned off, per pane —
+  `StagePane("video", keys={"play_pause": "k", "mute": None})`. The line at the
+  bottom of the pane shows the keys in effect.
+- Docs: [Keys](docs/keys.md).
 
 ### Added — Milestone 6d: 3D
 - **`stagetui-3d`**, the 3D add-on (its own package): `StagePane("3d", path="model.glb")`
@@ -23,8 +46,9 @@ The 3D add-on is out: `pip install stagetui-3d` (or `pip install "stagetui[3d]"`
 ### Changed
 - **The 3D add-on is on PyPI**: `pip install stagetui-3d` or `pip install "stagetui[3d]"`.
   Picking *3D* in a pane's menu now offers to install it (it no longer says "coming
-  soon"), and so does `stagetui plugins install 3d`. The `video` and `web` extras ask
-  for version 0.1.0a7 of those add-ons.
+  soon"), and so does `stagetui plugins install 3d`. The `video`, `web` and `3d`
+  extras ask for version 1.0.0 of those add-ons, and each add-on asks for stagetui
+  1.0.0 or newer.
 - **Clicking × on the last pane closes the app.** In a window attached to a running
   session it asks *Detach* or *Quit* first; in a pane's own pop-out window it puts the
   pane back where it came from. **Ctrl+Space** then **x** on the last pane does the same.
@@ -32,8 +56,8 @@ The 3D add-on is out: `pip install stagetui-3d` (or `pip install "stagetui[3d]"`
 - **Hidden panes pause.** When an add-on's pane is switched to another type, or sits in
   a tab you aren't looking at, the add-on is told with a new `shown` message: video
   pauses its sound and picture (and plays on when you come back, if it was playing),
-  the web page pauses its videos and sounds and stops sending pictures, and 3D stops
-  drawing. Older add-ons simply ignore the message and keep going as before.
+  a hidden web page is frozen, so it makes no sound at all and sends no pictures,
+  and 3D stops drawing. Older add-ons simply ignore the message and keep going as before.
 - Add-on API (`stagetui-plugin-api`): `PaneSource::shown(bool)` and the
   `{"t": "shown", "shown": true | false}` message; `serve()` asks for no frames while
   the pane is hidden. Python add-ons get `Plugin.shown(shown)` the same way.
